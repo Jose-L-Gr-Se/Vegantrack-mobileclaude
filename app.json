@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "VeganTrack",
+    "slug": "vegantrack",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "vegantrack",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.vegantrack.app"
+    },
+    "android": {
+      "package": "com.vegantrack.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#16a34a",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [{ "scheme": "https", "host": "vegantrack.app", "pathPrefix": "/" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "color": "#16a34a"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "VeganTrack usa la cámara para escanear códigos de barras de alimentos."
+        }
+      ]
+    ]
+  }
+}

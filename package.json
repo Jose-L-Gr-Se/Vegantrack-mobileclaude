@@ -1,0 +1,59 @@
+{
+  "name": "vegantrack-mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "prebuild:android": "expo prebuild --platform android --no-install",
+    "build:apk": "cd android && ./gradlew assembleRelease",
+    "build:aab": "cd android && ./gradlew bundleRelease"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "testMatch": [
+      "**/__tests__/**/*.test.ts?(x)"
+    ],
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|react-native-svg))"
+    ]
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-navigation/bottom-tabs": "^7.18.0",
+    "@react-navigation/native": "^7.3.1",
+    "@react-navigation/native-stack": "^7.17.3",
+    "@supabase/supabase-js": "^2.108.1",
+    "expo": "~56.0.11",
+    "expo-camera": "~56.0.8",
+    "expo-linking": "~56.0.14",
+    "expo-notifications": "~56.0.17",
+    "expo-secure-store": "~56.0.4",
+    "expo-sqlite": "~56.0.5",
+    "expo-status-bar": "~56.0.4",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "^4.25.2",
+    "react-native-svg": "^15.15.4",
+    "react-native-url-polyfill": "^3.0.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@testing-library/react-native": "^14.0.0",
+    "@types/jest": "^30.0.0",
+    "@types/react": "~19.2.2",
+    "jest": "~29.7.0",
+    "jest-expo": "~56.0.5",
+    "typescript": "~6.0.3"
+  },
+  "private": true
+}
