@@ -11,8 +11,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "prebuild:android": "expo prebuild --platform android --no-install",
-    "build:apk": "cd android && ./gradlew assembleRelease",
-    "build:aab": "cd android && ./gradlew bundleRelease"
+    "build:apk": "node ./scripts/build-apk.js",
+    "build:aab": "node ./scripts/build-apk.js bundleRelease"
   },
   "jest": {
     "preset": "jest-expo",
