@@ -7,7 +7,7 @@ import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { Button, Card, EmptyState, MacroBar, SectionHeader } from '@/components/ui';
+import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import { semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
@@ -88,6 +88,10 @@ export function DiaryScreen() {
     setRefreshing(false);
   };
 
+  const calTarget = profile?.calorie_target ?? 0;
+  const calProgress = calTarget > 0 ? Math.min(1, summary.calories / calTarget) : 0;
+  const remaining = calTarget > 0 ? Math.max(0, calTarget - Math.round(summary.calories)) : null;
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: t.background }}
@@ -109,16 +113,38 @@ export function DiaryScreen() {
         </Pressable>
       </View>
 
-      {/* Resumen del día */}
+      {/* Resumen del día con ring */}
       <Card style={{ gap: spacing.md }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <Text style={{ fontSize: 28, fontWeight: '800', color: t.text }}>
-            {Math.round(summary.calories)}
-            <Text style={{ fontSize: 14, color: t.textMuted }}> / {profile?.calorie_target ?? '—'} kcal</Text>
-          </Text>
-          {profile?.streak_count ? (
-            <Text style={{ color: t.textSecondary, fontWeight: '700' }}>🔥 {profile.streak_count}</Text>
-          ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
+          <ProgressRing progress={calProgress} size={80} strokeWidth={7} color={semantic.success}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: t.text }}>{Math.round(calProgress * 100)}</Text>
+            <Text style={{ fontSize: 9, color: t.textMuted }}>%</Text>
+          </ProgressRing>
+          <View style={{ flex: 1, gap: 4 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View>
+                <Text style={{ fontSize: 13, color: t.textSecondary, fontWeight: '600' }}>Comido</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>
+                  {Math.round(summary.calories)}
+                  <Text style={{ fontSize: 13, color: t.textMuted }}> kcal</Text>
+                </Text>
+              </View>
+              {remaining !== null ? (
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 11, color: t.textSecondary }}>Restante</Text>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: remaining === 0 ? semantic.success : t.text }}>
+                    {remaining}
+                    <Text style={{ fontSize: 11, color: t.textMuted }}> kcal</Text>
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            {profile?.streak_count ? (
+              <Text style={{ color: t.textSecondary, fontWeight: '700', fontSize: 12 }}>
+                🔥 Racha: {profile.streak_count} días
+              </Text>
+            ) : null}
+          </View>
         </View>
         <MacroBar label="Proteína" value={summary.protein_g} target={profile?.protein_target_g ?? 0} color={semantic.protein} />
         <MacroBar label="Carbohidratos" value={summary.carbs_g} target={profile?.carbs_target_g ?? 0} color={semantic.carbs} />

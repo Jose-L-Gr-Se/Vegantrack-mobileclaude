@@ -7,8 +7,10 @@ import { ActivityIndicator, Image, Pressable, ScrollView, Switch, Text, View } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Card, EmptyState, Input, Pill, SectionHeader } from '@/components/ui';
+import { Ionicons } from '@expo/vector-icons';
+import { Card, EmptyState, IconButton, Input, Pill, SectionHeader } from '@/components/ui';
 import { AddFoodModal } from '@/components/AddFoodModal';
+import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
@@ -70,6 +72,7 @@ export function SearchScreen() {
   const route = useRoute<RouteProp<MainTabParamList, 'Search'>>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = useAuthStore((s) => s.user);
+  const profile = useAuthStore((s) => s.profile);
   const { recentFoods, fetchRecentFoods } = useDiaryStore();
   const customFoodStore = useCustomFoodStore();
 
@@ -79,6 +82,7 @@ export function SearchScreen() {
   const [alternativesFor, setAlternativesFor] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<FoodPer100g | null>(null);
+  const [selectedConfidence, setSelectedConfidence] = useState<VeganConfidence | undefined>(undefined);
   const [lockedMeal, setLockedMeal] = useState<MealType | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,6 +108,7 @@ export function SearchScreen() {
       const product = await getProductByBarcode(barcode);
       setSearching(false);
       if (product) {
+        setSelectedConfidence(getVeganConfidence(product));
         setSelected(productToFoodPer100g(product));
       } else {
         setToast('Producto no encontrado en OpenFoodFacts');
@@ -138,8 +143,27 @@ export function SearchScreen() {
     setResults(alts);
   };
 
+  const selectProduct = (p: OpenFoodFactsProduct) => {
+    setSelectedConfidence(getVeganConfidence(p));
+    setSelected(productToFoodPer100g(p));
+  };
+
   const freshMatches = searchFreshProduce(query);
   const customMatches = customFoodStore.searchCustomFoods(query);
+
+  // Profile for macro targets in the sheet
+  const sheetProfile =
+    profile?.calorie_target != null &&
+    profile?.protein_target_g != null &&
+    profile?.carbs_target_g != null &&
+    profile?.fat_target_g != null
+      ? {
+          calorie_target: profile.calorie_target,
+          protein_target_g: profile.protein_target_g,
+          carbs_target_g: profile.carbs_target_g,
+          fat_target_g: profile.fat_target_g,
+        }
+      : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.background }}>
@@ -156,12 +180,12 @@ export function SearchScreen() {
               placeholder="tofu, garbanzos, bebida de soja…"
             />
           </View>
-          <Pressable
+          <IconButton
             onPress={() => navigation.navigate('Scanner')}
-            style={{ padding: 12, borderRadius: 16, backgroundColor: t.primarySoft }}
+            style={{ backgroundColor: t.primarySoft, borderRadius: 16, padding: 12 }}
           >
-            <Text style={{ fontSize: 22 }}>📷</Text>
-          </Pressable>
+            <Ionicons name={'barcode-outline' as any} size={22} color={t.primary} />
+          </IconButton>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
@@ -178,7 +202,7 @@ export function SearchScreen() {
 
         {alternativesFor ? (
           <Text style={{ color: t.textSecondary, fontWeight: '600' }}>
-            🌱 Alternativas veganas a “{alternativesFor}”
+            🌱 Alternativas veganas a "{alternativesFor}"
           </Text>
         ) : null}
 
@@ -228,26 +252,28 @@ export function SearchScreen() {
               return (
                 <Pressable
                   key={p.code}
-                  onPress={() => setSelected(productToFoodPer100g(p))}
-                  style={{ flexDirection: 'row', gap: spacing.md, paddingVertical: 8, alignItems: 'center' }}
+                  onPress={() => selectProduct(p)}
+                  style={{ flexDirection: 'row', gap: spacing.md, paddingVertical: 10, alignItems: 'center' }}
                 >
                   {p.image_front_url ? (
-                    <Image source={{ uri: p.image_front_url }} style={{ width: 44, height: 44, borderRadius: 10 }} />
+                    <Image source={{ uri: p.image_front_url }} style={{ width: 48, height: 48, borderRadius: 12 }} />
                   ) : (
-                    <View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: t.separator, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text>🥫</Text>
+                    <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: t.separator, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 22 }}>🥫</Text>
                     </View>
                   )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>{p.product_name}</Text>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
+                      {p.product_name}
+                    </Text>
                     <Text style={{ color: t.textMuted, fontSize: 12 }} numberOfLines={1}>
                       {p.brands || '—'} · {Math.round(p.nutriments['energy-kcal_100g'])} kcal/100g
                     </Text>
-                    <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: 2 }}>
+                    <View style={{ flexDirection: 'row', gap: spacing.xs, marginTop: 2, flexWrap: 'wrap' }}>
                       <Pill text={c.text} color={c.color} />
                       {confidence === 'low' && !alternativesFor ? (
                         <Pressable onPress={() => void showAlternatives(p)} hitSlop={6}>
-                          <Pill text="Ver alternativas 🌱" color={semantic.success} />
+                          <Pill text="Alternativas 🌱" color={semantic.success} />
                         </Pressable>
                       ) : null}
                     </View>
@@ -266,15 +292,17 @@ export function SearchScreen() {
               <Pressable
                 key={`${r.food_name}-${i}`}
                 onPress={() => setSelected(recentToPer100g(r))}
-                style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}
+                style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, alignItems: 'center' }}
               >
                 <View style={{ flex: 1, paddingRight: spacing.md }}>
                   <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>{r.food_name}</Text>
                   <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                    {r.brand ? `${r.brand} · ` : ''}usado {r.use_count} {r.use_count === 1 ? 'vez' : 'veces'}
+                    {r.brand ? `${r.brand} · ` : ''}{r.calories_per_100g} kcal/100g
                   </Text>
                 </View>
-                <Text style={{ color: t.textMuted, fontSize: 13 }}>{r.calories_per_100g} kcal</Text>
+                <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                  usado {r.use_count} {r.use_count === 1 ? 'vez' : 'veces'}
+                </Text>
               </Pressable>
             ))}
           </Card>
@@ -286,15 +314,30 @@ export function SearchScreen() {
       </ScrollView>
 
       {selected && (
-        <AddFoodModal
+        <ProductDetailSheet
           food={selected}
           lockedMealType={lockedMeal}
-          onClose={() => setSelected(null)}
+          veganConfidence={selectedConfidence}
+          profile={sheetProfile}
+          onClose={() => {
+            setSelected(null);
+            setSelectedConfidence(undefined);
+          }}
           onAdded={(msg) => {
             setToast(msg);
             if (user) void fetchRecentFoods(user.id);
             navigation.navigate('Main', { screen: 'Diary' });
           }}
+          onShowAlternatives={
+            selected
+              ? () => {
+                  setSelected(null);
+                  setSelectedConfidence(undefined);
+                  // Show alternatives by searching for the food name
+                  setQuery(selected.food_name);
+                }
+              : undefined
+          }
         />
       )}
     </View>

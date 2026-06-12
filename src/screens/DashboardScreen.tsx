@@ -53,6 +53,10 @@ export function DashboardScreen() {
   const suppContrib = supplementStore.getTodayContributions();
   const maxCal = Math.max(...weekData.map((d) => d.calories), profile?.calorie_target ?? 0, 1);
 
+  const calTarget = profile?.calorie_target ?? 0;
+  const calProgress = calTarget > 0 ? Math.min(1, summary.calories / calTarget) : 0;
+  const remaining = calTarget > 0 ? Math.max(0, calTarget - Math.round(summary.calories)) : null;
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: t.background }}
@@ -60,27 +64,81 @@ export function DashboardScreen() {
     >
       <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>Resumen</Text>
 
-      {/* VeganScore */}
-      <Card style={{ alignItems: 'center', gap: spacing.lg }}>
-        <ProgressRing progress={score.total / 100} size={140} strokeWidth={12} color={scoreColor}>
-          <Text style={{ fontSize: 36, fontWeight: '800', color: t.text }}>{score.total}</Text>
-          <Text style={{ fontSize: 11, color: t.textMuted }}>VeganScore</Text>
-        </ProgressRing>
-        <Text style={{ fontWeight: '700', color: scoreColor }}>{getScoreLabel(score.total)}</Text>
+      {/* Hero: Calorías ring + macros compactos */}
+      <Card style={{ gap: spacing.lg }}>
+        {/* Calorie ring centrado */}
+        <View style={{ alignItems: 'center' }}>
+          <ProgressRing progress={calProgress} size={140} strokeWidth={12} color={semantic.success}>
+            <Text style={{ fontSize: 30, fontWeight: '800', color: t.text }}>{Math.round(summary.calories)}</Text>
+            <Text style={{ fontSize: 11, color: t.textMuted }}>kcal</Text>
+          </ProgressRing>
+          {calTarget > 0 ? (
+            <Text style={{ color: t.textSecondary, fontSize: 13, marginTop: spacing.sm }}>
+              {remaining !== null ? `${remaining} kcal restantes` : `Objetivo: ${calTarget} kcal`} · Objetivo: {calTarget}
+            </Text>
+          ) : null}
+        </View>
 
-        <View style={{ alignSelf: 'stretch', gap: spacing.sm }}>
+        {/* 3 macro stats en fila */}
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          {[
+            { label: 'Proteína', value: summary.protein_g, target: profile?.protein_target_g ?? 0, color: semantic.protein },
+            { label: 'Carbs', value: summary.carbs_g, target: profile?.carbs_target_g ?? 0, color: semantic.carbs },
+            { label: 'Grasas', value: summary.fat_g, target: profile?.fat_target_g ?? 0, color: semantic.fat },
+          ].map(({ label, value, target, color }) => {
+            const pct = target > 0 ? Math.min(1, value / target) : 0;
+            return (
+              <View
+                key={label}
+                style={{
+                  flex: 1,
+                  backgroundColor: t.background,
+                  borderRadius: spacing.md,
+                  padding: spacing.sm,
+                  gap: 6,
+                  borderWidth: 1,
+                  borderColor: t.cardBorder,
+                }}
+              >
+                <Text style={{ color: t.textSecondary, fontSize: 11, fontWeight: '600' }}>{label}</Text>
+                <Text style={{ color: t.text, fontSize: 16, fontWeight: '800' }}>
+                  {Math.round(value)}
+                  <Text style={{ fontSize: 11, color: t.textMuted }}>g</Text>
+                </Text>
+                <View style={{ height: 4, borderRadius: 2, backgroundColor: t.separator, overflow: 'hidden' }}>
+                  <View style={{ width: `${pct * 100}%`, height: 4, backgroundColor: color, borderRadius: 2 }} />
+                </View>
+                {target > 0 ? (
+                  <Text style={{ color: t.textMuted, fontSize: 10 }}>{Math.round(target)}g obj.</Text>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
+      </Card>
+
+      {/* VeganScore horizontal */}
+      <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
+        <ProgressRing progress={score.total / 100} size={80} strokeWidth={8} color={scoreColor}>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>{score.total}</Text>
+        </ProgressRing>
+        <View style={{ flex: 1, gap: spacing.sm }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontWeight: '800', fontSize: 16, color: t.text }}>VeganScore</Text>
+            <Text style={{ fontWeight: '700', color: scoreColor, fontSize: 14 }}>{getScoreLabel(score.total)}</Text>
+          </View>
           {breakdownRows.map(({ label, part }) => (
             <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ color: t.textSecondary, fontSize: 13 }}>{label}</Text>
-              <Text style={{ color: t.text, fontSize: 13, fontWeight: '600' }}>
-                {part.score}/{part.max} · {part.label}
+              <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
+              <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }}>
+                {part.score}/{part.max}
               </Text>
             </View>
           ))}
         </View>
       </Card>
 
-      {/* Macros */}
+      {/* Macros detallados */}
       <Card style={{ gap: spacing.md }}>
         <SectionHeader title="Macros de hoy" />
         <MacroBar label="Calorías" value={summary.calories} target={profile?.calorie_target ?? 0} color={semantic.success} unit="kcal" />

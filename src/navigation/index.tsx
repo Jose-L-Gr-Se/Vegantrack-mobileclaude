@@ -4,11 +4,12 @@
  * https://vegantrack.app/* (App Links verificados en app.json).
  */
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
@@ -23,16 +24,23 @@ import { ProfileScreen } from '@/screens/ProfileScreen';
 import { ScannerScreen } from '@/screens/ScannerScreen';
 import { RecipesScreen } from '@/screens/RecipesScreen';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
+import type { LinkingOptions } from '@react-navigation/native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
 
-const TAB_CONFIG: { name: keyof MainTabParamList; label: string; icon: string; component: React.ComponentType }[] = [
-  { name: 'Diary', label: 'Diario', icon: '📖', component: DiaryScreen },
-  { name: 'Search', label: 'Buscar', icon: '🔍', component: SearchScreen },
-  { name: 'Dashboard', label: 'Resumen', icon: '📊', component: DashboardScreen },
-  { name: 'Progress', label: 'Progreso', icon: '📈', component: ProgressScreen },
-  { name: 'Profile', label: 'Perfil', icon: '👤', component: ProfileScreen },
+const TAB_CONFIG: {
+  name: keyof MainTabParamList;
+  label: string;
+  icon: string;
+  iconActive: string;
+  component: React.ComponentType;
+}[] = [
+  { name: 'Diary', label: 'Diario', icon: 'book-outline', iconActive: 'book', component: DiaryScreen },
+  { name: 'Search', label: 'Buscar', icon: 'search-outline', iconActive: 'search', component: SearchScreen },
+  { name: 'Dashboard', label: 'Resumen', icon: 'bar-chart-outline', iconActive: 'bar-chart', component: DashboardScreen },
+  { name: 'Progress', label: 'Progreso', icon: 'trending-up-outline', iconActive: 'trending-up', component: ProgressScreen },
+  { name: 'Profile', label: 'Perfil', icon: 'person-outline', iconActive: 'person', component: ProfileScreen },
 ];
 
 function MainTabs() {
@@ -48,15 +56,19 @@ function MainTabs() {
         lazy: true,
       }}
     >
-      {TAB_CONFIG.map(({ name, label, icon, component }) => (
+      {TAB_CONFIG.map((item) => (
         <Tabs.Screen
-          key={name}
-          name={name}
-          component={component}
+          key={item.name}
+          name={item.name}
+          component={item.component}
           options={{
-            tabBarLabel: label,
-            tabBarIcon: ({ focused }) => (
-              <Text style={{ fontSize: 18, opacity: focused ? 1 : 0.5 }}>{icon}</Text>
+            tabBarLabel: item.label,
+            tabBarIcon: ({ focused, color }) => (
+              <Ionicons
+                name={(focused ? item.iconActive : item.icon) as any}
+                size={22}
+                color={color}
+              />
             ),
           }}
         />
@@ -64,8 +76,6 @@ function MainTabs() {
     </Tabs.Navigator>
   );
 }
-
-import type { LinkingOptions } from '@react-navigation/native';
 
 const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [Linking.createURL('/'), 'https://vegantrack.app'],

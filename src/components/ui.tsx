@@ -25,6 +25,11 @@ export function Card({ children, style }: { children: React.ReactNode; style?: S
           borderWidth: 1,
           borderRadius: radii.xl,
           padding: spacing.lg,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: t.dark ? 0 : 0.06,
+          shadowRadius: 3,
+          elevation: t.dark ? 0 : 2,
         },
         style,
       ]}
@@ -210,6 +215,36 @@ export function Pill({ text, color = brand[600], bg }: { text: string; color?: s
     >
       <Text style={{ color, fontSize: 11, fontWeight: '700' }}>{text}</Text>
     </View>
+  );
+}
+
+export function IconButton({
+  onPress,
+  children,
+  style,
+}: {
+  onPress: () => void;
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        {
+          padding: 10,
+          borderRadius: radii.md,
+          backgroundColor: pressed ? t.separator : 'transparent',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        style,
+      ]}
+      hitSlop={6}
+    >
+      {children}
+    </Pressable>
   );
 }
 
