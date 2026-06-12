@@ -7,8 +7,9 @@ import { Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input, Pill, SectionHeader } from '@/components/ui';
-import { radii, spacing, useTheme } from '@/theme';
+import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
@@ -39,6 +40,85 @@ const GOAL_LABELS: Record<Goal, string> = {
   bulk: 'Ganar masa',
 };
 
+/** A reusable row inside a Card — 52px tall with icon, label+subtitle, and optional right element. */
+function MenuRow({
+  iconName,
+  label,
+  subtitle,
+  badge,
+  onPress,
+  iconBg,
+  iconColor,
+  danger,
+}: {
+  iconName: string;
+  label: string;
+  subtitle?: string;
+  badge?: number;
+  onPress: () => void;
+  iconBg?: string;
+  iconColor?: string;
+  danger?: boolean;
+}) {
+  const t = useTheme();
+  const bg = iconBg ?? t.primarySoft;
+  const ic = iconColor ?? t.primary;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        height: 52,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 10,
+          backgroundColor: bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Ionicons name={iconName as any} size={17} color={ic} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={{
+            fontWeight: '700',
+            fontSize: 15,
+            color: danger ? semantic.danger : t.text,
+          }}
+        >
+          {label}
+        </Text>
+        {subtitle ? (
+          <Text style={{ fontSize: 12, color: t.textMuted }}>{subtitle}</Text>
+        ) : null}
+      </View>
+      {badge !== undefined && badge > 0 ? (
+        <View
+          style={{
+            backgroundColor: t.primarySoft,
+            borderRadius: radii.pill,
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+          }}
+        >
+          <Text style={{ color: t.primary, fontSize: 11, fontWeight: '700' }}>{badge}</Text>
+        </View>
+      ) : null}
+      {!danger ? (
+        <Ionicons name={'chevron-forward' as any} size={16} color={t.textMuted} />
+      ) : null}
+    </Pressable>
+  );
+}
+
 export function ProfileScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -67,7 +147,11 @@ export function ProfileScreen() {
     if (enabled) {
       const ok = await scheduleDailyReminder(DEFAULT_REMINDER_HOUR);
       if (ok) setReminderHour(DEFAULT_REMINDER_HOUR);
-      else Alert.alert('Permiso denegado', 'Activa las notificaciones de VeganTrack en Ajustes de Android.');
+      else
+        Alert.alert(
+          'Permiso denegado',
+          'Activa las notificaciones de VeganTrack en Ajustes de Android.'
+        );
     } else {
       await cancelDailyReminder();
       setReminderHour(null);
@@ -90,91 +174,272 @@ export function ProfileScreen() {
   };
 
   const openProCheckout = () => {
-    // El checkout de Stripe vive en la web (mismas APIs Vercel que la PWA)
     void Linking.openURL(`${WEB_BASE_URL}/?upgrade=pro`);
   };
+
+  // Avatar initials
+  const displayName = profile?.display_name ?? '';
+  const email = user?.email ?? '';
+  const initials = displayName
+    ? displayName[0].toUpperCase()
+    : email
+    ? email[0].toUpperCase()
+    : '?';
+
+  const macroChips = [
+    { label: 'KCAL', value: profile?.calorie_target, leftColor: semantic.success },
+    { label: 'PROT', value: profile?.protein_target_g ? `${profile.protein_target_g}g` : null, leftColor: semantic.protein },
+    { label: 'CARBS', value: profile?.carbs_target_g ? `${profile.carbs_target_g}g` : null, leftColor: semantic.carbs },
+    { label: 'GRASAS', value: profile?.fat_target_g ? `${profile.fat_target_g}g` : null, leftColor: '#a855f7' },
+  ];
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: t.background }}
-      contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md, gap: spacing.lg, paddingBottom: spacing.xxl }}
+      contentContainerStyle={{
+        paddingHorizontal: spacing.lg,
+        paddingTop: insets.top + spacing.md,
+        gap: spacing.lg,
+        paddingBottom: spacing.xxl,
+      }}
     >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>Perfil</Text>
-        {isPro ? <Pill text="PRO ⭐" color="#f59e0b" /> : null}
-      </View>
+      <Text style={{ fontSize: 26, fontWeight: '800', color: t.text }}>Perfil</Text>
 
-      {/* Datos y objetivos */}
-      <Card style={{ gap: spacing.sm }}>
-        <SectionHeader
-          title={profile?.display_name ?? 'Sin nombre'}
-          right={
-            <Pressable onPress={() => setEditing(true)} hitSlop={8}>
-              <Text style={{ color: t.primary, fontWeight: '700' }}>Editar</Text>
-            </Pressable>
-          }
-        />
-        <Text style={{ color: t.textSecondary, fontSize: 13 }}>
-          {profile?.height_cm ?? '—'} cm · {profile?.weight_kg ?? '—'} kg ·{' '}
-          {profile?.activity_level ? ACTIVITY_LABELS[profile.activity_level] : '—'} ·{' '}
-          {profile?.goal ? GOAL_LABELS[profile.goal] : '—'}
-        </Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm }}>
-          {[
-            { label: 'kcal', value: profile?.calorie_target },
-            { label: 'Proteína', value: profile?.protein_target_g ? `${profile.protein_target_g} g` : null },
-            { label: 'Carbos', value: profile?.carbs_target_g ? `${profile.carbs_target_g} g` : null },
-            { label: 'Grasas', value: profile?.fat_target_g ? `${profile.fat_target_g} g` : null },
-          ].map(({ label, value }) => (
-            <View key={label} style={{ alignItems: 'center' }}>
-              <Text style={{ color: t.text, fontWeight: '800', fontSize: 16 }}>{value ?? '—'}</Text>
-              <Text style={{ color: t.textMuted, fontSize: 11 }}>{label}</Text>
+      {/* Avatar header card */}
+      <Card>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          {/* Avatar circle */}
+          <View
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: t.primarySoft,
+              borderWidth: 2,
+              borderColor: t.primary,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 22, fontWeight: '800', color: t.primary }}>{initials}</Text>
+          </View>
+          {/* Name + email */}
+          <View style={{ flex: 1, gap: 2 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: t.text }}>
+                {displayName || 'Sin nombre'}
+              </Text>
+              {isPro ? <Pill text="PRO ⭐" color="#f59e0b" /> : null}
             </View>
-          ))}
+            {email ? (
+              <Text style={{ fontSize: 13, color: t.textMuted }}>{email}</Text>
+            ) : null}
+            <Pressable onPress={() => setEditing(true)} hitSlop={8}>
+              <Text style={{ fontSize: 13, color: t.primary, fontWeight: '700', marginTop: 2 }}>
+                Editar perfil
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </Card>
 
-      {/* Accesos */}
-      <Card style={{ gap: spacing.md }}>
-        <Pressable onPress={() => navigation.navigate('Recipes')} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ color: t.text, fontWeight: '600' }}>🍲 Mis recetas</Text>
-          <Text style={{ color: t.textMuted }}>›</Text>
-        </Pressable>
-        <Pressable onPress={() => setShowSupplements(true)} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ color: t.text, fontWeight: '600' }}>💊 Suplementos ({supplementStore.supplements.length})</Text>
-          <Text style={{ color: t.textMuted }}>›</Text>
-        </Pressable>
-        <Pressable onPress={() => setShowCustomFood(true)} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ color: t.text, fontWeight: '600' }}>⭐ Mis alimentos ({customFoods.customFoods.length})</Text>
-          <Text style={{ color: t.textMuted }}>›</Text>
-        </Pressable>
-      </Card>
+      {/* Targets macro chips */}
+      <View>
+        <Text
+          style={{
+            fontSize: 11,
+            fontWeight: '700',
+            letterSpacing: 0.8,
+            color: t.textMuted,
+            textTransform: 'uppercase',
+            marginBottom: spacing.sm,
+          }}
+        >
+          Objetivos diarios
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+          {macroChips.map(({ label, value, leftColor }) => (
+            <View
+              key={label}
+              style={{
+                flex: 1,
+                minWidth: '48%',
+                backgroundColor: t.card,
+                borderRadius: radii.lg,
+                borderWidth: 1,
+                borderColor: t.cardBorder,
+                borderLeftWidth: 3,
+                borderLeftColor: leftColor,
+                padding: spacing.md,
+              }}
+            >
+              <Text style={{ fontSize: 18, fontWeight: '800', color: t.text }}>
+                {value ?? '—'}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  letterSpacing: 0.8,
+                  color: t.textMuted,
+                  textTransform: 'uppercase',
+                  marginTop: 2,
+                }}
+              >
+                {label}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Tools section */}
+      <View>
+        <Text
+          style={{
+            fontSize: 11,
+            fontWeight: '700',
+            letterSpacing: 0.8,
+            color: t.textMuted,
+            textTransform: 'uppercase',
+            marginBottom: spacing.sm,
+          }}
+        >
+          Herramientas
+        </Text>
+        <Card style={{ gap: 0, padding: 0, paddingHorizontal: spacing.lg }}>
+          <MenuRow
+            iconName="restaurant-outline"
+            label="Mis recetas"
+            badge={undefined}
+            onPress={() => navigation.navigate('Recipes')}
+          />
+          <View style={{ height: 1, backgroundColor: t.separator }} />
+          <MenuRow
+            iconName="fitness-outline"
+            label="Suplementos"
+            badge={supplementStore.supplements.length}
+            onPress={() => setShowSupplements(true)}
+          />
+          <View style={{ height: 1, backgroundColor: t.separator }} />
+          <MenuRow
+            iconName="star-outline"
+            label="Mis alimentos"
+            badge={customFoods.customFoods.length}
+            onPress={() => setShowCustomFood(true)}
+          />
+        </Card>
+      </View>
 
       {/* Recordatorio */}
       <Card style={{ gap: spacing.md }}>
-        <SectionHeader
-          title="🔔 Recordatorio diario"
-          right={<Switch value={reminderHour !== null} onValueChange={(v) => void toggleReminder(v)} trackColor={{ true: t.primary }} />}
-        />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <View
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                backgroundColor: '#fef3c7',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name={'notifications-outline' as any} size={17} color="#f59e0b" />
+            </View>
+            <Text style={{ fontWeight: '700', fontSize: 15, color: t.text }}>Recordatorio diario</Text>
+          </View>
+          <Switch
+            value={reminderHour !== null}
+            onValueChange={(v) => void toggleReminder(v)}
+            trackColor={{ true: t.primary }}
+          />
+        </View>
         {reminderHour !== null && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xl }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.xl,
+            }}
+          >
             <Pressable onPress={() => changeReminderHour(-1)} hitSlop={12}>
-              <Text style={{ color: t.primary, fontSize: 24, fontWeight: '800' }}>−</Text>
+              <Text style={{ color: t.primary, fontSize: 28, fontWeight: '800' }}>−</Text>
             </Pressable>
-            <Text style={{ color: t.text, fontSize: 18, fontWeight: '700' }}>
+            <Text style={{ color: t.text, fontSize: 32, fontWeight: '800', letterSpacing: 2 }}>
               {String(reminderHour).padStart(2, '0')}:00
             </Text>
             <Pressable onPress={() => changeReminderHour(1)} hitSlop={12}>
-              <Text style={{ color: t.primary, fontSize: 24, fontWeight: '800' }}>＋</Text>
+              <Text style={{ color: t.primary, fontSize: 28, fontWeight: '800' }}>＋</Text>
             </Pressable>
           </View>
         )}
       </Card>
 
-      {/* Export + Pro */}
-      <Button title={exporting ? 'Exportando…' : '📄 Exportar diario (CSV)'} variant="secondary" onPress={onExport} loading={exporting} />
-      {!isPro && <Button title="⭐ Hazte Pro — historial y recetas ilimitados" onPress={openProCheckout} />}
-      <Button title="Cerrar sesión" variant="danger" onPress={() => void signOut()} />
+      {/* Account section */}
+      <View>
+        <Text
+          style={{
+            fontSize: 11,
+            fontWeight: '700',
+            letterSpacing: 0.8,
+            color: t.textMuted,
+            textTransform: 'uppercase',
+            marginBottom: spacing.sm,
+          }}
+        >
+          Cuenta
+        </Text>
+        <Card style={{ gap: 0, padding: 0, paddingHorizontal: spacing.lg }}>
+          <MenuRow
+            iconName="document-text-outline"
+            label="Exportar diario CSV"
+            onPress={onExport}
+          />
+          {!isPro && (
+            <>
+              <View style={{ height: 1, backgroundColor: t.separator }} />
+              <Pressable
+                onPress={openProCheckout}
+                style={({ pressed }) => ({
+                  marginVertical: spacing.sm,
+                  borderRadius: radii.lg,
+                  backgroundColor: '#f0fdf4',
+                  borderWidth: 1,
+                  borderColor: semantic.success,
+                  padding: spacing.md,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.md,
+                  opacity: pressed ? 0.8 : 1,
+                })}
+              >
+                <Text style={{ fontSize: 20 }}>👑</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '800', fontSize: 14, color: semantic.success }}>
+                    Desbloquea Pro
+                  </Text>
+                  <Text style={{ fontSize: 12, color: t.textMuted }}>
+                    Historial y recetas ilimitados
+                  </Text>
+                </View>
+                <Ionicons name={'arrow-forward' as any} size={18} color={semantic.success} />
+              </Pressable>
+              <View style={{ height: 1, backgroundColor: t.separator }} />
+            </>
+          )}
+          {isPro && <View style={{ height: 1, backgroundColor: t.separator }} />}
+          <MenuRow
+            iconName="log-out-outline"
+            label="Cerrar sesión"
+            onPress={() => void signOut()}
+            iconBg="#fee2e2"
+            iconColor={semantic.danger}
+            danger
+          />
+        </Card>
+      </View>
 
       {editing && <EditProfileModal onClose={() => setEditing(false)} />}
       {showSupplements && <SupplementsModal onClose={() => setShowSupplements(false)} />}
@@ -183,8 +448,47 @@ export function ProfileScreen() {
   );
 }
 
+function OptionRow({
+  selected,
+  label,
+  icon,
+  onPress,
+}: {
+  selected: boolean;
+  label: string;
+  icon?: string;
+  onPress: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        borderWidth: 1.5,
+        borderColor: selected ? t.primary : t.cardBorder,
+        backgroundColor: selected ? t.primarySoft : t.card,
+        borderRadius: radii.md,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+      }}
+    >
+      {icon ? <Text style={{ fontSize: 16 }}>{icon}</Text> : null}
+      <Text style={{ flex: 1, fontWeight: '600', fontSize: 13, color: selected ? t.primary : t.text }}>
+        {label}
+      </Text>
+      {selected ? (
+        <Ionicons name={'checkmark-circle' as any} size={16} color={t.primary} />
+      ) : null}
+    </Pressable>
+  );
+}
+
 function EditProfileModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const { profile, updateProfile } = useAuthStore();
   const [height, setHeight] = useState(profile?.height_cm ? String(profile.height_cm) : '');
   const [weight, setWeight] = useState(profile?.weight_kg ? String(profile.weight_kg) : '');
@@ -226,63 +530,107 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <ScrollView
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
-        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: spacing.xl }}
-        keyboardShouldPersistTaps="handled"
+      <Pressable
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+        onPress={onClose}
       >
-        <Card style={{ gap: spacing.md }}>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: t.text }}>Editar perfil</Text>
-          <Input label="Nombre" value={name} onChangeText={setName} />
-          <Input label="Altura (cm)" value={height} onChangeText={setHeight} keyboardType="numeric" />
-          <Input label="Peso (kg)" value={weight} onChangeText={setWeight} keyboardType="numeric" />
-          <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Actividad</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-            {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map((a) => (
-              <Pressable
-                key={a}
-                onPress={() => setActivity(a)}
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: radii.pill,
-                  borderWidth: 2,
-                  borderColor: activity === a ? t.primary : t.cardBorder,
-                }}
-              >
-                <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }}>{ACTIVITY_LABELS[a]}</Text>
-              </Pressable>
-            ))}
+        <Pressable onPress={() => undefined}>
+          <View
+            style={{
+              backgroundColor: t.card,
+              borderTopLeftRadius: radii.xl,
+              borderTopRightRadius: radii.xl,
+              paddingBottom: insets.bottom + spacing.lg,
+              borderWidth: 1,
+              borderColor: t.cardBorder,
+            }}
+          >
+            {/* Drag handle */}
+            <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
+              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
+            </View>
+
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: spacing.lg, padding: spacing.lg, paddingTop: spacing.sm }}
+            >
+              <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>Editar perfil</Text>
+
+              <Input label="Nombre" value={name} onChangeText={setName} />
+              <Input
+                label="Altura (cm)"
+                value={height}
+                onChangeText={setHeight}
+                keyboardType="numeric"
+              />
+              <Input
+                label="Peso (kg)"
+                value={weight}
+                onChangeText={setWeight}
+                keyboardType="numeric"
+              />
+
+              <View style={{ gap: spacing.sm }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    letterSpacing: 0.8,
+                    color: t.textMuted,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Actividad
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+                  {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map((a) => (
+                    <OptionRow
+                      key={a}
+                      selected={activity === a}
+                      label={ACTIVITY_LABELS[a]}
+                      onPress={() => setActivity(a)}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View style={{ gap: spacing.sm }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    letterSpacing: 0.8,
+                    color: t.textMuted,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Objetivo
+                </Text>
+                <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+                  {(Object.keys(GOAL_LABELS) as Goal[]).map((g) => (
+                    <OptionRow
+                      key={g}
+                      selected={goal === g}
+                      label={GOAL_LABELS[g]}
+                      onPress={() => setGoal(g)}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <Button title="Guardar (recalcula objetivos)" onPress={save} loading={saving} />
+              <Button title="Cancelar" variant="secondary" onPress={onClose} />
+            </ScrollView>
           </View>
-          <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Objetivo</Text>
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            {(Object.keys(GOAL_LABELS) as Goal[]).map((g) => (
-              <Pressable
-                key={g}
-                onPress={() => setGoal(g)}
-                style={{
-                  flex: 1,
-                  alignItems: 'center',
-                  paddingVertical: 8,
-                  borderRadius: radii.pill,
-                  borderWidth: 2,
-                  borderColor: goal === g ? t.primary : t.cardBorder,
-                }}
-              >
-                <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }}>{GOAL_LABELS[g]}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Button title="Guardar (recalcula objetivos)" onPress={save} loading={saving} />
-          <Button title="Cancelar" variant="secondary" onPress={onClose} />
-        </Card>
-      </ScrollView>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
 
 function SupplementsModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const store = useSupplementStore();
   const { isPro } = usePro();
@@ -290,7 +638,10 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
   const addPreset = async (presetIndex: number) => {
     if (!user) return;
     if (!isPro && store.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
-      Alert.alert('Límite alcanzado', `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos.`);
+      Alert.alert(
+        'Límite alcanzado',
+        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos.`
+      );
       return;
     }
     const p = SUPPLEMENT_PRESETS[presetIndex];
@@ -306,52 +657,155 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}>
-        <Card style={{ gap: spacing.md, maxHeight: '85%', borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }}>
-          <SectionHeader
-            title="💊 Suplementos"
-            right={
+      <Pressable
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+        onPress={onClose}
+      >
+        <Pressable onPress={() => undefined}>
+          <View
+            style={{
+              backgroundColor: t.card,
+              borderTopLeftRadius: radii.xl,
+              borderTopRightRadius: radii.xl,
+              maxHeight: '85%',
+              borderWidth: 1,
+              borderColor: t.cardBorder,
+              paddingBottom: insets.bottom + spacing.lg,
+            }}
+          >
+            {/* Drag handle */}
+            <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
+              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
+            </View>
+
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: spacing.lg,
+                marginBottom: spacing.md,
+              }}
+            >
+              <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>💊 Suplementos</Text>
               <Pressable onPress={onClose} hitSlop={8}>
                 <Text style={{ color: t.primary, fontWeight: '700' }}>Cerrar</Text>
               </Pressable>
-            }
-          />
-          <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ gap: spacing.sm }}>
-            {store.supplements.map((s) => (
-              <Pressable
-                key={s.id}
-                onLongPress={() =>
-                  Alert.alert('Eliminar', `¿Eliminar "${s.name}"?`, [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Eliminar', style: 'destructive', onPress: () => void store.deleteSupplement(s.id) },
-                  ])
-                }
-                style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}
+            </View>
+
+            <ScrollView
+              style={{ maxHeight: 480 }}
+              contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: 0 }}
+            >
+              {store.supplements.length > 0 && (
+                <View>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: '700',
+                      letterSpacing: 0.8,
+                      color: t.textMuted,
+                      textTransform: 'uppercase',
+                      marginBottom: spacing.sm,
+                    }}
+                  >
+                    Mis suplementos
+                  </Text>
+                  {store.supplements.map((s) => (
+                    <Pressable
+                      key={s.id}
+                      onLongPress={() =>
+                        Alert.alert('Eliminar', `¿Eliminar "${s.name}"?`, [
+                          { text: 'Cancelar', style: 'cancel' },
+                          {
+                            text: 'Eliminar',
+                            style: 'destructive',
+                            onPress: () => void store.deleteSupplement(s.id),
+                          },
+                        ])
+                      }
+                      style={{
+                        height: 52,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: spacing.md,
+                        borderBottomWidth: 1,
+                        borderBottomColor: t.separator,
+                      }}
+                    >
+                      <Text style={{ fontSize: 18 }}>{s.emoji ?? '💊'}</Text>
+                      <Text style={{ flex: 1, color: t.text, fontWeight: '600', fontSize: 15 }}>
+                        {s.name}
+                      </Text>
+                      <Text style={{ color: t.textMuted, fontSize: 13 }}>
+                        {s.dose_amount} {s.dose_unit}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  letterSpacing: 0.8,
+                  color: t.textMuted,
+                  textTransform: 'uppercase',
+                  marginTop: spacing.lg,
+                  marginBottom: spacing.sm,
+                }}
               >
-                <Text style={{ color: t.text, fontWeight: '600' }}>
-                  {s.emoji ? `${s.emoji} ` : ''}{s.name}
-                </Text>
-                <Text style={{ color: t.textMuted }}>{s.dose_amount} {s.dose_unit}</Text>
-              </Pressable>
-            ))}
-            <Text style={{ color: t.textSecondary, fontWeight: '700', marginTop: spacing.sm }}>Añadir preset</Text>
-            {SUPPLEMENT_PRESETS.map((p, i) => (
-              <Pressable key={p.name} onPress={() => void addPreset(i)} style={{ paddingVertical: 6 }}>
-                <Text style={{ color: t.primary, fontWeight: '600' }}>
-                  ＋ {p.emoji} {p.name} ({p.dose_amount} {p.dose_unit})
-                </Text>
-              </Pressable>
-            ))}
-            <Text style={{ color: t.textMuted, fontSize: 11 }}>Mantén pulsado un suplemento para eliminarlo.</Text>
-          </ScrollView>
-        </Card>
-      </View>
+                Añadir preset
+              </Text>
+              {SUPPLEMENT_PRESETS.map((p, i) => (
+                <Pressable
+                  key={p.name}
+                  onPress={() => void addPreset(i)}
+                  style={({ pressed }) => ({
+                    height: 52,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: spacing.md,
+                    borderBottomWidth: 1,
+                    borderBottomColor: t.separator,
+                    opacity: pressed ? 0.7 : 1,
+                  })}
+                >
+                  <View
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 10,
+                      backgroundColor: t.primarySoft,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name={'add' as any} size={18} color={t.primary} />
+                  </View>
+                  <Text style={{ flex: 1, color: t.text, fontWeight: '600', fontSize: 15 }}>
+                    {p.emoji} {p.name}
+                  </Text>
+                  <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                    {p.dose_amount} {p.dose_unit}
+                  </Text>
+                </Pressable>
+              ))}
+              <Text style={{ color: t.textMuted, fontSize: 11, marginTop: spacing.md, marginBottom: spacing.sm }}>
+                Mantén pulsado un suplemento para eliminarlo.
+              </Text>
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
 
 function CustomFoodModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const store = useCustomFoodStore();
   const [name, setName] = useState('');
@@ -387,53 +841,163 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
     });
     if (error) Alert.alert('Error', error);
     else {
-      setName(''); setKcal(''); setProtein(''); setCarbs(''); setFat(''); setFiber('');
+      setName('');
+      setKcal('');
+      setProtein('');
+      setCarbs('');
+      setFat('');
+      setFiber('');
     }
   };
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}>
-        <Card style={{ gap: spacing.md, maxHeight: '85%', borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }}>
-          <SectionHeader
-            title="⭐ Mis alimentos"
-            right={
+      <Pressable
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
+        onPress={onClose}
+      >
+        <Pressable onPress={() => undefined}>
+          <View
+            style={{
+              backgroundColor: t.card,
+              borderTopLeftRadius: radii.xl,
+              borderTopRightRadius: radii.xl,
+              maxHeight: '90%',
+              borderWidth: 1,
+              borderColor: t.cardBorder,
+              paddingBottom: insets.bottom + spacing.lg,
+            }}
+          >
+            {/* Drag handle */}
+            <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
+              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
+            </View>
+
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: spacing.lg,
+                marginBottom: spacing.md,
+              }}
+            >
+              <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>⭐ Mis alimentos</Text>
               <Pressable onPress={onClose} hitSlop={8}>
                 <Text style={{ color: t.primary, fontWeight: '700' }}>Cerrar</Text>
               </Pressable>
-            }
-          />
-          <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ gap: spacing.sm }} keyboardShouldPersistTaps="handled">
-            {store.customFoods.map((f) => (
-              <Pressable
-                key={f.id}
-                onLongPress={() =>
-                  Alert.alert('Eliminar', `¿Eliminar "${f.name}"?`, [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Eliminar', style: 'destructive', onPress: () => void store.deleteCustomFood(f.id) },
-                  ])
-                }
-                style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}
+            </View>
+
+            <ScrollView
+              style={{ maxHeight: 520 }}
+              contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {store.customFoods.length > 0 && (
+                <View>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: '700',
+                      letterSpacing: 0.8,
+                      color: t.textMuted,
+                      textTransform: 'uppercase',
+                      marginBottom: spacing.sm,
+                    }}
+                  >
+                    Mis alimentos
+                  </Text>
+                  {store.customFoods.map((f) => (
+                    <Pressable
+                      key={f.id}
+                      onLongPress={() =>
+                        Alert.alert('Eliminar', `¿Eliminar "${f.name}"?`, [
+                          { text: 'Cancelar', style: 'cancel' },
+                          {
+                            text: 'Eliminar',
+                            style: 'destructive',
+                            onPress: () => void store.deleteCustomFood(f.id),
+                          },
+                        ])
+                      }
+                      style={{
+                        height: 52,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: spacing.md,
+                        borderBottomWidth: 1,
+                        borderBottomColor: t.separator,
+                      }}
+                    >
+                      <Text style={{ flex: 1, color: t.text, fontWeight: '600', fontSize: 15 }}>
+                        {f.name}
+                      </Text>
+                      <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                        {f.calories_per_100g} kcal/100g
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  letterSpacing: 0.8,
+                  color: t.textMuted,
+                  textTransform: 'uppercase',
+                  marginTop: spacing.lg,
+                  marginBottom: spacing.sm,
+                }}
               >
-                <Text style={{ color: t.text, fontWeight: '600' }}>{f.name}</Text>
-                <Text style={{ color: t.textMuted }}>{f.calories_per_100g} kcal/100g</Text>
-              </Pressable>
-            ))}
-            <Text style={{ color: t.textSecondary, fontWeight: '700', marginTop: spacing.sm }}>Crear (valores por 100 g)</Text>
-            <Input label="Nombre" value={name} onChangeText={setName} placeholder="Mi tempeh casero" />
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              <View style={{ flex: 1 }}><Input label="kcal" value={kcal} onChangeText={setKcal} keyboardType="numeric" /></View>
-              <View style={{ flex: 1 }}><Input label="Prot." value={protein} onChangeText={setProtein} keyboardType="numeric" /></View>
-              <View style={{ flex: 1 }}><Input label="Carb." value={carbs} onChangeText={setCarbs} keyboardType="numeric" /></View>
-            </View>
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              <View style={{ flex: 1 }}><Input label="Grasa" value={fat} onChangeText={setFat} keyboardType="numeric" /></View>
-              <View style={{ flex: 1 }}><Input label="Fibra" value={fiber} onChangeText={setFiber} keyboardType="numeric" /></View>
-            </View>
-            <Button title="Crear alimento" onPress={create} />
-          </ScrollView>
-        </Card>
-      </View>
+                Crear (valores por 100 g)
+              </Text>
+              <Input
+                label="Nombre"
+                value={name}
+                onChangeText={setName}
+                placeholder="Mi tempeh casero"
+              />
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <Input label="kcal" value={kcal} onChangeText={setKcal} keyboardType="numeric" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Input
+                    label="Prot."
+                    value={protein}
+                    onChangeText={setProtein}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Input
+                    label="Carb."
+                    value={carbs}
+                    onChangeText={setCarbs}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <Input label="Grasa" value={fat} onChangeText={setFat} keyboardType="numeric" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Input
+                    label="Fibra"
+                    value={fiber}
+                    onChangeText={setFiber}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+              <Button title="Crear alimento" onPress={create} />
+            </ScrollView>
+          </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }

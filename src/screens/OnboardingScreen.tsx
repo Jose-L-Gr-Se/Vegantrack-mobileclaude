@@ -2,41 +2,82 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input } from '@/components/ui';
 import { radii, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { calculateTargets } from '@/utils/nutrition';
 import type { ActivityLevel, Goal, Sex } from '@/types';
 
-const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; desc: string }[] = [
-  { value: 'sedentary', label: 'Sedentario', desc: 'Sin ejercicio' },
-  { value: 'light', label: 'Ligero', desc: '1-2 días/semana' },
-  { value: 'moderate', label: 'Moderado', desc: '3-4 días/semana' },
-  { value: 'active', label: 'Activo', desc: '5-6 días/semana' },
-  { value: 'very_active', label: 'Muy activo', desc: 'Ejercicio intenso diario' },
+const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; desc: string; icon: string }[] = [
+  { value: 'sedentary', label: 'Sedentario', desc: 'Sin ejercicio', icon: '🪑' },
+  { value: 'light', label: 'Ligero', desc: '1-2 días/semana', icon: '🚶' },
+  { value: 'moderate', label: 'Moderado', desc: '3-4 días/semana', icon: '🚴' },
+  { value: 'active', label: 'Activo', desc: '5-6 días/semana', icon: '🏋️' },
+  { value: 'very_active', label: 'Muy activo', desc: 'Ejercicio intenso diario', icon: '⚡' },
 ];
 
-const GOAL_OPTIONS: { value: Goal; label: string; desc: string }[] = [
-  { value: 'cut', label: 'Perder grasa', desc: 'Déficit de 500 kcal' },
-  { value: 'maintain', label: 'Mantener', desc: 'Calorías de mantenimiento' },
-  { value: 'bulk', label: 'Ganar masa', desc: 'Superávit de 300 kcal' },
+const GOAL_OPTIONS: { value: Goal; label: string; desc: string; icon: string }[] = [
+  { value: 'cut', label: 'Perder grasa', desc: 'Déficit de 500 kcal', icon: '🔥' },
+  { value: 'maintain', label: 'Mantener', desc: 'Calorías de mantenimiento', icon: '⚖️' },
+  { value: 'bulk', label: 'Ganar masa', desc: 'Superávit de 300 kcal', icon: '💪' },
 ];
 
-function OptionRow({ selected, label, desc, onPress }: { selected: boolean; label: string; desc: string; onPress: () => void }) {
+const STEP_META = [
+  {
+    title: 'Tu punto de partida',
+    subtitle: 'Calculamos tu metabolismo con la fórmula Mifflin-St Jeor',
+  },
+  {
+    title: 'Tu ritmo de vida',
+    subtitle: 'Ajustamos las calorías a tu actividad diaria',
+  },
+  {
+    title: 'Tu objetivo',
+    subtitle: 'Todo empieza con saber a dónde quieres llegar',
+  },
+];
+
+function OptionRow({
+  selected,
+  label,
+  desc,
+  icon,
+  onPress,
+}: {
+  selected: boolean;
+  label: string;
+  desc: string;
+  icon?: string;
+  onPress: () => void;
+}) {
   const t = useTheme();
   return (
     <Pressable
       onPress={onPress}
       style={{
-        borderWidth: 2,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.md,
+        borderWidth: 1.5,
         borderColor: selected ? t.primary : t.cardBorder,
         backgroundColor: selected ? t.primarySoft : t.card,
         borderRadius: radii.lg,
         padding: spacing.lg,
       }}
     >
-      <Text style={{ fontWeight: '700', color: t.text }}>{label}</Text>
-      <Text style={{ color: t.textMuted, fontSize: 13 }}>{desc}</Text>
+      {icon ? <Text style={{ fontSize: 20 }}>{icon}</Text> : null}
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontWeight: '700', color: selected ? t.primary : t.text, fontSize: 15 }}>
+          {label}
+        </Text>
+        {desc ? (
+          <Text style={{ color: t.textMuted, fontSize: 13, marginTop: 2 }}>{desc}</Text>
+        ) : null}
+      </View>
+      {selected ? (
+        <Ionicons name={'checkmark-circle' as any} size={20} color={t.primary} />
+      ) : null}
     </Pressable>
   );
 }
@@ -57,7 +98,10 @@ export function OnboardingScreen() {
   const [saving, setSaving] = useState(false);
 
   const step1Valid =
-    height.trim() !== '' && weight.trim() !== '' && /^\d{4}-\d{2}-\d{2}$/.test(birthDate) && sex !== null;
+    height.trim() !== '' &&
+    weight.trim() !== '' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(birthDate) &&
+    sex !== null;
 
   const finish = async () => {
     setSaving(true);
@@ -88,66 +132,187 @@ export function OnboardingScreen() {
     if (err) setError(err);
   };
 
+  const meta = STEP_META[step - 1];
+
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: t.background }}
-      contentContainerStyle={{ padding: spacing.xl, paddingTop: insets.top + spacing.xl, gap: spacing.lg }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={{ fontSize: 24, fontWeight: '800', color: t.text }}>
-        Configura tu perfil ({step}/3)
-      </Text>
+    <View style={{ flex: 1, backgroundColor: t.background }}>
+      {/* Branding bar */}
+      <View
+        style={{
+          paddingTop: insets.top + spacing.md,
+          paddingBottom: spacing.md,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 14, fontWeight: '700', color: t.textMuted, letterSpacing: 0.3 }}>
+          🌱 VeganTrack
+        </Text>
+      </View>
 
-      {step === 1 && (
-        <Card style={{ gap: spacing.lg }}>
-          <Input label="Nombre" value={name} onChangeText={setName} placeholder="¿Cómo te llamas?" />
-          <Input label="Altura (cm)" value={height} onChangeText={setHeight} keyboardType="numeric" placeholder="170" />
-          <Input label="Peso (kg)" value={weight} onChangeText={setWeight} keyboardType="numeric" placeholder="65" />
-          <Input label="Fecha de nacimiento (AAAA-MM-DD)" value={birthDate} onChangeText={setBirthDate} placeholder="1992-12-05" />
-          <View style={{ flexDirection: 'row', gap: spacing.md }}>
-            <View style={{ flex: 1 }}>
-              <OptionRow selected={sex === 'male'} label="Hombre" desc="" onPress={() => setSex('male')} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <OptionRow selected={sex === 'female'} label="Mujer" desc="" onPress={() => setSex('female')} />
-            </View>
-          </View>
-          <Button title="Siguiente" onPress={() => setStep(2)} disabled={!step1Valid} />
-        </Card>
-      )}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: spacing.xl,
+          paddingBottom: insets.bottom + spacing.xxl,
+          gap: spacing.lg,
+        }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Step indicator dots */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, justifyContent: 'center' }}>
+          {[1, 2, 3].map((s) =>
+            s === step ? (
+              <View
+                key={s}
+                style={{
+                  width: 24,
+                  height: 8,
+                  borderRadius: radii.pill,
+                  backgroundColor: t.primary,
+                }}
+              />
+            ) : (
+              <View
+                key={s}
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: radii.pill,
+                  backgroundColor: t.separator,
+                }}
+              />
+            )
+          )}
+        </View>
 
-      {step === 2 && (
-        <Card style={{ gap: spacing.md }}>
-          {ACTIVITY_OPTIONS.map((o) => (
-            <OptionRow
-              key={o.value}
-              selected={activity === o.value}
-              label={o.label}
-              desc={o.desc}
-              onPress={() => setActivity(o.value)}
+        {/* Step title + subtitle (outside the card) */}
+        <View style={{ gap: spacing.xs }}>
+          <Text style={{ fontSize: 26, fontWeight: '800', color: t.text }}>{meta.title}</Text>
+          <Text style={{ fontSize: 14, color: t.textMuted, lineHeight: 20 }}>{meta.subtitle}</Text>
+        </View>
+
+        {/* Step 1: datos básicos */}
+        {step === 1 && (
+          <Card style={{ gap: spacing.lg }}>
+            <Input
+              label="Nombre"
+              value={name}
+              onChangeText={setName}
+              placeholder="¿Cómo te llamas?"
             />
-          ))}
-          <Button title="Siguiente" onPress={() => setStep(3)} />
-          <Button title="Atrás" variant="secondary" onPress={() => setStep(1)} />
-        </Card>
-      )}
-
-      {step === 3 && (
-        <Card style={{ gap: spacing.md }}>
-          {GOAL_OPTIONS.map((o) => (
-            <OptionRow
-              key={o.value}
-              selected={goal === o.value}
-              label={o.label}
-              desc={o.desc}
-              onPress={() => setGoal(o.value)}
+            <Input
+              label="Altura (cm)"
+              value={height}
+              onChangeText={setHeight}
+              keyboardType="numeric"
+              placeholder="170"
             />
-          ))}
-          {error ? <Text style={{ color: '#ef4444', fontSize: 13 }}>{error}</Text> : null}
-          <Button title="Calcular objetivos y empezar" onPress={finish} loading={saving} />
-          <Button title="Atrás" variant="secondary" onPress={() => setStep(2)} />
-        </Card>
-      )}
-    </ScrollView>
+            <Input
+              label="Peso (kg)"
+              value={weight}
+              onChangeText={setWeight}
+              keyboardType="numeric"
+              placeholder="65"
+            />
+            <Input
+              label="Fecha de nacimiento (AAAA-MM-DD)"
+              value={birthDate}
+              onChangeText={setBirthDate}
+              placeholder="1992-12-05"
+            />
+            <View style={{ gap: spacing.sm }}>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  letterSpacing: 0.8,
+                  color: t.textMuted,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Sexo biológico
+              </Text>
+              <OptionRow
+                selected={sex === 'male'}
+                label="Hombre"
+                desc=""
+                icon="👨"
+                onPress={() => setSex('male')}
+              />
+              <OptionRow
+                selected={sex === 'female'}
+                label="Mujer"
+                desc=""
+                icon="👩"
+                onPress={() => setSex('female')}
+              />
+            </View>
+          </Card>
+        )}
+
+        {/* Step 2: actividad */}
+        {step === 2 && (
+          <Card style={{ gap: spacing.md }}>
+            {ACTIVITY_OPTIONS.map((o) => (
+              <OptionRow
+                key={o.value}
+                selected={activity === o.value}
+                label={o.label}
+                desc={o.desc}
+                icon={o.icon}
+                onPress={() => setActivity(o.value)}
+              />
+            ))}
+          </Card>
+        )}
+
+        {/* Step 3: objetivo */}
+        {step === 3 && (
+          <Card style={{ gap: spacing.md }}>
+            {GOAL_OPTIONS.map((o) => (
+              <OptionRow
+                key={o.value}
+                selected={goal === o.value}
+                label={o.label}
+                desc={o.desc}
+                icon={o.icon}
+                onPress={() => setGoal(o.value)}
+              />
+            ))}
+            {error ? (
+              <Text style={{ color: '#ef4444', fontSize: 13 }}>{error}</Text>
+            ) : null}
+          </Card>
+        )}
+
+        {/* Navigation buttons (outside the card) */}
+        <View style={{ gap: spacing.md }}>
+          {step === 1 && (
+            <Button
+              title="Siguiente →"
+              onPress={() => setStep(2)}
+              disabled={!step1Valid}
+            />
+          )}
+          {step === 2 && (
+            <>
+              <Button title="Siguiente →" onPress={() => setStep(3)} />
+              <Button title="Atrás" variant="secondary" onPress={() => setStep(1)} />
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <Button
+                title="Calcular objetivos ✓"
+                onPress={finish}
+                loading={saving}
+              />
+              <Button title="Atrás" variant="secondary" onPress={() => setStep(2)} />
+            </>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }

@@ -4,9 +4,14 @@ import { Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
-import { spacing, useTheme } from '@/theme';
+import { radii, spacing, useTheme } from '@/theme';
 import type { RootStackParamList } from '@/navigation/types';
+
+const CORNER_SIZE = 24;
+const CORNER_THICKNESS = 3;
+const CORNER_COLOR_LIGHT = '#16a34a'; // will use t.primary at runtime via inline style
 
 export function ScannerScreen() {
   const t = useTheme();
@@ -30,7 +35,15 @@ export function ScannerScreen() {
 
   if (!permission?.granted) {
     return (
-      <View style={{ flex: 1, backgroundColor: t.background, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: t.background,
+          justifyContent: 'center',
+          padding: spacing.xl,
+          gap: spacing.lg,
+        }}
+      >
         <Text style={{ color: t.text, textAlign: 'center', fontSize: 16 }}>
           VeganTrack necesita acceso a la cámara para escanear códigos de barras.
         </Text>
@@ -39,6 +52,8 @@ export function ScannerScreen() {
       </View>
     );
   }
+
+  const cornerColor = t.primary;
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -50,8 +65,117 @@ export function ScannerScreen() {
         }}
         onBarcodeScanned={scanned ? undefined : onBarcode}
       />
-      <View style={{ position: 'absolute', bottom: 40, left: 0, right: 0, paddingHorizontal: spacing.xl }}>
-        <Button title="Cancelar" variant="secondary" onPress={() => navigation.goBack()} />
+
+      {/* Viewfinder overlay */}
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {/* Semi-transparent surround */}
+        <View style={{ alignItems: 'center', gap: spacing.xl }}>
+          {/* Viewfinder frame with corner brackets */}
+          <View style={{ position: 'relative', width: 240, height: 160 }}>
+            {/* Top-left corner */}
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: CORNER_SIZE,
+                height: CORNER_SIZE,
+                borderTopWidth: CORNER_THICKNESS,
+                borderLeftWidth: CORNER_THICKNESS,
+                borderTopColor: cornerColor,
+                borderLeftColor: cornerColor,
+                borderTopLeftRadius: 4,
+              }}
+            />
+            {/* Top-right corner */}
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                width: CORNER_SIZE,
+                height: CORNER_SIZE,
+                borderTopWidth: CORNER_THICKNESS,
+                borderRightWidth: CORNER_THICKNESS,
+                borderTopColor: cornerColor,
+                borderRightColor: cornerColor,
+                borderTopRightRadius: 4,
+              }}
+            />
+            {/* Bottom-left corner */}
+            <View
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                width: CORNER_SIZE,
+                height: CORNER_SIZE,
+                borderBottomWidth: CORNER_THICKNESS,
+                borderLeftWidth: CORNER_THICKNESS,
+                borderBottomColor: cornerColor,
+                borderLeftColor: cornerColor,
+                borderBottomLeftRadius: 4,
+              }}
+            />
+            {/* Bottom-right corner */}
+            <View
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                right: 0,
+                width: CORNER_SIZE,
+                height: CORNER_SIZE,
+                borderBottomWidth: CORNER_THICKNESS,
+                borderRightWidth: CORNER_THICKNESS,
+                borderBottomColor: cornerColor,
+                borderRightColor: cornerColor,
+                borderBottomRightRadius: 4,
+              }}
+            />
+          </View>
+
+          {/* Instruction text */}
+          <Text
+            style={{
+              color: '#ffffff',
+              fontSize: 14,
+              textAlign: 'center',
+              fontWeight: '600',
+              textShadowColor: 'rgba(0,0,0,0.8)',
+              textShadowOffset: { width: 0, height: 1 },
+              textShadowRadius: 4,
+            }}
+          >
+            Apunta al código de barras del producto
+          </Text>
+        </View>
+      </View>
+
+      {/* Cancel button at bottom */}
+      <View
+        style={{
+          position: 'absolute',
+          bottom: 48,
+          left: spacing.xl,
+          right: spacing.xl,
+        }}
+      >
+        <Button
+          title="Cancelar"
+          variant="secondary"
+          onPress={() => navigation.goBack()}
+          style={{ flexDirection: 'row' }}
+        />
       </View>
     </View>
   );
