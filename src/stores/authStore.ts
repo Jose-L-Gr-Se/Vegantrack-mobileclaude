@@ -4,6 +4,8 @@
  */
 import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { kvGet, kvSet } from '@/db/database';
 import type { Profile } from '@/types';
@@ -16,6 +18,7 @@ interface AuthState {
   initialize: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   updateProfile: (patch: Partial<Profile>) => Promise<{ error: string | null }>;
@@ -60,6 +63,50 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) return { error: error.message };
     await get().fetchProfile();
     return { error: null };
+  },
+
+  signInWithGoogle: async () => {
+    try {
+      // El redirect vuelve a la app por el scheme vegantrack://
+      // En Supabase Dashboard → Auth → URL Configuration → Redirect URLs
+      // debes añadir:  vegantrack://auth/callback
+      const redirectTo = Linking.createURL('auth/callback');
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (error) return { error: error.message };
+      if (!data.url) return { error: 'No se pudo obtener la URL de autenticación' };
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        return { error: null }; // usuario canceló, sin error
+      }
+      if (result.type !== 'success') {
+        return { error: 'Autenticación cancelada' };
+      }
+
+      // Supabase devuelve los tokens en el fragmento (#) de la URL de retorno
+      const fragment = result.url.split('#')[1] ?? result.url.split('?')[1] ?? '';
+      const params = new URLSearchParams(fragment);
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token') ?? '';
+
+      if (!accessToken) return { error: 'No se recibieron credenciales de Google' };
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (sessionError) return { error: sessionError.message };
+
+      await get().fetchProfile();
+      return { error: null };
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
   },
 
   signOut: async () => {
