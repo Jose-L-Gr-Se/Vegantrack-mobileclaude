@@ -15,4 +15,5 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList>;
   Scanner: undefined;
   Recipes: undefined;
+  MicroTrends: undefined;
 };

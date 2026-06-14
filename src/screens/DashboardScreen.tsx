@@ -1,24 +1,37 @@
 /** Resumen: VeganScore con desglose, macros del día, micros vs RDA y gráfico 7 días. */
 import React, { useCallback, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline } from 'react-native-svg';
-import { Card, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
-import { fonts, semantic, spacing, useTheme } from '@/theme';
+import { Card, MacroBar, Pill, ProgressRing, SectionHeader } from '@/components/ui';
+import { ProModal } from '@/components/ProModal';
+import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type WeekDay } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
+import { usePro } from '@/hooks/usePro';
 import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
 import { ironRdaForSex, MICRO_RDA } from '@/utils/nutrition';
+import type { RootStackParamList } from '@/navigation/types';
 
 export function DashboardScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuthStore();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { isPro } = usePro();
   const diary = useDiaryStore();
   const supplementStore = useSupplementStore();
   const [weekData, setWeekData] = useState<WeekDay[]>([]);
+  const [showPro, setShowPro] = useState(false);
+
+  const openMicroTrends = () => {
+    if (isPro) navigation.navigate('MicroTrends');
+    else setShowPro(true);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -188,6 +201,42 @@ export function DashboardScreen() {
         </Text>
       </Card>
 
+      {/* Tendencias de micros (Pro) */}
+      <Pressable onPress={openMicroTrends}>
+        <Card
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.md,
+            backgroundColor: t.primarySoft,
+            borderColor: t.primary,
+          }}
+        >
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: radii.md,
+              backgroundColor: t.card,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name={'trending-up' as never} size={20} color={t.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <Text style={{ fontWeight: '700', fontSize: 15, color: t.text }}>Tendencias de micros</Text>
+              {!isPro ? <Pill text="PRO" color={semantic.warning} /> : null}
+            </View>
+            <Text style={{ color: t.textSecondary, fontSize: 12, marginTop: 2 }}>
+              Evolución de B12, hierro y omega-3 a 30 y 90 días
+            </Text>
+          </View>
+          <Ionicons name={'chevron-forward' as never} size={18} color={t.textMuted} />
+        </Card>
+      </Pressable>
+
       {/* Calorías últimos 7 días */}
       <Card style={{ gap: spacing.md }}>
         <SectionHeader title="Últimos 7 días" />
@@ -220,6 +269,8 @@ export function DashboardScreen() {
           ))}
         </View>
       </Card>
+
+      {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
     </ScrollView>
   );
 }

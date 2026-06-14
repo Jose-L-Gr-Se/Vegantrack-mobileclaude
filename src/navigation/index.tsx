@@ -23,6 +23,7 @@ import { ProgressScreen } from '@/screens/ProgressScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
 import { ScannerScreen } from '@/screens/ScannerScreen';
 import { RecipesScreen } from '@/screens/RecipesScreen';
+import { MicroTrendsScreen } from '@/screens/MicroTrendsScreen';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 import type { LinkingOptions } from '@react-navigation/native';
 
@@ -137,6 +138,7 @@ export function RootNavigator() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="Scanner" component={ScannerScreen} options={{ presentation: 'fullScreenModal' }} />
             <Stack.Screen name="Recipes" component={RecipesScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="MicroTrends" component={MicroTrendsScreen} options={{ presentation: 'modal' }} />
           </>
         )}
       </Stack.Navigator>

@@ -18,10 +18,10 @@ import {
   mirrorUpsert,
 } from '@/db/database';
 import { loadOverrides, type NutrientOverride } from '@/lib/nutrientOverrides';
-import { summarizeEntries } from '@/utils/nutrition';
+import { summarizeEntries, MICRO_RDA, ironRdaForSex } from '@/utils/nutrition';
 import { addDays, todayISO } from '@/utils/dates';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
-import type { FoodLogEntry, NutrientSummary, RecentFood } from '@/types';
+import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
 
 export interface WeekDay {
   date: string;
@@ -29,6 +29,14 @@ export interface WeekDay {
   protein: number;
   carbs: number;
   fat: number;
+}
+
+export type MicroKey = keyof NutrientSummary['micros'];
+
+/** Un día de la serie de tendencias de micros: valor total (comida + suplementos) y % de la RDA. */
+export interface MicroTrendPoint {
+  date: string;
+  micros: Record<MicroKey, { value: number; pct: number }>;
 }
 
 interface DiaryState {
@@ -45,6 +53,7 @@ interface DiaryState {
   getDaySummary: () => NutrientSummary;
   fetchRecentFoods: (userId: string) => Promise<void>;
   getWeekData: (userId: string) => Promise<WeekDay[]>;
+  getMicroTrends: (userId: string, days: number, sex: Sex | null | undefined) => Promise<MicroTrendPoint[]>;
   copyDayEntries: (userId: string, fromDate: string, toDate: string) => Promise<{ count: number; error: string | null }>;
   copyMealEntries: (userId: string, fromDate: string, toDate: string, mealType: string) => Promise<{ count: number; error: string | null }>;
   loadOverrides: () => Promise<void>;
@@ -227,6 +236,78 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       }
     }
     return days;
+  },
+
+  getMicroTrends: async (userId, days, sex) => {
+    const end = todayISO();
+    const start = addDays(end, -(days - 1));
+
+    // Comida del periodo (filas completas: necesitamos micros + flags known + source)
+    const { data: foodRows } = await supabase
+      .from('food_log')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', start)
+      .lte('date', end);
+
+    // Mapa de suplementos (activos e inactivos, para registros históricos)
+    const { data: suppRows } = await supabase
+      .from('supplements')
+      .select('id, nutrient_key, dose_amount')
+      .eq('user_id', userId);
+    const suppMap = new Map<string, { key: string | null; dose: number }>();
+    for (const s of (suppRows ?? []) as { id: string; nutrient_key: string | null; dose_amount: number }[]) {
+      suppMap.set(s.id, { key: s.nutrient_key, dose: s.dose_amount });
+    }
+
+    // Tomas de suplementos del periodo
+    const { data: logRows } = await supabase
+      .from('supplement_logs')
+      .select('supplement_id, date')
+      .eq('user_id', userId)
+      .gte('date', start)
+      .lte('date', end);
+
+    // Agrupar comida por fecha
+    const foodByDate = new Map<string, FoodLogEntry[]>();
+    for (const e of (foodRows ?? []) as FoodLogEntry[]) {
+      const list = foodByDate.get(e.date) ?? [];
+      list.push(e);
+      foodByDate.set(e.date, list);
+    }
+
+    // Aportes de suplementos por fecha y nutriente
+    const suppByDate = new Map<string, Record<string, number>>();
+    for (const log of (logRows ?? []) as { supplement_id: string; date: string }[]) {
+      const m = suppMap.get(log.supplement_id);
+      if (!m || !m.key) continue;
+      const day = suppByDate.get(log.date) ?? {};
+      day[m.key] = (day[m.key] ?? 0) + m.dose;
+      suppByDate.set(log.date, day);
+    }
+
+    const overrides = get().overrides ?? [];
+    const microKeys = Object.keys(MICRO_RDA) as MicroKey[];
+
+    const points: MicroTrendPoint[] = [];
+    for (let i = 0; i < days; i++) {
+      const date = addDays(start, i);
+      const summary = summarizeEntries(foodByDate.get(date) ?? [], overrides);
+      const suppContrib = suppByDate.get(date) ?? {};
+
+      const micros = {} as MicroTrendPoint['micros'];
+      for (const key of microKeys) {
+        const rda = key === 'iron_mg' ? ironRdaForSex(sex) : MICRO_RDA[key].rda;
+        const agg = summary.micros[key];
+        // Misma semántica que el dashboard: la comida solo cuenta con cobertura ≥ 50 %
+        const fromFood = agg.coverage >= 0.5 ? agg.value : 0;
+        const fromSupp = suppContrib[key] ?? 0;
+        const total = fromFood + fromSupp;
+        micros[key] = { value: total, pct: rda > 0 ? total / rda : 0 };
+      }
+      points.push({ date, micros });
+    }
+    return points;
   },
 
   copyDayEntries: async (userId, fromDate, toDate) => {

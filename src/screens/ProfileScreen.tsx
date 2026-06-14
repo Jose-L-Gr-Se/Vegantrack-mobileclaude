@@ -3,7 +3,7 @@
  * recordatorio diario, exportación CSV, Pro y logout.
  */
 import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,7 +22,7 @@ import {
   getReminderHour,
   scheduleDailyReminder,
 } from '@/notifications/reminders';
-import { WEB_BASE_URL } from '@/lib/supabase';
+import { ProModal } from '@/components/ProModal';
 import type { ActivityLevel, Goal } from '@/types';
 import type { RootStackParamList } from '@/navigation/types';
 
@@ -133,6 +133,7 @@ export function ProfileScreen() {
   const [showCustomFood, setShowCustomFood] = useState(false);
   const [reminderHour, setReminderHour] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [showPro, setShowPro] = useState(false);
 
   useEffect(() => {
     void getReminderHour().then(setReminderHour);
@@ -173,8 +174,9 @@ export function ProfileScreen() {
     if (error) Alert.alert('Error', error);
   };
 
-  const openProCheckout = () => {
-    void Linking.openURL(`${WEB_BASE_URL}/?upgrade=pro`);
+  const openMicroTrends = () => {
+    if (isPro) navigation.navigate('MicroTrends');
+    else setShowPro(true);
   };
 
   // Avatar initials
@@ -328,6 +330,13 @@ export function ProfileScreen() {
             badge={customFoods.customFoods.length}
             onPress={() => setShowCustomFood(true)}
           />
+          <View style={{ height: 1, backgroundColor: t.separator }} />
+          <MenuRow
+            iconName="trending-up-outline"
+            label="Tendencias de micros"
+            subtitle={isPro ? undefined : 'Pro'}
+            onPress={openMicroTrends}
+          />
         </Card>
       </View>
 
@@ -401,11 +410,11 @@ export function ProfileScreen() {
             <>
               <View style={{ height: 1, backgroundColor: t.separator }} />
               <Pressable
-                onPress={openProCheckout}
+                onPress={() => setShowPro(true)}
                 style={({ pressed }) => ({
                   marginVertical: spacing.sm,
                   borderRadius: radii.lg,
-                  backgroundColor: '#f0fdf4',
+                  backgroundColor: t.primarySoft,
                   borderWidth: 1,
                   borderColor: semantic.success,
                   padding: spacing.md,
@@ -441,6 +450,7 @@ export function ProfileScreen() {
         </Card>
       </View>
 
+      {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
       {editing && <EditProfileModal onClose={() => setEditing(false)} />}
       {showSupplements && <SupplementsModal onClose={() => setShowSupplements(false)} />}
       {showCustomFood && <CustomFoodModal onClose={() => setShowCustomFood(false)} />}
