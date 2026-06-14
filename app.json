@@ -14,7 +14,7 @@
     "android": {
       "package": "com.vegantrack.app",
       "adaptiveIcon": {
-        "backgroundColor": "#16a34a",
+        "backgroundColor": "#2f5d41",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -38,7 +38,7 @@
       [
         "expo-notifications",
         {
-          "color": "#16a34a"
+          "color": "#2f5d41"
         }
       ],
       [

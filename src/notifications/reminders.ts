@@ -26,7 +26,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
     await Notifications.setNotificationChannelAsync('reminders', {
       name: 'Recordatorios',
       importance: Notifications.AndroidImportance.DEFAULT,
-      lightColor: '#16a34a',
+      lightColor: '#2f5d41',
     });
   }
   const settings = await Notifications.getPermissionsAsync();

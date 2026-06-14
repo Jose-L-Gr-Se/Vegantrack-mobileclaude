@@ -88,10 +88,10 @@ describe('computeVeganScore', () => {
 
 describe('score color/label', () => {
   it.each([
-    [85, '#16a34a', 'Excelente 🌟'],
-    [70, '#f59e0b', 'Bien 👍'],
-    [50, '#f97316', 'En progreso 💪'],
-    [20, '#ef4444', 'Mejorable 🌱'],
+    [85, '#2f5d41', 'Excelente 🌟'],
+    [70, '#c98a2b', 'Bien 👍'],
+    [50, '#cc7a3b', 'En progreso 💪'],
+    [20, '#c0473e', 'Mejorable 🌱'],
   ])('score %i', (score, color, label) => {
     expect(getScoreColor(score)).toBe(color);
     expect(getScoreLabel(score)).toBe(label);

@@ -1,47 +1,58 @@
 /**
  * Tema de VeganTrack Mobile.
- * Paleta portada 1:1 de tailwind.config.js de la PWA para minimizar
- * diferencias visuales entre plataformas.
+ *
+ * Identidad de marca: verde bosque profundo + crema cálido + tipografía
+ * serif editorial (Instrument Serif para títulos). Inspirada en la landing
+ * de producto: cálida, sobria y específica para nutrición vegana consciente.
  */
 import { useColorScheme } from 'react-native';
 
+// Verde bosque (paleta cálida, no el verde brillante genérico).
 export const brand = {
-  50: '#f0fdf4',
-  100: '#dcfce7',
-  200: '#bbf7d0',
-  300: '#86efac',
-  400: '#4ade80',
-  500: '#22c55e',
-  600: '#16a34a', // primary
-  700: '#15803d',
-  800: '#166534',
-  900: '#14532d',
-  950: '#052e16',
+  50: '#eef4ef',
+  100: '#d8e6dd',
+  200: '#b2cdbd',
+  300: '#84ad96',
+  400: '#568a6f',
+  500: '#3a6f53',
+  600: '#2f5d41', // primary — el verde del logo
+  700: '#264a35',
+  800: '#1e3a2a',
+  900: '#152a1f',
+  950: '#0b1812',
 } as const;
 
+// Crema / arena cálida (sustituye los grises fríos por neutros cálidos).
 export const surface = {
   0: '#ffffff',
-  50: '#f8fafc',
-  100: '#f1f5f9',
-  200: '#e2e8f0',
-  300: '#cbd5e1',
-  400: '#94a3b8',
-  500: '#64748b',
-  600: '#475569',
-  700: '#334155',
-  800: '#1e293b',
-  900: '#0f172a',
-  950: '#020617',
+  50: '#f7f6f1', // papel cálido
+  100: '#efece4',
+  200: '#e4e0d4',
+  300: '#cfc9ba',
+  400: '#a8a294',
+  500: '#807a6c',
+  600: '#5d574b',
+  700: '#403c33',
+  800: '#262b25', // gris-verde oscuro cálido
+  900: '#1a201b',
+  950: '#101713',
 } as const;
 
 export const semantic = {
-  success: '#16a34a',
-  warning: '#f59e0b',
-  orange: '#f97316',
-  danger: '#ef4444',
-  protein: '#3b82f6',
-  carbs: '#f59e0b',
-  fat: '#a855f7',
+  success: '#2f5d41',
+  warning: '#c98a2b',
+  orange: '#cc7a3b',
+  danger: '#c0473e',
+  protein: '#3f6ea8',
+  carbs: '#c98a2b',
+  fat: '#8a6bb0',
+  cream: '#f3efe3',
+} as const;
+
+/** Familias tipográficas. `display` se carga en App.tsx (Instrument Serif). */
+export const fonts = {
+  display: 'InstrumentSerif_400Regular',
+  displayItalic: 'InstrumentSerif_400Regular_Italic',
 } as const;
 
 export interface Theme {
@@ -63,30 +74,30 @@ export const lightTheme: Theme = {
   dark: false,
   background: surface[50],
   card: surface[0],
-  cardBorder: surface[200],
-  text: surface[900],
-  textSecondary: surface[600],
-  textMuted: surface[500],
+  cardBorder: '#e6e2d6',
+  text: '#1a2a20',
+  textSecondary: '#4a5249',
+  textMuted: '#8a8577',
   primary: brand[600],
-  primarySoft: brand[100],
+  primarySoft: '#e2ede5',
   inputBg: surface[0],
-  inputBorder: surface[200],
-  separator: surface[100],
+  inputBorder: '#e6e2d6',
+  separator: '#eeeae0',
 };
 
 export const darkTheme: Theme = {
   dark: true,
   background: surface[950],
-  card: surface[800],
-  cardBorder: surface[700],
-  text: surface[100],
-  textSecondary: surface[300],
-  textMuted: surface[400],
-  primary: brand[500],
-  primarySoft: brand[950],
-  inputBg: surface[900],
-  inputBorder: surface[700],
-  separator: surface[700],
+  card: surface[900],
+  cardBorder: '#2a322b',
+  text: '#eef2ea',
+  textSecondary: '#c2ccc0',
+  textMuted: '#8a958a',
+  primary: brand[400],
+  primarySoft: '#1d2a20',
+  inputBg: '#161d18',
+  inputBorder: '#2a322b',
+  separator: '#262f27',
 };
 
 export function useTheme(): Theme {

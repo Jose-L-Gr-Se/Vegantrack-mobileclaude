@@ -109,10 +109,10 @@ export function computeVeganScore({
 }
 
 export function getScoreColor(score: number): string {
-  if (score >= 81) return '#16a34a';
-  if (score >= 61) return '#f59e0b';
-  if (score >= 41) return '#f97316';
-  return '#ef4444';
+  if (score >= 81) return '#2f5d41';
+  if (score >= 61) return '#c98a2b';
+  if (score >= 41) return '#cc7a3b';
+  return '#c0473e';
 }
 
 export function getScoreLabel(score: number): string {
