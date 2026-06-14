@@ -147,7 +147,7 @@ export function OnboardingScreen() {
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
           <Logo size={22} />
-          <Text style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: '400', color: t.text }}>
+          <Text style={{ fontFamily: fonts.display, fontSize: 19, fontWeight: '400', letterSpacing: -0.3, color: t.text }}>
             VeganTrack
           </Text>
         </View>
