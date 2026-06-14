@@ -4,7 +4,8 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input } from '@/components/ui';
-import { radii, spacing, useTheme } from '@/theme';
+import { Logo } from '@/components/Logo';
+import { fonts, radii, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { calculateTargets } from '@/utils/nutrition';
 import type { ActivityLevel, Goal, Sex } from '@/types';
@@ -144,9 +145,12 @@ export function OnboardingScreen() {
           alignItems: 'center',
         }}
       >
-        <Text style={{ fontSize: 14, fontWeight: '700', color: t.textMuted, letterSpacing: 0.3 }}>
-          🌱 VeganTrack
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+          <Logo size={22} />
+          <Text style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: '400', color: t.text }}>
+            VeganTrack
+          </Text>
+        </View>
       </View>
 
       <ScrollView
@@ -188,7 +192,7 @@ export function OnboardingScreen() {
 
         {/* Step title + subtitle (outside the card) */}
         <View style={{ gap: spacing.xs }}>
-          <Text style={{ fontSize: 26, fontWeight: '800', color: t.text }}>{meta.title}</Text>
+          <Text style={{ fontFamily: fonts.display, fontSize: 30, fontWeight: '400', color: t.text }}>{meta.title}</Text>
           <Text style={{ fontSize: 14, color: t.textMuted, lineHeight: 20 }}>{meta.subtitle}</Text>
         </View>
 

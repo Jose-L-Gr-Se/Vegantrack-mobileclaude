@@ -9,7 +9,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
-import { semantic, spacing, useTheme } from '@/theme';
+import { fonts, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
@@ -124,7 +124,7 @@ export function DiaryScreen() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View>
                 <Text style={{ fontSize: 13, color: t.textSecondary, fontWeight: '600' }}>Comido</Text>
-                <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>
+                <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>
                   {Math.round(summary.calories)}
                   <Text style={{ fontSize: 13, color: t.textMuted }}> kcal</Text>
                 </Text>

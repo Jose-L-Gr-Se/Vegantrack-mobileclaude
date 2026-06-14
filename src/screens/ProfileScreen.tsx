@@ -9,7 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input, Pill, SectionHeader } from '@/components/ui';
-import { radii, semantic, spacing, useTheme } from '@/theme';
+import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
@@ -203,7 +203,7 @@ export function ProfileScreen() {
         paddingBottom: spacing.xxl,
       }}
     >
-      <Text style={{ fontSize: 26, fontWeight: '800', color: t.text }}>Perfil</Text>
+      <Text style={{ fontFamily: fonts.display, fontSize: 30, fontWeight: '400', color: t.text }}>Perfil</Text>
 
       {/* Avatar header card */}
       <Card>
@@ -221,12 +221,12 @@ export function ProfileScreen() {
               justifyContent: 'center',
             }}
           >
-            <Text style={{ fontSize: 22, fontWeight: '800', color: t.primary }}>{initials}</Text>
+            <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.primary }}>{initials}</Text>
           </View>
           {/* Name + email */}
           <View style={{ flex: 1, gap: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Text style={{ fontSize: 17, fontWeight: '800', color: t.text }}>
+              <Text style={{ fontFamily: fonts.display, fontSize: 20, fontWeight: '400', color: t.text }}>
                 {displayName || 'Sin nombre'}
               </Text>
               {isPro ? <Pill text="PRO ⭐" color="#f59e0b" /> : null}

@@ -11,7 +11,8 @@ import {
 import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Input } from '@/components/ui';
-import { brand, radii, spacing, useTheme } from '@/theme';
+import { Logo } from '@/components/Logo';
+import { brand, fonts, radii, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -95,10 +96,10 @@ export function AuthScreen() {
             }}
           />
 
-          <Text style={{ fontSize: 64, lineHeight: 76 }}>🌱</Text>
+          <Logo size={72} color="#f3efe3" dotColor="#2f5d41" />
           <Text
             style={{
-              fontSize: 34, fontWeight: '900', color: '#fff',
+              fontFamily: fonts.display, fontSize: 40, fontWeight: '400', color: '#fff',
               letterSpacing: -0.5, marginTop: spacing.sm,
             }}
           >

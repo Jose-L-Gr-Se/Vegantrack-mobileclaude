@@ -9,7 +9,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, Input, SectionHeader } from '@/components/ui';
 import { MEAL_LABELS } from '@/components/AddFoodModal';
-import { radii, semantic, spacing, useTheme } from '@/theme';
+import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { computeRecipeNutrients, useRecipeStore } from '@/stores/recipeStore';
 import { productToFoodPer100g, searchProducts } from '@/lib/openfoodfacts';
@@ -84,7 +84,7 @@ export function RecipesScreen() {
     >
       {/* Header row */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 26, fontWeight: '800', color: t.text }}>Recetas</Text>
+        <Text style={{ fontFamily: fonts.display, fontSize: 30, fontWeight: '400', color: t.text }}>Recetas</Text>
         <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
           <Pressable
             onPress={() => setShowCreate(true)}
@@ -293,7 +293,7 @@ function RecipeDetail({
       {/* Recipe header */}
       <Card style={{ gap: spacing.md }}>
         <View style={{ gap: 4 }}>
-          <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>{recipe.name}</Text>
+          <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>{recipe.name}</Text>
           {recipe.description ? (
             <Text style={{ color: t.textMuted, fontSize: 14 }}>{recipe.description}</Text>
           ) : null}

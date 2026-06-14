@@ -6,12 +6,12 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
-import { radii, spacing, useTheme } from '@/theme';
+import { fonts, radii, spacing, useTheme } from '@/theme';
 import type { RootStackParamList } from '@/navigation/types';
 
 const CORNER_SIZE = 24;
 const CORNER_THICKNESS = 3;
-const CORNER_COLOR_LIGHT = '#16a34a'; // will use t.primary at runtime via inline style
+const CORNER_COLOR_LIGHT = '#2f5d41'; // will use t.primary at runtime via inline style
 
 export function ScannerScreen() {
   const t = useTheme();
@@ -44,7 +44,10 @@ export function ScannerScreen() {
           gap: spacing.lg,
         }}
       >
-        <Text style={{ color: t.text, textAlign: 'center', fontSize: 16 }}>
+        <Text style={{ fontFamily: fonts.display, fontWeight: '400', color: t.text, textAlign: 'center', fontSize: 22 }}>
+          Escanear código de barras
+        </Text>
+        <Text style={{ color: t.textSecondary, textAlign: 'center', fontSize: 15 }}>
           VeganTrack necesita acceso a la cámara para escanear códigos de barras.
         </Text>
         <Button title="Conceder permiso" onPress={() => void requestPermission()} />

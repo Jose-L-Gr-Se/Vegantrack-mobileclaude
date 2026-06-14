@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Button, Card, Pill, ProgressRing } from '@/components/ui';
-import { radii, semantic, spacing, useTheme } from '@/theme';
+import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
@@ -30,7 +30,7 @@ function MacroRingChip({ label, value, target, unit, color }: MacroRingProps) {
   return (
     <View style={{ alignItems: 'center', flex: 1 }}>
       <ProgressRing progress={progress} size={64} strokeWidth={5} color={color}>
-        <Text style={{ fontSize: 11, fontWeight: '700', color: t.text }}>{Math.round(value)}</Text>
+        <Text style={{ fontFamily: fonts.display, fontSize: 15, fontWeight: '400', color: t.text }}>{Math.round(value)}</Text>
       </ProgressRing>
       <Text style={{ color: t.textMuted, fontSize: 10, marginTop: 3 }}>{label}</Text>
       <Text style={{ color: t.textMuted, fontSize: 9 }}>{unit}</Text>
@@ -156,7 +156,7 @@ export function ProductDetailSheet({
                   </View>
                 )}
                 <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={{ fontSize: 17, fontWeight: '800', color: t.text }} numberOfLines={2}>
+                  <Text style={{ fontFamily: fonts.display, fontSize: 19, fontWeight: '400', color: t.text }} numberOfLines={2}>
                     {food.food_name}
                   </Text>
                   {food.brand ? (
