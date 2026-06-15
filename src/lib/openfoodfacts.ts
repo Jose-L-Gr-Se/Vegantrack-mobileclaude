@@ -9,10 +9,38 @@
  */
 import type { FoodPer100g, OpenFoodFactsProduct, VeganConfidence } from '@/types';
 import { cacheOffProduct, getCachedOffProduct } from '@/db/database';
+import { deviceLanguage, preferredLanguages } from '@/utils/locale';
 
 const BASE_URL = 'https://world.openfoodfacts.net';
-const FIELDS =
-  'code,product_name,brands,image_front_url,image_front_small_url,image_front_thumb_url,nutriments,labels_tags,categories_tags,serving_size,serving_quantity,nutriscore_grade,ecoscore_grade,nova_group,ingredients_text';
+
+// Idiomas cuyos textos (nombre / ingredientes) pedimos siempre, además del
+// idioma del dispositivo. Cubren la mayoría del mercado europeo.
+const BASE_LANGS = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ca'];
+
+/** Lista de campos a pedir, incluyendo nombre e ingredientes localizados. */
+function offFields(): string {
+  const langs = [...new Set([deviceLanguage(), ...BASE_LANGS])];
+  const localized = langs.flatMap((l) => [`product_name_${l}`, `ingredients_text_${l}`]);
+  return [
+    'code',
+    'product_name',
+    'brands',
+    'image_front_url',
+    'image_front_small_url',
+    'image_front_thumb_url',
+    'nutriments',
+    'labels_tags',
+    'categories_tags',
+    'serving_size',
+    'serving_quantity',
+    'nutriscore_grade',
+    'ecoscore_grade',
+    'nova_group',
+    'ingredients_text',
+    'ingredients_analysis_tags',
+    ...localized,
+  ].join(',');
+}
 
 export interface SearchResult {
   products: OpenFoodFactsProduct[];
@@ -38,7 +66,10 @@ export async function getProductByBarcode(barcode: string): Promise<OpenFoodFact
   // 2. Red
   const { signal, clear } = createTimeout();
   try {
-    const res = await fetch(`${BASE_URL}/api/v2/product/${barcode}?fields=${FIELDS}`, { signal });
+    const res = await fetch(
+      `${BASE_URL}/api/v2/product/${barcode}?lc=${deviceLanguage()}&fields=${offFields()}`,
+      { signal }
+    );
     clear();
     if (!res.ok) return null;
     const data = await res.json();
@@ -60,7 +91,7 @@ export async function searchProducts(
 ): Promise<SearchResult> {
   const { signal, clear } = createTimeout();
   try {
-    let url = `${BASE_URL}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&page=${page}&page_size=20&fields=${FIELDS}`;
+    let url = `${BASE_URL}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&json=1&lc=${deviceLanguage()}&page=${page}&page_size=20&fields=${offFields()}`;
     if (veganOnly) {
       url += '&tagtype_0=labels&tag_contains_0=contains&tag_0=en:vegan';
     }
@@ -117,19 +148,82 @@ export function isProductVegan(product: OpenFoodFactsProduct): boolean {
 }
 
 /**
- * Confianza en que un producto sea vegano:
- * 'high' = sello vegano · 'low' = keywords animales ·
- * 'medium' = señales veganas en nombre/marca · 'unknown' = sin señal.
+ * Confianza en que un producto sea vegano. Combina tres señales, de más a
+ * menos fiable:
+ *   1. Etiqueta de la comunidad (`en:vegan`) — la más fiable.
+ *   2. Análisis automático de ingredientes de OFF (`ingredients_analysis_tags`).
+ *   3. Heurística por palabras clave en nombre/marca (último recurso).
  */
 export function getVeganConfidence(product: OpenFoodFactsProduct): VeganConfidence {
   const labels = product.labels_tags || [];
+  const analysis = product.ingredients_analysis_tags || [];
+
   if (labels.some((t) => t === 'en:vegan' || t === 'en:vegan-society')) return 'high';
+  if (analysis.includes('en:non-vegan')) return 'low';
+  if (analysis.includes('en:vegan')) return 'high';
 
   const combined = `${product.product_name} ${product.brands}`.toLowerCase();
   if (ANIMAL_KEYWORDS.some((kw) => combined.includes(kw.toLowerCase()))) return 'low';
+  if (analysis.includes('en:maybe-vegan')) return 'medium';
   if (VEGAN_POSITIVE_KEYWORDS.some((kw) => combined.includes(kw.toLowerCase()))) return 'medium';
   return 'unknown';
 }
+
+/**
+ * ¿Tiene sentido ofrecer "alternativas veganas" para este producto?
+ *
+ * Solo cuando estamos razonablemente seguros de que NO es vegano (confianza
+ * 'low': sello/análisis o palabra animal inequívoca) Y además pertenece a una
+ * categoría para la que SÍ existe mercado vegano (mapa curado: lácteos,
+ * cárnicos, pescado, huevo, miel…). Así el botón no aparece "porque sí".
+ */
+export function canSuggestVeganAlternative(product: OpenFoodFactsProduct): boolean {
+  if (getVeganConfidence(product) !== 'low') return false;
+  return findMappedEntry(product) !== null || extractGenericTerm(product.product_name) !== null;
+}
+
+/**
+ * Filtro estricto: ¿es este candidato **seguro como alternativa vegana**?
+ * Exigimos prueba positiva de veganismo y descartamos cualquier rastro animal.
+ */
+function isConfidentlyVegan(product: OpenFoodFactsProduct): boolean {
+  const analysis = product.ingredients_analysis_tags || [];
+  if (analysis.includes('en:non-vegan')) return false;
+
+  const labels = product.labels_tags || [];
+  const labelledVegan =
+    labels.some((t) => t === 'en:vegan' || t === 'en:vegan-society') || analysis.includes('en:vegan');
+
+  const name = `${product.product_name} ${product.brands || ''}`.toLowerCase();
+  const ingredients = (product.ingredients_text || '').toLowerCase();
+
+  // Cualquier término animal inequívoco en nombre o ingredientes → fuera.
+  if (ANIMAL_KEYWORDS.some((kw) => name.includes(kw.toLowerCase()))) return false;
+  if (ANIMAL_INGREDIENT_TERMS.some((kw) => ingredients.includes(kw))) return false;
+
+  if (labelledVegan) return true;
+
+  // Sin sello: exigimos marca vegetal explícita en el nombre.
+  return VEGAN_POSITIVE_KEYWORDS.some((kw) => name.includes(kw.toLowerCase()));
+}
+
+/**
+ * Términos animales que, si aparecen en la LISTA DE INGREDIENTES, descartan
+ * el producto. Cuidado con falsos positivos veganos ("leche de coco"): por eso
+ * usamos formas específicas de origen animal.
+ */
+const ANIMAL_INGREDIENT_TERMS = [
+  'leche entera', 'leche desnatada', 'leche semidesnatada', 'leche de vaca',
+  'suero de leche', 'suero lácteo', 'lactosa', 'caseina', 'caseína', 'casein',
+  'whey', 'lactose', 'milk powder', 'whole milk', 'skimmed milk',
+  'mantequilla', 'nata', 'queso', 'yogur',
+  'huevo', 'clara de huevo', 'yema de huevo', 'egg', 'albumin',
+  'miel', 'honey',
+  'gelatina', 'gelatin', 'colágeno', 'collagen',
+  'carne', 'pollo', 'cerdo', 'ternera', 'jamón', 'bacon', 'tocino',
+  'pescado', 'atún', 'salmón', 'anchoa', 'gamba', 'marisco',
+  'manteca de cerdo', 'sebo',
+];
 
 // ── Alternativas veganas ────────────────────────────────────────────────────
 
@@ -166,18 +260,6 @@ const IRRELEVANT_KEYWORDS = [
   'patatas fritas', 'chips',
   'mermelada', 'jam', 'miel', 'honey',
 ];
-
-function looksVegan(product: OpenFoodFactsProduct): boolean {
-  if (isProductVegan(product)) return true;
-  const combined = `${product.product_name} ${product.brands || ''}`.toLowerCase();
-  for (const kw of ANIMAL_KEYWORDS) {
-    if (combined.includes(kw.toLowerCase())) return false;
-  }
-  for (const kw of VEGAN_POSITIVE_KEYWORDS) {
-    if (combined.includes(kw.toLowerCase())) return true;
-  }
-  return false;
-}
 
 function isRelevantSubstitute(product: OpenFoodFactsProduct): boolean {
   const combined = `${product.product_name.toLowerCase()} ${product.categories_tags.join(' ').toLowerCase()}`;
@@ -268,7 +350,7 @@ export async function findVeganAlternatives(
     const { signal, clear } = createTimeout(8000);
     try {
       const res = await fetch(
-        `${BASE_URL}/cgi/search.pl?search_terms=${encodeURIComponent(q)}&json=1&page_size=15&fields=${FIELDS}`,
+        `${BASE_URL}/cgi/search.pl?search_terms=${encodeURIComponent(q)}&json=1&lc=${deviceLanguage()}&page_size=15&fields=${offFields()}`,
         { signal }
       );
       clear();
@@ -293,15 +375,26 @@ export async function findVeganAlternatives(
   }
 
   const scored = allCandidates
-    .filter(looksVegan)
+    // Solo candidatos veganos comprobados (sello/análisis o marca vegetal sin
+    // rastro animal) — nunca ofrecemos un derivado animal como "alternativa".
+    .filter(isConfidentlyVegan)
     .filter(isRelevantSubstitute)
+    .filter((p) => p.nutriments['energy-kcal_100g'] > 0) // descarta fichas vacías
     .map((candidate) => ({
       product: candidate,
+      // Bonus si tiene sello/análisis vegano explícito (mejor calidad de dato).
+      labelled:
+        (candidate.labels_tags || []).some((t) => t === 'en:vegan' || t === 'en:vegan-society') ||
+        (candidate.ingredients_analysis_tags || []).includes('en:vegan'),
       score: nutritionSimilarityScore(product, candidate, type),
     }));
 
-  scored.sort((a, b) => a.score - b.score);
-  return scored.slice(0, 5).map((s) => s.product);
+  // Ordena: primero los de sello vegano, luego por similitud nutricional.
+  scored.sort((a, b) => {
+    if (a.labelled !== b.labelled) return a.labelled ? -1 : 1;
+    return a.score - b.score;
+  });
+  return scored.slice(0, 6).map((s) => s.product);
 }
 
 // ── Normalización y conversión de unidades ──────────────────────────────────
@@ -328,20 +421,35 @@ function novaOrNull(value: unknown): 1 | 2 | 3 | 4 | null {
   return n === 1 || n === 2 || n === 3 || n === 4 ? (n as 1 | 2 | 3 | 4) : null;
 }
 
+/**
+ * Elige el valor localizado de un campo (`product_name`, `ingredients_text`)
+ * siguiendo la cadena de idiomas preferidos del usuario, con el campo
+ * genérico como último recurso. Así cada persona ve los textos en su idioma.
+ */
+function pickLocalized(raw: any, base: string): string | null {
+  for (const lang of preferredLanguages()) {
+    const v = raw[`${base}_${lang}`];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  const generic = raw[base];
+  return typeof generic === 'string' && generic.trim() ? generic.trim() : null;
+}
+
 export function normalizeProduct(raw: any): OpenFoodFactsProduct {
   const n = raw.nutriments || {};
   return {
     code: raw.code || '',
-    product_name: raw.product_name || '',
+    product_name: pickLocalized(raw, 'product_name') || raw.product_name || '',
     brands: raw.brands || '',
     image_front_url: raw.image_front_url || '',
     image_front_large_url: raw.image_front_url || null,
-    ingredients_text: typeof raw.ingredients_text === 'string' ? raw.ingredients_text : null,
+    ingredients_text: pickLocalized(raw, 'ingredients_text'),
     nutriscore_grade: gradeOrNull(raw.nutriscore_grade),
     ecoscore_grade: gradeOrNull(raw.ecoscore_grade),
     nova_group: novaOrNull(raw.nova_group),
     categories_tags: Array.isArray(raw.categories_tags) ? raw.categories_tags : [],
     labels_tags: Array.isArray(raw.labels_tags) ? raw.labels_tags : [],
+    ingredients_analysis_tags: Array.isArray(raw.ingredients_analysis_tags) ? raw.ingredients_analysis_tags : [],
     nutriments: {
       // Macros: 0 cuando faltan (siempre número)
       'energy-kcal_100g': numberOrZero(n['energy-kcal_100g']),

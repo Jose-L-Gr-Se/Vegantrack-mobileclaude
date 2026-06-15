@@ -1,22 +1,22 @@
 /**
- * ProductDetailSheet — ficha de producto antes de añadirlo al diario.
+ * ProductDetailSheet — LA ficha de alimento de la app.
  *
- * Apoyada en `BottomSheet`, que se encarga del comportamiento de teclado y
- * del cierre por deslizamiento o por el botón de atrás.
+ * Es la misma hoja para todos los flujos, de modo que el usuario ve siempre
+ * la misma información y estética:
+ *   · resultado de búsqueda por texto,
+ *   · resultado de escaneo de código de barras,
+ *   · selección desde "Recientes",
+ *   · edición de una entrada ya registrada en el Diario (`editEntry`).
  *
- * Objetivo: dar información suficiente para una decisión consciente sin
- * abrumar. Junto a macros y micros, mostramos cuando OFF los expone los
- * indicadores Nutri-Score, Eco-Score y NOVA. Cada uno es pulsable y abre
- * una hoja explicativa para quien no los conoce.
+ * Auto-enriquecido: si el alimento tiene código de barras pero le faltan los
+ * indicadores ricos (Nutri/Eco/NOVA, ingredientes, imagen grande) —caso
+ * típico de recientes y entradas guardadas— los recupera de OpenFoodFacts
+ * (caché local, instantáneo) y los fusiona. Así la ficha es consistente.
+ *
+ * Sobre `BottomSheet`, que gestiona teclado, safe area y cierre por gesto.
  */
-import React, { useState } from 'react';
-import {
-  Image,
-  Pressable,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Image, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Pill, ProgressRing } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -26,11 +26,57 @@ import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
+import {
+  canSuggestVeganAlternative,
+  getProductByBarcode,
+  getVeganConfidence,
+} from '@/lib/openfoodfacts';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
-import type { FoodPer100g, MealType, VeganConfidence } from '@/types';
+import type {
+  FoodLogEntry,
+  FoodPer100g,
+  MealType,
+  OpenFoodFactsProduct,
+  VeganConfidence,
+} from '@/types';
 
 const SERVING_PRESETS = [50, 100, 150, 200];
 const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+/** Convierte una entry del diario a su forma per-100g para reusar la ficha. */
+function entryToPer100g(e: FoodLogEntry): FoodPer100g {
+  const ratio = e.serving_size_g > 0 ? 100 / e.serving_size_g : 0;
+  const per = (v: number | null) => (v === null ? null : v * ratio);
+  return {
+    food_name: e.food_name,
+    brand: e.brand,
+    barcode: e.barcode,
+    image_url: e.image_url,
+    is_vegan: e.is_vegan,
+    source: e.source ?? 'manual',
+    source_ref: e.source_ref ?? null,
+    calories: e.calories * ratio,
+    protein_g: e.protein_g * ratio,
+    carbs_g: e.carbs_g * ratio,
+    fat_g: e.fat_g * ratio,
+    fiber_g: e.fiber_g * ratio,
+    sugar_g: e.sugar_g * ratio,
+    saturated_fat_g: e.saturated_fat_g * ratio,
+    sodium_mg: e.sodium_mg * ratio,
+    vitamin_b12_mcg: per(e.vitamin_b12_mcg),
+    iron_mg: per(e.iron_mg),
+    zinc_mg: per(e.zinc_mg),
+    calcium_mg: per(e.calcium_mg),
+    omega3_g: per(e.omega3_g),
+    vitamin_d_mcg: per(e.vitamin_d_mcg),
+    vitamin_b12_known: e.vitamin_b12_known,
+    iron_known: e.iron_known,
+    zinc_known: e.zinc_known,
+    calcium_known: e.calcium_known,
+    omega3_known: e.omega3_known,
+    vitamin_d_known: e.vitamin_d_known,
+  };
+}
 
 function MacroRingChip({
   label,
@@ -74,19 +120,31 @@ function MicroRow({ label, value, unit }: { label: string; value: number | null;
 }
 
 export function ProductDetailSheet({
-  food,
+  food: foodProp,
+  editEntry,
   lockedMealType,
+  initialGrams,
+  offProduct: offProductProp,
   onClose,
   onAdded,
+  onSaved,
+  onDelete,
   onShowAlternatives,
   veganConfidence,
   profile,
 }: {
-  food: FoodPer100g | null;
+  /** Alimento a mostrar (modo añadir). En modo edición se ignora si hay editEntry. */
+  food?: FoodPer100g | null;
+  /** Si se pasa, la ficha entra en modo edición de esa entrada del diario. */
+  editEntry?: FoodLogEntry | null;
   lockedMealType?: MealType | null;
+  initialGrams?: number;
+  offProduct?: OpenFoodFactsProduct | null;
   onClose: () => void;
-  onAdded: (message: string) => void;
-  onShowAlternatives?: () => void;
+  onAdded?: (message: string) => void;
+  onSaved?: () => void;
+  onDelete?: () => void;
+  onShowAlternatives?: (product: OpenFoodFactsProduct) => void;
   veganConfidence?: VeganConfidence;
   profile?: {
     calorie_target: number;
@@ -97,18 +155,59 @@ export function ProductDetailSheet({
 }) {
   const t = useTheme();
   const user = useAuthStore((s) => s.user);
-  const { addEntry, selectedDate } = useDiaryStore();
-  const [grams, setGrams] = useState('100');
-  // El meal sigue dos reglas claras:
-  //  · Si viene un lock (desde "+ Desayuno" del Diario), forzamos esa
-  //    comida y ocultamos el selector. SÍ O SÍ.
-  //  · Si no, mostramos el selector vacío al inicio para que el usuario
-  //    elija de forma consciente.
-  const [meal, setMeal] = useState<MealType | null>(lockedMealType ?? null);
+  const { addEntry, deleteEntry, selectedDate } = useDiaryStore();
+
+  const isEdit = !!editEntry;
+  const baseFood = useMemo<FoodPer100g | null>(
+    () => (editEntry ? entryToPer100g(editEntry) : foodProp ?? null),
+    [editEntry, foodProp]
+  );
+
+  // Estado enriquecido (scores/ingredientes/imagen) y producto OFF para alts.
+  const [food, setFood] = useState<FoodPer100g | null>(baseFood);
+  const [offProduct, setOffProduct] = useState<OpenFoodFactsProduct | null>(offProductProp ?? null);
+  const [confidence, setConfidence] = useState<VeganConfidence | undefined>(veganConfidence);
+
+  const [grams, setGrams] = useState(String(initialGrams ?? editEntry?.serving_size_g ?? 100));
+  const [meal, setMeal] = useState<MealType | null>(
+    lockedMealType ?? editEntry?.meal_type ?? null
+  );
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [imageBroken, setImageBroken] = useState(false);
   const [infoKind, setInfoKind] = useState<ScoreKind | null>(null);
+
+  // Auto-enriquecido por código de barras (recientes / entradas guardadas).
+  useEffect(() => {
+    setFood(baseFood);
+    if (!baseFood) return;
+    const needsRich =
+      !baseFood.nutriscore_grade && !baseFood.ecoscore_grade && !baseFood.nova_group && !baseFood.ingredients_text;
+    if (!offProductProp && baseFood.barcode && baseFood.source === 'openfoodfacts' && needsRich) {
+      let cancelled = false;
+      void getProductByBarcode(baseFood.barcode).then((p) => {
+        if (cancelled || !p) return;
+        setOffProduct(p);
+        setConfidence(getVeganConfidence(p));
+        setFood((prev) =>
+          prev
+            ? {
+                ...prev,
+                nutriscore_grade: p.nutriscore_grade ?? prev.nutriscore_grade ?? null,
+                ecoscore_grade: p.ecoscore_grade ?? prev.ecoscore_grade ?? null,
+                nova_group: p.nova_group ?? prev.nova_group ?? null,
+                ingredients_text: p.ingredients_text ?? prev.ingredients_text ?? null,
+                image_large_url: p.image_front_large_url ?? prev.image_large_url ?? null,
+              }
+            : prev
+        );
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseFood]);
 
   if (!food) return null;
 
@@ -131,33 +230,41 @@ export function ProductDetailSheet({
   const salt = food.salt_g != null ? Math.round(food.salt_g * scale * 100) / 100 : null;
   const sodium = Math.round(food.sodium_mg * scale);
 
-  const confirm = async () => {
+  const commit = async () => {
     const parsed = parseFloat(grams.replace(',', '.'));
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setError('Introduce una cantidad válida en gramos');
       return;
     }
-    // Si no hay lock, exigimos elegir comida — evita registros equivocados.
     const target = lockedMealType ?? meal;
     if (!target) {
       setError('Elige a qué comida añadirlo (desayuno, comida, cena o snack).');
       return;
     }
     if (!user) return;
-    setAdding(true);
-    const entry = buildEntry(food, parsed, target, selectedDate, user.id);
-    const { error: err } = await addEntry(entry);
-    setAdding(false);
-    if (err) setError(err);
-    else {
-      onAdded(`${food.food_name} añadido a ${MEAL_LABELS[target]}`);
-      onClose();
+    setBusy(true);
+
+    if (isEdit && editEntry) {
+      // Edición = borrar la entrada actual + insertar la reescalada.
+      await deleteEntry(editEntry.id);
+      const next = buildEntry(food, parsed, target, editEntry.date, user.id);
+      const { error: err } = await addEntry(next);
+      setBusy(false);
+      if (err) setError(err);
+      else onSaved?.();
+    } else {
+      const entry = buildEntry(food, parsed, target, selectedDate, user.id);
+      const { error: err } = await addEntry(entry);
+      setBusy(false);
+      if (err) setError(err);
+      else {
+        onAdded?.(`${food.food_name} añadido a ${MEAL_LABELS[target]}`);
+        onClose();
+      }
     }
   };
 
-  const showAlternativesButton =
-    veganConfidence === 'low' || veganConfidence === 'unknown' || (!food.is_vegan && veganConfidence !== 'high');
-
+  const canAlt = !isEdit && !!offProduct && canSuggestVeganAlternative(offProduct) && !!onShowAlternatives;
   const hasAnyScore = !!(food.nutriscore_grade || food.ecoscore_grade || food.nova_group);
   const heroImage = food.image_large_url || food.image_url;
 
@@ -167,10 +274,25 @@ export function ProductDetailSheet({
       onClose={onClose}
       footer={
         <View style={{ gap: spacing.sm }}>
-          {error ? (
-            <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text>
+          {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
+          <Button
+            title={isEdit ? 'Guardar cambios' : 'Añadir al diario'}
+            onPress={commit}
+            loading={busy}
+          />
+          {isEdit && onDelete ? (
+            <Pressable
+              onPress={() => {
+                onDelete();
+                onClose();
+              }}
+              style={{ alignItems: 'center', paddingVertical: spacing.xs }}
+            >
+              <Text style={{ color: semantic.danger, fontWeight: '700', fontSize: 14 }}>
+                Eliminar del diario
+              </Text>
+            </Pressable>
           ) : null}
-          <Button title="Añadir al diario" onPress={confirm} loading={adding} />
         </View>
       }
     >
@@ -205,16 +327,14 @@ export function ProductDetailSheet({
             >
               {food.food_name}
             </Text>
-            {food.brand ? (
-              <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text>
-            ) : null}
+            {food.brand ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
             <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 4 }}>
               {food.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
-              {veganConfidence === 'medium' ? (
+              {confidence === 'medium' ? (
                 <Pill text="Parece vegano" color={semantic.warning} />
-              ) : veganConfidence === 'low' ? (
+              ) : confidence === 'low' ? (
                 <Pill text="No vegano" color={semantic.danger} />
-              ) : veganConfidence === 'unknown' && !food.is_vegan ? (
+              ) : confidence === 'unknown' && !food.is_vegan ? (
                 <Pill text="Sin datos vegano" color={t.textMuted} />
               ) : null}
             </View>
@@ -278,9 +398,7 @@ export function ProductDetailSheet({
                     backgroundColor: active ? t.primarySoft : 'transparent',
                   }}
                 >
-                  <Text
-                    style={{ fontSize: 12, fontWeight: '700', color: active ? t.primary : t.textSecondary }}
-                  >
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: active ? t.primary : t.textSecondary }}>
                     {preset}g
                   </Text>
                 </Pressable>
@@ -313,8 +431,6 @@ export function ProductDetailSheet({
 
         {/* ── Selector de comida ──────────────────────────────────── */}
         {lockedMealType ? (
-          /* Lock visual: el usuario ve a dónde irá la comida, sin poder
-             cambiarlo. Llegó aquí con un "+ Desayuno/Comida/…" del Diario. */
           <View
             style={{
               flexDirection: 'row',
@@ -342,7 +458,10 @@ export function ProductDetailSheet({
               {MEAL_ORDER.map((m) => (
                 <Pressable
                   key={m}
-                  onPress={() => { setMeal(m); setError(null); }}
+                  onPress={() => {
+                    setMeal(m);
+                    setError(null);
+                  }}
                   style={{
                     flex: 1,
                     alignItems: 'center',
@@ -448,10 +567,10 @@ export function ProductDetailSheet({
           </View>
         ) : null}
 
-        {/* ── Alternativas veganas ────────────────────────────────── */}
-        {showAlternativesButton && onShowAlternatives ? (
+        {/* ── Alternativas veganas (solo si hay una real) ─────────── */}
+        {canAlt ? (
           <Pressable
-            onPress={onShowAlternatives}
+            onPress={() => offProduct && onShowAlternatives?.(offProduct)}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -472,12 +591,7 @@ export function ProductDetailSheet({
         ) : null}
       </View>
 
-      {/* Info sheet sobre Nutri/Eco/NOVA — modal por encima del modal */}
-      <ScoreInfoSheet
-        kind={infoKind}
-        visible={infoKind !== null}
-        onClose={() => setInfoKind(null)}
-      />
+      <ScoreInfoSheet kind={infoKind} visible={infoKind !== null} onClose={() => setInfoKind(null)} />
     </BottomSheet>
   );
 }

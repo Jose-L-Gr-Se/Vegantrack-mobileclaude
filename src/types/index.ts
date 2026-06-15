@@ -76,6 +76,8 @@ export interface OpenFoodFactsProduct {
   image_front_large_url?: string | null;
   categories_tags: string[];
   labels_tags: string[];
+  /** Análisis automático de OFF: 'en:vegan' | 'en:non-vegan' | 'en:maybe-vegan'… */
+  ingredients_analysis_tags?: string[];
   ingredients_text?: string | null;
   /** Etiquetas de calidad: A-E (Nutri-Score y Eco-Score) y 1-4 (NOVA). */
   nutriscore_grade?: 'a' | 'b' | 'c' | 'd' | 'e' | null;

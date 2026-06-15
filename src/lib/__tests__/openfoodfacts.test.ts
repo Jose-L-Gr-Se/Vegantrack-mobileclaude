@@ -1,5 +1,10 @@
 /** Normalización OFF y conversión de unidades (OFF reporta todo en gramos). */
-import { getVeganConfidence, normalizeProduct, productToFoodPer100g } from '@/lib/openfoodfacts';
+import {
+  canSuggestVeganAlternative,
+  getVeganConfidence,
+  normalizeProduct,
+  productToFoodPer100g,
+} from '@/lib/openfoodfacts';
 
 jest.mock('@/db/database', () => ({
   getCachedOffProduct: jest.fn().mockResolvedValue(null),
@@ -76,5 +81,43 @@ describe('getVeganConfidence', () => {
 
   it('sin señal → unknown', () => {
     expect(getVeganConfidence(make({ product_name: 'Galletas de chocolate' }))).toBe('unknown');
+  });
+
+  it('análisis OFF non-vegan manda sobre keywords', () => {
+    expect(
+      getVeganConfidence(
+        make({ product_name: 'Bebida de soja', ingredients_analysis_tags: ['en:non-vegan'] })
+      )
+    ).toBe('low');
+  });
+
+  it('análisis OFF vegan → high aunque no haya sello', () => {
+    expect(
+      getVeganConfidence(make({ product_name: 'Crema', ingredients_analysis_tags: ['en:vegan'] }))
+    ).toBe('high');
+  });
+});
+
+describe('canSuggestVeganAlternative', () => {
+  const make = (over: object) =>
+    normalizeProduct({ code: 'x', product_name: 'Producto', nutriments: {}, ...over });
+
+  it('producto cárnico claro con categoría conocida → sí', () => {
+    // "Hamburguesa de ternera" → low (ternera) + mapeo burger/carne
+    expect(canSuggestVeganAlternative(make({ product_name: 'Hamburguesa de ternera' }))).toBe(true);
+  });
+
+  it('leche de vaca → sí (hay bebida vegetal en el mercado)', () => {
+    expect(canSuggestVeganAlternative(make({ product_name: 'Leche entera de vaca' }))).toBe(true);
+  });
+
+  it('producto ya vegano → no', () => {
+    expect(canSuggestVeganAlternative(make({ labels_tags: ['en:vegan'], product_name: 'Tofu' }))).toBe(
+      false
+    );
+  });
+
+  it('producto sin señal animal y sin categoría → no', () => {
+    expect(canSuggestVeganAlternative(make({ product_name: 'Galletas de chocolate' }))).toBe(false);
   });
 });

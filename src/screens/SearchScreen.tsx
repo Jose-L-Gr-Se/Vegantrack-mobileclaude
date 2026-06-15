@@ -9,13 +9,13 @@ import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, EmptyState, IconButton, Input, Pill, SectionHeader } from '@/components/ui';
-import { AddFoodModal } from '@/components/AddFoodModal';
 import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { customFoodToPer100g, useCustomFoodStore } from '@/stores/customFoodStore';
 import {
+  canSuggestVeganAlternative,
   findVeganAlternatives,
   getProductByBarcode,
   getVeganConfidence,
@@ -82,26 +82,40 @@ export function SearchScreen() {
   const [alternativesFor, setAlternativesFor] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<FoodPer100g | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<OpenFoodFactsProduct | null>(null);
   const [selectedConfidence, setSelectedConfidence] = useState<VeganConfidence | undefined>(undefined);
   const [lockedMeal, setLockedMeal] = useState<MealType | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Datos al enfocar la pantalla.
   useFocusEffect(
     useCallback(() => {
-      // El meal lock solo dura una "intención": cuando vienes desde el
-      // + Desayuno del Diario, la nav trae mealType en los params. Lo
-      // consumimos al instante para que un toque manual en la pestaña
-      // Buscar (sin params nuevos) no arrastre el lock anterior.
-      const m = route.params?.mealType ?? null;
-      setLockedMeal(m);
-      if (m) navigation.setParams({ mealType: undefined } as never);
       if (user) {
         void fetchRecentFoods(user.id);
         void customFoodStore.fetchCustomFoods(user.id);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id])
+  );
+
+  // Meal lock: aplica la comida cuando llega en la navegación (desde el
+  // "+ Desayuno/Comida/…" del Diario). Se lee SIEMPRE fresco — antes un
+  // useFocusEffect con deps [user] capturaba un route obsoleto y perdía el
+  // mealType, por eso pedía la comida otra vez.
+  useEffect(() => {
+    if (route.params?.mealType) setLockedMeal(route.params.mealType);
+  }, [route.params?.mealType]);
+
+  // Al SALIR de Buscar limpiamos el lock y el param, de modo que volver a
+  // entrar tocando la pestaña (sin intención de comida) vuelva a preguntar.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setLockedMeal(null);
+        navigation.setParams({ mealType: undefined } as never);
+      };
+    }, [navigation])
   );
 
   // Barcode entrante desde el escáner
@@ -114,6 +128,7 @@ export function SearchScreen() {
       const product = await getProductByBarcode(barcode);
       setSearching(false);
       if (product) {
+        setSelectedProduct(product);
         setSelectedConfidence(getVeganConfidence(product));
         setSelected(productToFoodPer100g(product));
       } else {
@@ -144,14 +159,25 @@ export function SearchScreen() {
   const showAlternatives = async (product: OpenFoodFactsProduct) => {
     setSearching(true);
     setAlternativesFor(product.product_name);
+    setResults([]);
     const alts = await findVeganAlternatives(product);
     setSearching(false);
     setResults(alts);
+    if (alts.length === 0) {
+      setToast('No encontramos una alternativa vegana clara para este producto.');
+    }
   };
 
   const selectProduct = (p: OpenFoodFactsProduct) => {
+    setSelectedProduct(p);
     setSelectedConfidence(getVeganConfidence(p));
     setSelected(productToFoodPer100g(p));
+  };
+
+  const closeSheet = () => {
+    setSelected(null);
+    setSelectedProduct(null);
+    setSelectedConfidence(undefined);
   };
 
   const freshMatches = searchFreshProduce(query);
@@ -277,7 +303,7 @@ export function SearchScreen() {
                     </Text>
                     <View style={{ flexDirection: 'row', gap: spacing.xs, marginTop: 2, flexWrap: 'wrap' }}>
                       <Pill text={c.text} color={c.color} />
-                      {confidence === 'low' && !alternativesFor ? (
+                      {!alternativesFor && canSuggestVeganAlternative(p) ? (
                         <Pressable onPress={() => void showAlternatives(p)} hitSlop={6}>
                           <Pill text="Alternativas 🌱" color={semantic.success} />
                         </Pressable>
@@ -322,28 +348,20 @@ export function SearchScreen() {
       {selected && (
         <ProductDetailSheet
           food={selected}
+          offProduct={selectedProduct}
           lockedMealType={lockedMeal}
           veganConfidence={selectedConfidence}
           profile={sheetProfile}
-          onClose={() => {
-            setSelected(null);
-            setSelectedConfidence(undefined);
-          }}
+          onClose={closeSheet}
           onAdded={(msg) => {
             setToast(msg);
             if (user) void fetchRecentFoods(user.id);
             navigation.navigate('Main', { screen: 'Diary' });
           }}
-          onShowAlternatives={
-            selected
-              ? () => {
-                  setSelected(null);
-                  setSelectedConfidence(undefined);
-                  // Show alternatives by searching for the food name
-                  setQuery(selected.food_name);
-                }
-              : undefined
-          }
+          onShowAlternatives={(product) => {
+            closeSheet();
+            void showAlternatives(product);
+          }}
         />
       )}
     </View>

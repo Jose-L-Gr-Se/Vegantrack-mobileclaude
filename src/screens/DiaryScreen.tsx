@@ -10,7 +10,7 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
-import { EditEntryModal } from '@/components/EditEntryModal';
+import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { SwipeableRow } from '@/components/SwipeableRow';
 import { SupplementEditor } from '@/components/SupplementEditor';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -380,9 +380,23 @@ export function DiaryScreen() {
       {entries.length === 0 && <EmptyState emoji="🥗" text="Aún no has registrado nada hoy. Toca ＋ en una comida para buscar alimentos." />}
 
       {editing ? (
-        <EditEntryModal
-          entry={editing}
+        <ProductDetailSheet
+          editEntry={editing}
+          profile={
+            profile?.calorie_target != null &&
+            profile?.protein_target_g != null &&
+            profile?.carbs_target_g != null &&
+            profile?.fat_target_g != null
+              ? {
+                  calorie_target: profile.calorie_target,
+                  protein_target_g: profile.protein_target_g,
+                  carbs_target_g: profile.carbs_target_g,
+                  fat_target_g: profile.fat_target_g,
+                }
+              : null
+          }
           onClose={() => setEditing(null)}
+          onSaved={() => setEditing(null)}
           onDelete={() => void deleteEntry(editing.id)}
         />
       ) : null}
