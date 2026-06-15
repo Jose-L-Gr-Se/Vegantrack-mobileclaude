@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import { EditEntryModal } from '@/components/EditEntryModal';
+import { SwipeableRow } from '@/components/SwipeableRow';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
@@ -178,27 +179,31 @@ export function DiaryScreen() {
               </Pressable>
             ) : (
               mealEntries.map((e) => (
-                <Pressable
+                <SwipeableRow
                   key={e.id}
                   onPress={() => setEditing(e)}
-                  onLongPress={() => onDelete(e)}
-                  style={({ pressed }) => ({
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    paddingVertical: 6,
-                    opacity: pressed ? 0.6 : 1,
-                  })}
+                  onDelete={() => void deleteEntry(e.id)}
                 >
-                  <View style={{ flex: 1, paddingRight: spacing.md }}>
-                    <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>
-                      {e.food_name}
-                    </Text>
-                    <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                      {e.serving_size_g} g{e.brand ? ` · ${e.brand}` : ''}
-                    </Text>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingVertical: 10,
+                      paddingHorizontal: 2,
+                    }}
+                  >
+                    <View style={{ flex: 1, paddingRight: spacing.md }}>
+                      <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>
+                        {e.food_name}
+                      </Text>
+                      <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                        {e.serving_size_g} g{e.brand ? ` · ${e.brand}` : ''}
+                      </Text>
+                    </View>
+                    <Text style={{ color: t.textSecondary, fontWeight: '700' }}>{Math.round(e.calories)}</Text>
                   </View>
-                  <Text style={{ color: t.textSecondary, fontWeight: '700' }}>{Math.round(e.calories)}</Text>
-                </Pressable>
+                </SwipeableRow>
               ))
             )}
           </Card>

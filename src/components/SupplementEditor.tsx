@@ -103,7 +103,36 @@ export function SupplementEditor({
   };
 
   return (
-    <BottomSheet visible={visible} onClose={onClose}>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      footer={
+        <View style={{ gap: spacing.sm }}>
+          {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
+          <Button title="Guardar" onPress={submit} loading={saving} />
+          {onDelete ? (
+            <Pressable
+              onPress={() => {
+                onDelete();
+                onClose();
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: spacing.sm,
+                paddingVertical: spacing.xs,
+              }}
+            >
+              <Ionicons name={'trash-outline' as never} size={16} color={semantic.danger} />
+              <Text style={{ color: semantic.danger, fontWeight: '700', fontSize: 14 }}>
+                Eliminar suplemento
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      }
+    >
       <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
         <Text style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: '400', color: t.text }}>
           {title ?? 'Suplemento'}
@@ -276,30 +305,6 @@ export function SupplementEditor({
           </Text>
         </View>
 
-        {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
-
-        <Button title="Guardar" onPress={submit} loading={saving} />
-
-        {onDelete ? (
-          <Pressable
-            onPress={() => {
-              onDelete();
-              onClose();
-            }}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: spacing.sm,
-              paddingVertical: spacing.sm,
-            }}
-          >
-            <Ionicons name={'trash-outline' as never} size={16} color={semantic.danger} />
-            <Text style={{ color: semantic.danger, fontWeight: '700', fontSize: 14 }}>
-              Eliminar suplemento
-            </Text>
-          </Pressable>
-        ) : null}
       </View>
     </BottomSheet>
   );

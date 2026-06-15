@@ -98,7 +98,27 @@ export function EditEntryModal({
   };
 
   return (
-    <BottomSheet visible={true} onClose={onClose}>
+    <BottomSheet
+      visible={true}
+      onClose={onClose}
+      footer={
+        <View style={{ gap: spacing.sm }}>
+          {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
+          <Button title="Guardar cambios" onPress={save} loading={saving} />
+          <Pressable
+            onPress={() => {
+              onDelete();
+              onClose();
+            }}
+            style={{ alignItems: 'center', paddingVertical: spacing.xs }}
+          >
+            <Text style={{ color: semantic.danger, fontWeight: '700', fontSize: 14 }}>
+              Eliminar del diario
+            </Text>
+          </Pressable>
+        </View>
+      }
+    >
       <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center' }}>
@@ -221,21 +241,6 @@ export function EditEntryModal({
           </View>
         </View>
 
-        {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
-
-        <Button title="Guardar cambios" onPress={save} loading={saving} />
-
-        <Pressable
-          onPress={() => {
-            onDelete();
-            onClose();
-          }}
-          style={{ alignItems: 'center', paddingVertical: spacing.sm }}
-        >
-          <Text style={{ color: semantic.danger, fontWeight: '700', fontSize: 14 }}>
-            Eliminar del diario
-          </Text>
-        </Pressable>
       </View>
     </BottomSheet>
   );

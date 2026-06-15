@@ -24,6 +24,7 @@ import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBad
 import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
+import { suggestedMealNow } from '@/utils/dates';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
@@ -99,7 +100,9 @@ export function ProductDetailSheet({
   const user = useAuthStore((s) => s.user);
   const { addEntry, selectedDate } = useDiaryStore();
   const [grams, setGrams] = useState('100');
-  const [meal, setMeal] = useState<MealType>(lockedMealType ?? 'lunch');
+  // Cuando no hay lock, sugerimos la comida más probable por hora; el
+  // usuario ve el selector y puede cambiarla con un toque.
+  const [meal, setMeal] = useState<MealType>(lockedMealType ?? suggestedMealNow());
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [imageBroken, setImageBroken] = useState(false);
@@ -151,7 +154,18 @@ export function ProductDetailSheet({
   const heroImage = food.image_large_url || food.image_url;
 
   return (
-    <BottomSheet visible={true} onClose={onClose}>
+    <BottomSheet
+      visible={true}
+      onClose={onClose}
+      footer={
+        <View style={{ gap: spacing.sm }}>
+          {error ? (
+            <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text>
+          ) : null}
+          <Button title="Añadir al diario" onPress={confirm} loading={adding} />
+        </View>
+      }
+    >
       <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
         {/* ── Hero ────────────────────────────────────────────────── */}
         <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' }}>
@@ -425,12 +439,6 @@ export function ProductDetailSheet({
             </Text>
           </Pressable>
         ) : null}
-
-        {error ? (
-          <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text>
-        ) : null}
-
-        <Button title="Añadir al diario" onPress={confirm} loading={adding} />
       </View>
 
       {/* Info sheet sobre Nutri/Eco/NOVA — modal por encima del modal */}
