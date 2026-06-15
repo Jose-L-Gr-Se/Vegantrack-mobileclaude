@@ -12,13 +12,15 @@ import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from 
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import { EditEntryModal } from '@/components/EditEntryModal';
 import { SwipeableRow } from '@/components/SwipeableRow';
+import { SupplementEditor } from '@/components/SupplementEditor';
+import { BottomSheet } from '@/components/BottomSheet';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
-import { useSupplementStore } from '@/stores/supplementStore';
-import { FREE_HISTORY_DAYS, usePro } from '@/hooks/usePro';
+import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
+import { FREE_HISTORY_DAYS, FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import { addDays, daysBetween, formatDateHuman, todayISO } from '@/utils/dates';
-import type { FoodLogEntry, MealType } from '@/types';
+import type { FoodLogEntry, MealType, Supplement } from '@/types';
 import type { MainTabParamList } from '@/navigation/types';
 
 const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -33,6 +35,28 @@ export function DiaryScreen() {
   const { isPro } = usePro();
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<FoodLogEntry | null>(null);
+
+  // Editor de suplementos en línea desde el Diario (sin ir a Perfil).
+  // Estado posible:
+  //   · null            → sin editor abierto.
+  //   · 'picker'        → hoja con presets para elegir uno.
+  //   · 'new'           → editor en blanco (creación personalizada).
+  //   · {preset:n}      → editor con datos del preset n cargados.
+  //   · Supplement      → editor de uno existente para modificarlo / borrarlo.
+  const [suppEditor, setSuppEditor] = useState<
+    null | 'picker' | 'new' | { preset: number } | Supplement
+  >(null);
+
+  const tryAddSupplement = (open: () => void) => {
+    if (!isPro && supplements.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
+      Alert.alert(
+        'Límite alcanzado',
+        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`
+      );
+      return;
+    }
+    open();
+  };
 
   useEffect(() => {
     void loadOverrides();
@@ -213,42 +237,61 @@ export function DiaryScreen() {
       {/* Suplementos */}
       <Card style={{ gap: spacing.md }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text
-            style={{
-              fontSize: 11,
-              fontWeight: '700',
-              letterSpacing: 0.8,
-              color: t.textMuted,
-              textTransform: 'uppercase',
-            }}
-          >
-            Suplementos de hoy
-          </Text>
-          {supplements.supplements.length > 0 ? (
-            <Text style={{ color: t.textMuted, fontSize: 11 }}>
-              {Object.keys(supplements.takenToday).length}/{supplements.supplements.length}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '700',
+                letterSpacing: 0.8,
+                color: t.textMuted,
+                textTransform: 'uppercase',
+              }}
+            >
+              Suplementos de hoy
             </Text>
-          ) : null}
+            {supplements.supplements.length > 0 ? (
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>
+                · {Object.keys(supplements.takenToday).length}/{supplements.supplements.length}
+              </Text>
+            ) : null}
+          </View>
+          {/* "+" para añadir sin salir del Diario */}
+          <Pressable
+            onPress={() => tryAddSupplement(() => setSuppEditor('picker'))}
+            hitSlop={8}
+            style={({ pressed }) => ({
+              width: 32, height: 32, borderRadius: 16,
+              backgroundColor: t.primarySoft,
+              alignItems: 'center', justifyContent: 'center',
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Ionicons name={'add' as any} size={20} color={t.primary} />
+          </Pressable>
         </View>
 
         {supplements.supplements.length === 0 ? (
           <Pressable
-            onPress={() => navigation.navigate('Profile' as never)}
-            style={{
+            onPress={() => setSuppEditor('picker')}
+            style={({ pressed }) => ({
               borderWidth: 1,
               borderStyle: 'dashed',
               borderColor: t.cardBorder,
               borderRadius: radii.lg,
               padding: spacing.lg,
               alignItems: 'center',
-              gap: 4,
-            }}
+              gap: 6,
+              opacity: pressed ? 0.7 : 1,
+            })}
           >
-            <Ionicons name={'fitness-outline' as any} size={22} color={t.textMuted} />
-            <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>
-              Aún no has añadido suplementos
+            <Ionicons name={'fitness-outline' as any} size={22} color={t.primary} />
+            <Text style={{ color: t.text, fontSize: 14, fontWeight: '700' }}>
+              Empieza tu rutina
             </Text>
-            <Text style={{ color: t.textMuted, fontSize: 11 }}>Configúralos en Perfil → Suplementos</Text>
+            <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
+              Los más habituales en dieta vegana: B12 (esencial), vitamina D,
+              omega-3 de algas y yodo. Toca para elegir uno y registrar tu primera toma.
+            </Text>
           </Pressable>
         ) : (
           <View style={{ gap: spacing.sm }}>
@@ -258,6 +301,7 @@ export function DiaryScreen() {
                 <Pressable
                   key={s.id}
                   onPress={() => user && void supplements.toggleTaken(user.id, s.id)}
+                  onLongPress={() => setSuppEditor(s)}
                   style={({ pressed }) => ({
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -271,21 +315,16 @@ export function DiaryScreen() {
                     opacity: pressed ? 0.7 : 1,
                   })}
                 >
-                  {/* Avatar emoji con fondo */}
                   <View
                     style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 20,
+                      width: 40, height: 40, borderRadius: 20,
                       backgroundColor: t.background,
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      alignItems: 'center', justifyContent: 'center',
                     }}
                   >
                     <Text style={{ fontSize: 20 }}>{s.emoji ?? '💊'}</Text>
                   </View>
 
-                  {/* Texto */}
                   <View style={{ flex: 1 }}>
                     <Text
                       style={{
@@ -302,17 +341,25 @@ export function DiaryScreen() {
                     </Text>
                   </View>
 
-                  {/* Indicador animado: círculo con check cuando está tomada */}
+                  {/* Botón para abrir el editor sin esperar al long-press */}
+                  <Pressable
+                    onPress={() => setSuppEditor(s)}
+                    hitSlop={10}
+                    style={{
+                      width: 28, height: 28, borderRadius: 14,
+                      alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name={'ellipsis-horizontal' as any} size={16} color={t.textMuted} />
+                  </Pressable>
+
                   <View
                     style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 13,
+                      width: 26, height: 26, borderRadius: 13,
                       borderWidth: 1.5,
                       borderColor: taken ? t.primary : t.cardBorder,
                       backgroundColor: taken ? t.primary : 'transparent',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      alignItems: 'center', justifyContent: 'center',
                     }}
                   >
                     {taken ? <Ionicons name={'checkmark' as any} size={16} color="#fff" /> : null}
@@ -320,6 +367,10 @@ export function DiaryScreen() {
                 </Pressable>
               );
             })}
+
+            <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
+              Toca para marcar como tomado. Mantén pulsado para editar.
+            </Text>
           </View>
         )}
       </Card>
@@ -335,6 +386,169 @@ export function DiaryScreen() {
           onDelete={() => void deleteEntry(editing.id)}
         />
       ) : null}
+
+      {/* Picker de suplementos (presets + crear personalizado) */}
+      <SupplementPickerSheet
+        visible={suppEditor === 'picker'}
+        onClose={() => setSuppEditor(null)}
+        onChoosePreset={(i) => setSuppEditor({ preset: i })}
+        onChooseCustom={() => setSuppEditor('new')}
+      />
+
+      {/* Editor: nuevo desde preset */}
+      {suppEditor && typeof suppEditor === 'object' && 'preset' in suppEditor ? (
+        <SupplementEditor
+          visible
+          title="Añadir suplemento"
+          initial={{
+            name: SUPPLEMENT_PRESETS[suppEditor.preset].name,
+            emoji: SUPPLEMENT_PRESETS[suppEditor.preset].emoji,
+            nutrient_key: SUPPLEMENT_PRESETS[suppEditor.preset].nutrient_key,
+            dose_amount: SUPPLEMENT_PRESETS[suppEditor.preset].dose_amount,
+            dose_unit: SUPPLEMENT_PRESETS[suppEditor.preset].dose_unit,
+          }}
+          onClose={() => setSuppEditor(null)}
+          onSave={async (draft) => {
+            if (!user) return { error: 'No hay sesión' };
+            return supplements.createSupplement(user.id, draft);
+          }}
+        />
+      ) : null}
+
+      {/* Editor: nuevo en blanco */}
+      {suppEditor === 'new' ? (
+        <SupplementEditor
+          visible
+          title="Nuevo suplemento"
+          initial={{ name: '', emoji: '💊', nutrient_key: null, dose_amount: 1, dose_unit: 'mg' }}
+          onClose={() => setSuppEditor(null)}
+          onSave={async (draft) => {
+            if (!user) return { error: 'No hay sesión' };
+            return supplements.createSupplement(user.id, draft);
+          }}
+        />
+      ) : null}
+
+      {/* Editor: existente */}
+      {suppEditor && typeof suppEditor === 'object' && 'id' in suppEditor ? (
+        <SupplementEditor
+          visible
+          title="Editar suplemento"
+          initial={{
+            name: suppEditor.name,
+            emoji: suppEditor.emoji,
+            nutrient_key: suppEditor.nutrient_key,
+            dose_amount: suppEditor.dose_amount,
+            dose_unit: suppEditor.dose_unit,
+          }}
+          onClose={() => setSuppEditor(null)}
+          onSave={async (draft) => supplements.updateSupplement((suppEditor as Supplement).id, draft)}
+          onDelete={() => void supplements.deleteSupplement((suppEditor as Supplement).id)}
+        />
+      ) : null}
     </ScrollView>
+  );
+}
+
+/** Hoja con presets veganos sugeridos y opción de crear uno personalizado. */
+function SupplementPickerSheet({
+  visible,
+  onClose,
+  onChoosePreset,
+  onChooseCustom,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onChoosePreset: (index: number) => void;
+  onChooseCustom: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <BottomSheet visible={visible} onClose={onClose}>
+      <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
+        <Text style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: '400', color: t.text }}>
+          Añadir suplemento
+        </Text>
+        <Text style={{ color: t.textSecondary, fontSize: 13, lineHeight: 18 }}>
+          Toca uno de los suplementos típicos en dieta vegana para ajustar la
+          dosis y guardarlo. Puedes añadir el mismo varias veces si lo tomas
+          en varios momentos del día (p. ej. B12 por la mañana y por la noche).
+        </Text>
+
+        {/* Crear personalizado destacado */}
+        <Pressable
+          onPress={() => {
+            onClose();
+            onChooseCustom();
+          }}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: spacing.sm,
+            paddingVertical: spacing.md,
+            borderRadius: radii.lg,
+            borderWidth: 1.5,
+            borderColor: t.primary,
+            backgroundColor: t.primarySoft,
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <Ionicons name={'create-outline' as any} size={18} color={t.primary} />
+          <Text style={{ color: t.primary, fontWeight: '700', fontSize: 14 }}>
+            Crear uno personalizado
+          </Text>
+        </Pressable>
+
+        <Text
+          style={{
+            fontSize: 11,
+            fontWeight: '700',
+            letterSpacing: 0.8,
+            color: t.textMuted,
+            textTransform: 'uppercase',
+            marginTop: spacing.sm,
+          }}
+        >
+          Suplementos típicos en dieta vegana
+        </Text>
+
+        {SUPPLEMENT_PRESETS.map((p, i) => (
+          <Pressable
+            key={p.name}
+            onPress={() => {
+              onClose();
+              onChoosePreset(i);
+            }}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.md,
+              paddingVertical: spacing.sm,
+              paddingHorizontal: spacing.md,
+              borderRadius: radii.md,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <View
+              style={{
+                width: 40, height: 40, borderRadius: 20,
+                backgroundColor: t.background,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 20 }}>{p.emoji}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }}>{p.name}</Text>
+              <Text style={{ color: t.textMuted, fontSize: 11 }}>
+                Sugerido: {p.dose_amount} {p.dose_unit}
+              </Text>
+            </View>
+            <Ionicons name={'add-circle-outline' as any} size={20} color={t.primary} />
+          </Pressable>
+        ))}
+      </View>
+    </BottomSheet>
   );
 }

@@ -1,24 +1,28 @@
 /**
- * SwipeableRow — fila deslizable a la izquierda para revelar un botón
- * de eliminar. Inspirado en el patrón nativo iOS / Material.
+ * SwipeableRow — fila con eliminación en **dos pasos** como seguro.
  *
- * UX:
- *  1. Desliza la fila hacia la izquierda.
- *  2. Aparece un fondo rojo con icono + "Eliminar". El gesto se queda
- *     "abierto" si superas el umbral (60 px), si no vuelve al sitio.
- *  3. Tocar el botón rojo o soltar más allá de 140 px elimina.
- *  4. Tocar fuera (o deslizar a la derecha) lo cierra.
+ * UX intencionada (más segura que iOS por defecto):
  *
- * Construido con PanResponder + Animated nativo, sin dependencias extra.
+ *   1. Estado **cerrado**. Tocar abre el editor (`onPress`).
+ *   2. Desliza hacia la izquierda → la fila se queda **abierta** y muestra
+ *      el botón rojo "Eliminar". No borra en este paso, da igual la
+ *      velocidad: requiere confirmar.
+ *   3. Estado **abierto** → o bien
+ *        · tocas el botón rojo (confirmar), o
+ *        · vuelves a deslizar a la izquierda (confirmar con gesto), o
+ *        · deslizas a la derecha / tocas la fila para cerrarla sin borrar.
+ *
+ * Construida con PanResponder + Animated nativo, sin dependencias extra.
  */
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { radii, semantic, spacing, useTheme } from '@/theme';
+import { radii, semantic, useTheme } from '@/theme';
 
-const SNAP_OPEN = -100; // posición abierta (botón visible)
-const SNAP_THRESHOLD = -60; // a partir de aquí abre al soltar
-const COMMIT_THRESHOLD = -140; // si supera esto, elimina directo
+const SNAP_OPEN = -110;          // posición abierta
+const OPEN_THRESHOLD = -45;      // si al soltar superas esto, ABRE
+const REOPEN_DELETE_EXTRA = -30; // estando ABIERTO, deslizar 30 px más confirma
+const ROW_RADIUS = radii.md;
 
 export function SwipeableRow({
   children,
@@ -31,32 +35,36 @@ export function SwipeableRow({
 }) {
   const t = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
+  // Posición lógica: closed o open. Cuando está abierta y el usuario
+  // arrastra MÁS allá del SNAP_OPEN, lo interpretamos como "confirmar".
+  const [openState, setOpenState] = useState<'closed' | 'open'>('closed');
   const lastValue = useRef(0);
 
-  // Mantenemos el último valor para que un segundo arrastre arranque
-  // desde donde se quedó (estado "abierto" → arrastrar más cierra o
-  // confirma).
   translateX.addListener(({ value }) => {
     lastValue.current = value;
   });
 
-  const close = () =>
+  const close = () => {
+    setOpenState('closed');
     Animated.spring(translateX, {
       toValue: 0,
       useNativeDriver: true,
       tension: 90,
       friction: 9,
     }).start();
+  };
 
-  const open = () =>
+  const open = () => {
+    setOpenState('open');
     Animated.spring(translateX, {
       toValue: SNAP_OPEN,
       useNativeDriver: true,
       tension: 90,
       friction: 9,
     }).start();
+  };
 
-  const commitDelete = () => {
+  const commit = () => {
     Animated.timing(translateX, {
       toValue: -500,
       duration: 200,
@@ -71,33 +79,46 @@ export function SwipeableRow({
       onMoveShouldSetPanResponder: (_, g) =>
         Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
       onPanResponderMove: (_, g) => {
-        const next = Math.min(0, lastValue.current + g.dx);
-        translateX.setValue(Math.max(next, -160));
+        // El delta se aplica encima de la posición previa: si está abierta,
+        // dragear más a la izquierda extiende; a la derecha cierra.
+        const base = openState === 'open' ? SNAP_OPEN : 0;
+        const next = Math.min(0, base + g.dx);
+        translateX.setValue(Math.max(next, -180));
       },
       onPanResponderRelease: (_, g) => {
-        const final = lastValue.current;
-        if (final < COMMIT_THRESHOLD || g.vx < -1.2) {
-          commitDelete();
-        } else if (final < SNAP_THRESHOLD) {
-          open();
+        const cur = lastValue.current;
+        if (openState === 'closed') {
+          // Cerrado → solo decidimos si lo abrimos. NUNCA borramos en
+          // un solo gesto, da igual la velocidad: este es el seguro.
+          if (cur <= OPEN_THRESHOLD) open();
+          else close();
         } else {
-          close();
+          // Ya está abierto. Si han seguido tirando a la izquierda más
+          // allá del extra (~30 px), confirmamos. Si han ido claramente
+          // a la derecha, cerramos. En medio, se queda abierto esperando.
+          if (cur <= SNAP_OPEN + REOPEN_DELETE_EXTRA) {
+            commit();
+          } else if (cur > SNAP_OPEN + 40) {
+            close();
+          } else {
+            open();
+          }
         }
       },
     })
   ).current;
 
   return (
-    <View style={{ position: 'relative', overflow: 'hidden', borderRadius: radii.md }}>
-      {/* Fondo rojo con botón de eliminar */}
+    <View style={{ position: 'relative', overflow: 'hidden', borderRadius: ROW_RADIUS }}>
+      {/* Fondo rojo: solo presente para mostrar el botón cuando está abierto */}
       <Pressable
-        onPress={commitDelete}
+        onPress={commit}
         style={{
           position: 'absolute',
           right: 0,
           top: 0,
           bottom: 0,
-          width: 100,
+          width: 110,
           backgroundColor: semantic.danger,
           alignItems: 'center',
           justifyContent: 'center',
@@ -119,8 +140,9 @@ export function SwipeableRow({
       >
         <Pressable
           onPress={() => {
-            // Si está abierta, primer toque cierra; si está cerrada, abre el editor.
-            if (lastValue.current < -10) close();
+            // Si está abierta, primer toque sobre la fila cierra (no borra).
+            // Si está cerrada, toque abre el editor.
+            if (openState === 'open') close();
             else onPress?.();
           }}
         >

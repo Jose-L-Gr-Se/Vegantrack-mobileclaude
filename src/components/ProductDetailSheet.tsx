@@ -24,7 +24,6 @@ import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBad
 import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
-import { suggestedMealNow } from '@/utils/dates';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
@@ -100,9 +99,12 @@ export function ProductDetailSheet({
   const user = useAuthStore((s) => s.user);
   const { addEntry, selectedDate } = useDiaryStore();
   const [grams, setGrams] = useState('100');
-  // Cuando no hay lock, sugerimos la comida más probable por hora; el
-  // usuario ve el selector y puede cambiarla con un toque.
-  const [meal, setMeal] = useState<MealType>(lockedMealType ?? suggestedMealNow());
+  // El meal sigue dos reglas claras:
+  //  · Si viene un lock (desde "+ Desayuno" del Diario), forzamos esa
+  //    comida y ocultamos el selector. SÍ O SÍ.
+  //  · Si no, mostramos el selector vacío al inicio para que el usuario
+  //    elija de forma consciente.
+  const [meal, setMeal] = useState<MealType | null>(lockedMealType ?? null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [imageBroken, setImageBroken] = useState(false);
@@ -135,14 +137,20 @@ export function ProductDetailSheet({
       setError('Introduce una cantidad válida en gramos');
       return;
     }
+    // Si no hay lock, exigimos elegir comida — evita registros equivocados.
+    const target = lockedMealType ?? meal;
+    if (!target) {
+      setError('Elige a qué comida añadirlo (desayuno, comida, cena o snack).');
+      return;
+    }
     if (!user) return;
     setAdding(true);
-    const entry = buildEntry(food, parsed, meal, selectedDate, user.id);
+    const entry = buildEntry(food, parsed, target, selectedDate, user.id);
     const { error: err } = await addEntry(entry);
     setAdding(false);
     if (err) setError(err);
     else {
-      onAdded(`${food.food_name} añadido a ${MEAL_LABELS[meal]}`);
+      onAdded(`${food.food_name} añadido a ${MEAL_LABELS[target]}`);
       onClose();
     }
   };
@@ -304,14 +312,37 @@ export function ProductDetailSheet({
         </View>
 
         {/* ── Selector de comida ──────────────────────────────────── */}
-        {!lockedMealType && (
+        {lockedMealType ? (
+          /* Lock visual: el usuario ve a dónde irá la comida, sin poder
+             cambiarlo. Llegó aquí con un "+ Desayuno/Comida/…" del Diario. */
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.sm,
+              padding: spacing.md,
+              borderRadius: radii.lg,
+              backgroundColor: t.primarySoft,
+              borderWidth: 1,
+              borderColor: t.primary,
+            }}
+          >
+            <Text style={{ fontSize: 18 }}>{MEAL_ICONS[lockedMealType]}</Text>
+            <Text style={{ flex: 1, color: t.primary, fontWeight: '700', fontSize: 14 }}>
+              Se añadirá a {MEAL_LABELS[lockedMealType]}
+            </Text>
+            <Ionicons name={'lock-closed' as never} size={14} color={t.primary} />
+          </View>
+        ) : (
           <View style={{ gap: spacing.sm }}>
-            <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Comida</Text>
+            <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>
+              ¿A qué comida lo añades?
+            </Text>
             <View style={{ flexDirection: 'row', gap: spacing.xs }}>
               {MEAL_ORDER.map((m) => (
                 <Pressable
                   key={m}
-                  onPress={() => setMeal(m)}
+                  onPress={() => { setMeal(m); setError(null); }}
                   style={{
                     flex: 1,
                     alignItems: 'center',
