@@ -24,7 +24,9 @@ import {
   scheduleDailyReminder,
 } from '@/notifications/reminders';
 import { ProModal } from '@/components/ProModal';
-import type { ActivityLevel, Goal } from '@/types';
+import { BottomSheet } from '@/components/BottomSheet';
+import { SupplementEditor } from '@/components/SupplementEditor';
+import type { ActivityLevel, Goal, Supplement } from '@/types';
 import type { RootStackParamList } from '@/navigation/types';
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
@@ -644,176 +646,230 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
 
 function SupplementsModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
-  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const store = useSupplementStore();
   const { isPro } = usePro();
 
-  const addPreset = async (presetIndex: number) => {
-    if (!user) return;
+  // Estado del editor: null = cerrado · 'new' o un Supplement = abierto.
+  const [editing, setEditing] = React.useState<Supplement | 'new' | { preset: number } | null>(null);
+
+  const tryAdd = (open: () => void) => {
     if (!isPro && store.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
       Alert.alert(
         'Límite alcanzado',
-        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos.`
+        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`
       );
       return;
     }
-    const p = SUPPLEMENT_PRESETS[presetIndex];
-    const { error } = await store.createSupplement(user.id, {
-      name: p.name,
-      nutrient_key: p.nutrient_key,
-      emoji: p.emoji,
-      dose_amount: p.dose_amount,
-      dose_unit: p.dose_unit,
-    });
-    if (error) Alert.alert('Error', error);
+    open();
   };
 
-  return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        onPress={onClose}
-      >
-        <Pressable onPress={() => undefined}>
-          <View
-            style={{
-              backgroundColor: t.card,
-              borderTopLeftRadius: radii.xl,
-              borderTopRightRadius: radii.xl,
-              maxHeight: '85%',
-              borderWidth: 1,
-              borderColor: t.cardBorder,
-              paddingBottom: insets.bottom + spacing.lg,
-            }}
-          >
-            {/* Drag handle */}
-            <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
-              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
-            </View>
+  // ── Editor: nuevo desde preset ────────────────────────────────────────
+  if (editing && typeof editing === 'object' && 'preset' in editing) {
+    const p = SUPPLEMENT_PRESETS[editing.preset];
+    return (
+      <SupplementEditor
+        visible
+        title="Añadir suplemento"
+        initial={{
+          name: p.name,
+          emoji: p.emoji,
+          nutrient_key: p.nutrient_key,
+          dose_amount: p.dose_amount,
+          dose_unit: p.dose_unit,
+        }}
+        onClose={() => setEditing(null)}
+        onSave={async (draft) => {
+          if (!user) return { error: 'No hay sesión' };
+          return store.createSupplement(user.id, draft);
+        }}
+      />
+    );
+  }
 
-            <View
+  // ── Editor: nuevo en blanco ───────────────────────────────────────────
+  if (editing === 'new') {
+    return (
+      <SupplementEditor
+        visible
+        title="Nuevo suplemento"
+        initial={{ name: '', emoji: '💊', nutrient_key: null, dose_amount: 1, dose_unit: 'mg' }}
+        onClose={() => setEditing(null)}
+        onSave={async (draft) => {
+          if (!user) return { error: 'No hay sesión' };
+          return store.createSupplement(user.id, draft);
+        }}
+      />
+    );
+  }
+
+  // ── Editor: edición de uno existente ──────────────────────────────────
+  if (editing && typeof editing === 'object' && 'id' in editing) {
+    const s = editing;
+    return (
+      <SupplementEditor
+        visible
+        title="Editar suplemento"
+        initial={{
+          name: s.name,
+          emoji: s.emoji,
+          nutrient_key: s.nutrient_key,
+          dose_amount: s.dose_amount,
+          dose_unit: s.dose_unit,
+        }}
+        onClose={() => setEditing(null)}
+        onSave={async (draft) => store.updateSupplement(s.id, draft)}
+        onDelete={() => void store.deleteSupplement(s.id)}
+      />
+    );
+  }
+
+  return (
+    <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
+      <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>
+            Suplementos
+          </Text>
+          {!isPro ? (
+            <Text style={{ color: t.textMuted, fontSize: 11 }}>
+              {store.supplements.length}/{FREE_SUPPLEMENT_LIMIT} (free)
+            </Text>
+          ) : null}
+        </View>
+
+        {/* ── Mis suplementos ──────────────────────────────────────── */}
+        {store.supplements.length > 0 ? (
+          <View style={{ gap: spacing.sm }}>
+            <Text
               style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingHorizontal: spacing.lg,
-                marginBottom: spacing.md,
+                fontSize: 11,
+                fontWeight: '700',
+                letterSpacing: 0.8,
+                color: t.textMuted,
+                textTransform: 'uppercase',
               }}
             >
-              <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>💊 Suplementos</Text>
-              <Pressable onPress={onClose} hitSlop={8}>
-                <Text style={{ color: t.primary, fontWeight: '700' }}>Cerrar</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView
-              style={{ maxHeight: 480 }}
-              contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: 0 }}
-            >
-              {store.supplements.length > 0 && (
-                <View>
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      fontWeight: '700',
-                      letterSpacing: 0.8,
-                      color: t.textMuted,
-                      textTransform: 'uppercase',
-                      marginBottom: spacing.sm,
-                    }}
-                  >
-                    Mis suplementos
-                  </Text>
-                  {store.supplements.map((s) => (
-                    <Pressable
-                      key={s.id}
-                      onLongPress={() =>
-                        Alert.alert('Eliminar', `¿Eliminar "${s.name}"?`, [
-                          { text: 'Cancelar', style: 'cancel' },
-                          {
-                            text: 'Eliminar',
-                            style: 'destructive',
-                            onPress: () => void store.deleteSupplement(s.id),
-                          },
-                        ])
-                      }
-                      style={{
-                        height: 52,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: spacing.md,
-                        borderBottomWidth: 1,
-                        borderBottomColor: t.separator,
-                      }}
-                    >
-                      <Text style={{ fontSize: 18 }}>{s.emoji ?? '💊'}</Text>
-                      <Text style={{ flex: 1, color: t.text, fontWeight: '600', fontSize: 15 }}>
-                        {s.name}
-                      </Text>
-                      <Text style={{ color: t.textMuted, fontSize: 13 }}>
-                        {s.dose_amount} {s.dose_unit}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-              <Text
-                style={{
-                  fontSize: 11,
-                  fontWeight: '700',
-                  letterSpacing: 0.8,
-                  color: t.textMuted,
-                  textTransform: 'uppercase',
-                  marginTop: spacing.lg,
-                  marginBottom: spacing.sm,
-                }}
+              Mis suplementos
+            </Text>
+            {store.supplements.map((s) => (
+              <Pressable
+                key={s.id}
+                onPress={() => setEditing(s)}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.md,
+                  padding: spacing.md,
+                  borderRadius: radii.lg,
+                  borderWidth: 1,
+                  borderColor: t.cardBorder,
+                  backgroundColor: t.card,
+                  opacity: pressed ? 0.7 : 1,
+                })}
               >
-                Añadir preset
-              </Text>
-              {SUPPLEMENT_PRESETS.map((p, i) => (
-                <Pressable
-                  key={p.name}
-                  onPress={() => void addPreset(i)}
-                  style={({ pressed }) => ({
-                    height: 52,
-                    flexDirection: 'row',
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: t.primarySoft,
                     alignItems: 'center',
-                    gap: spacing.md,
-                    borderBottomWidth: 1,
-                    borderBottomColor: t.separator,
-                    opacity: pressed ? 0.7 : 1,
-                  })}
+                    justifyContent: 'center',
+                  }}
                 >
-                  <View
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 10,
-                      backgroundColor: t.primarySoft,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Ionicons name={'add' as any} size={18} color={t.primary} />
-                  </View>
-                  <Text style={{ flex: 1, color: t.text, fontWeight: '600', fontSize: 15 }}>
-                    {p.emoji} {p.name}
+                  <Text style={{ fontSize: 20 }}>{s.emoji ?? '💊'}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
+                    {s.name}
                   </Text>
                   <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                    {p.dose_amount} {p.dose_unit}
+                    {s.dose_amount} {s.dose_unit}
                   </Text>
-                </Pressable>
-              ))}
-              <Text style={{ color: t.textMuted, fontSize: 11, marginTop: spacing.md, marginBottom: spacing.sm }}>
-                Mantén pulsado un suplemento para eliminarlo.
-              </Text>
-            </ScrollView>
+                </View>
+                <Ionicons name={'pencil-outline' as any} size={16} color={t.textMuted} />
+              </Pressable>
+            ))}
           </View>
+        ) : null}
+
+        {/* ── Acción: crear personalizado ──────────────────────────── */}
+        <Pressable
+          onPress={() => tryAdd(() => setEditing('new'))}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: spacing.sm,
+            paddingVertical: spacing.md,
+            borderRadius: radii.lg,
+            borderWidth: 1.5,
+            borderColor: t.primary,
+            backgroundColor: t.primarySoft,
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <Ionicons name={'add' as any} size={18} color={t.primary} />
+          <Text style={{ color: t.primary, fontWeight: '700', fontSize: 14 }}>
+            Crear suplemento personalizado
+          </Text>
         </Pressable>
-      </Pressable>
-    </Modal>
+
+        {/* ── Presets sugeridos ────────────────────────────────────── */}
+        <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+          <Text
+            style={{
+              fontSize: 11,
+              fontWeight: '700',
+              letterSpacing: 0.8,
+              color: t.textMuted,
+              textTransform: 'uppercase',
+            }}
+          >
+            Empezar desde un preset
+          </Text>
+          <Text style={{ color: t.textMuted, fontSize: 11 }}>
+            Toca uno para revisar dosis y guardarlo. Puedes añadir el mismo varias veces (p. ej. una toma por la mañana y otra por la noche).
+          </Text>
+          {SUPPLEMENT_PRESETS.map((p, i) => (
+            <Pressable
+              key={p.name}
+              onPress={() => tryAdd(() => setEditing({ preset: i }))}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.md,
+                paddingVertical: spacing.sm,
+                paddingHorizontal: spacing.md,
+                borderRadius: radii.md,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <View
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: t.background,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 18 }}>{p.emoji}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: t.text, fontWeight: '600', fontSize: 14 }}>{p.name}</Text>
+                <Text style={{ color: t.textMuted, fontSize: 11 }}>
+                  Sugerido: {p.dose_amount} {p.dose_unit}
+                </Text>
+              </View>
+              <Ionicons name={'add-circle-outline' as any} size={20} color={t.primary} />
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    </BottomSheet>
   );
 }
 

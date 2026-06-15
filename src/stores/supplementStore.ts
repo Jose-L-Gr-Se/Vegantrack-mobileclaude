@@ -17,16 +17,20 @@ export interface SupplementPreset {
   emoji: string;
 }
 
-/** Presets habituales en dietas veganas (mismos que la PWA). */
+/** Presets habituales en dietas veganas (mismos que la PWA, ampliados). */
 export const SUPPLEMENT_PRESETS: SupplementPreset[] = [
   { name: 'Vitamina B12', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'mcg', emoji: '💊' },
-  { name: 'Vitamina D3', nutrient_key: 'vitamin_d_mcg', dose_amount: 25, dose_unit: 'mcg', emoji: '☀️' },
-  { name: 'Omega-3 (DHA+EPA)', nutrient_key: 'omega3_g', dose_amount: 0.5, dose_unit: 'g', emoji: '🐟' },
+  { name: 'Vitamina D3 vegana', nutrient_key: 'vitamin_d_mcg', dose_amount: 25, dose_unit: 'mcg', emoji: '☀️' },
+  { name: 'Omega-3 (DHA+EPA de algas)', nutrient_key: 'omega3_g', dose_amount: 0.5, dose_unit: 'g', emoji: '🌊' },
   { name: 'Yodo', nutrient_key: 'iodine_mcg', dose_amount: 150, dose_unit: 'mcg', emoji: '🧂' },
   { name: 'Hierro', nutrient_key: 'iron_mg', dose_amount: 14, dose_unit: 'mg', emoji: '🩸' },
   { name: 'Zinc', nutrient_key: 'zinc_mg', dose_amount: 10, dose_unit: 'mg', emoji: '⚡' },
   { name: 'Calcio', nutrient_key: 'calcium_mg', dose_amount: 500, dose_unit: 'mg', emoji: '🦴' },
+  { name: 'Magnesio', nutrient_key: null, dose_amount: 300, dose_unit: 'mg', emoji: '🌙' },
+  { name: 'Selenio', nutrient_key: null, dose_amount: 55, dose_unit: 'mcg', emoji: '🛡️' },
   { name: 'Creatina', nutrient_key: null, dose_amount: 5, dose_unit: 'g', emoji: '💪' },
+  { name: 'Multivitamínico', nutrient_key: null, dose_amount: 1, dose_unit: 'cápsula', emoji: '🌈' },
+  { name: 'Probiótico', nutrient_key: null, dose_amount: 1, dose_unit: 'cápsula', emoji: '🦠' },
 ];
 
 interface SupplementState {
@@ -36,6 +40,7 @@ interface SupplementState {
   fetchSupplements: (userId: string) => Promise<void>;
   fetchTodayLogs: (userId: string) => Promise<void>;
   createSupplement: (userId: string, s: Omit<Supplement, 'id' | 'user_id' | 'created_at' | 'frequency' | 'is_active' | 'sort_order'>) => Promise<{ error: string | null }>;
+  updateSupplement: (id: string, patch: Partial<Pick<Supplement, 'name' | 'dose_amount' | 'dose_unit' | 'nutrient_key' | 'emoji'>>) => Promise<{ error: string | null }>;
   deleteSupplement: (id: string) => Promise<{ error: string | null }>;
   toggleTaken: (userId: string, supplementId: string) => Promise<void>;
   getTodayContributions: () => Partial<Record<string, number>>;
@@ -94,6 +99,20 @@ export const useSupplementStore = create<SupplementState>((set, get) => ({
     const { error } = await supabase.from('supplements').insert(insertable);
     if (error) return { error: error.message };
     set({ supplements: [...get().supplements, supplement] });
+    return { error: null };
+  },
+
+  updateSupplement: async (id, patch) => {
+    const prev = get().supplements;
+    // Optimista: refleja el cambio al instante
+    set({
+      supplements: prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    });
+    const { error } = await supabase.from('supplements').update(patch).eq('id', id);
+    if (error) {
+      set({ supplements: prev });
+      return { error: error.message };
+    }
     return { error: null };
   },
 

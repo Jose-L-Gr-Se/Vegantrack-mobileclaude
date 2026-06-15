@@ -1,16 +1,15 @@
 /**
  * Modal de edición de una entry del diario.
  *
- * El usuario puede tocar una comida ya registrada y corregir gramos / comida
- * sin tener que borrarla y volver a buscarla. Reescala todos los nutrientes
- * proporcionalmente — más sencillo que volver a buscar el producto en OFF.
- *
- * Para borrar usa el botón propio (long-press en la lista sigue funcionando
- * como atajo).
+ * Construido sobre `BottomSheet` para heredar el comportamiento de teclado
+ * y el deslizar hacia abajo para cerrar. Reescala los nutrientes
+ * proporcionalmente al cambiar gramos — más simple y respeta la fuente
+ * original sin tener que volver a buscar el producto en OFF.
  */
 import React, { useState } from 'react';
-import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Button, Card, Pill } from '@/components/ui';
+import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Button, Pill } from '@/components/ui';
+import { BottomSheet } from '@/components/BottomSheet';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useDiaryStore } from '@/stores/diaryStore';
@@ -89,178 +88,155 @@ export function EditEntryModal({
     }
     if (!user) return;
     setSaving(true);
-
-    // La edición se modela como "borrar la entry actual + insertar otra
-    // reescalada con id nuevo". Más simple y respeta el flujo offline-first.
+    // Edición = borrar la actual + insertar otra reescalada con id nuevo
     await deleteEntry(entry.id);
     const next = buildEntry(food, parsed, meal, entry.date, user.id);
     const { error: err } = await addEntry(next);
-
     setSaving(false);
     if (err) setError(err);
     else onClose();
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        onPress={onClose}
-      >
-        <Pressable onPress={() => undefined}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <Card
+    <BottomSheet visible={true} onClose={onClose}>
+      <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center' }}>
+          {entry.image_url ? (
+            <Image
+              source={{ uri: entry.image_url }}
+              style={{ width: 64, height: 64, borderRadius: radii.md }}
+              resizeMode="cover"
+            />
+          ) : (
+            <View
               style={{
-                borderBottomLeftRadius: 0,
-                borderBottomRightRadius: 0,
-                borderTopLeftRadius: radii.xl,
-                borderTopRightRadius: radii.xl,
-                padding: 0,
-                gap: 0,
+                width: 64,
+                height: 64,
+                borderRadius: radii.md,
+                backgroundColor: t.separator,
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
-                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
-              </View>
+              <Text style={{ fontSize: 28 }}>🍽️</Text>
+            </View>
+          )}
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text
+              style={{ fontFamily: fonts.display, fontSize: 20, fontWeight: '400', color: t.text }}
+              numberOfLines={2}
+            >
+              {entry.food_name}
+            </Text>
+            {entry.brand ? <Text style={{ color: t.textMuted, fontSize: 12 }}>{entry.brand}</Text> : null}
+            {entry.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
+          </View>
+        </View>
 
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ gap: spacing.lg, padding: spacing.lg, paddingTop: spacing.sm }}
+        {/* Macros preview */}
+        <View
+          style={{
+            flexDirection: 'row',
+            gap: spacing.md,
+            backgroundColor: t.background,
+            borderRadius: radii.lg,
+            padding: spacing.md,
+          }}
+        >
+          {[
+            { l: 'Cal', v: previewCal, u: 'kcal' },
+            { l: 'Prot', v: previewProt, u: 'g' },
+            { l: 'Carbs', v: previewCarb, u: 'g' },
+            { l: 'Grasa', v: previewFat, u: 'g' },
+          ].map((m) => (
+            <View key={m.l} style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: '400', color: t.text }}>
+                {m.v}
+              </Text>
+              <Text style={{ color: t.textMuted, fontSize: 10 }}>
+                {m.l} · {m.u}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Cantidad */}
+        <View style={{ gap: spacing.sm }}>
+          <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Cantidad (g)</Text>
+          <TextInput
+            value={grams}
+            onChangeText={(v) => {
+              setGrams(v);
+              setError(null);
+            }}
+            keyboardType="numeric"
+            selectTextOnFocus
+            style={{
+              backgroundColor: t.inputBg,
+              borderColor: t.inputBorder,
+              borderWidth: 1,
+              borderRadius: radii.lg,
+              paddingHorizontal: spacing.lg,
+              paddingVertical: 12,
+              fontSize: 17,
+              fontWeight: '700',
+              color: t.text,
+            }}
+          />
+        </View>
+
+        {/* Comida */}
+        <View style={{ gap: spacing.sm }}>
+          <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Comida</Text>
+          <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+            {MEAL_ORDER.map((m) => (
+              <Pressable
+                key={m}
+                onPress={() => setMeal(m)}
+                style={{
+                  flex: 1,
+                  alignItems: 'center',
+                  paddingVertical: spacing.sm,
+                  borderRadius: radii.md,
+                  borderWidth: 1.5,
+                  borderColor: meal === m ? t.primary : t.cardBorder,
+                  backgroundColor: meal === m ? t.primarySoft : 'transparent',
+                  gap: 2,
+                }}
               >
-                {/* Header */}
-                <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center' }}>
-                  {entry.image_url ? (
-                    <Image
-                      source={{ uri: entry.image_url }}
-                      style={{ width: 52, height: 52, borderRadius: radii.md }}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: 52, height: 52, borderRadius: radii.md,
-                        backgroundColor: t.separator,
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <Text style={{ fontSize: 24 }}>🍽️</Text>
-                    </View>
-                  )}
-                  <View style={{ flex: 1, gap: 3 }}>
-                    <Text style={{ fontFamily: fonts.display, fontSize: 19, fontWeight: '400', color: t.text }} numberOfLines={2}>
-                      {entry.food_name}
-                    </Text>
-                    {entry.brand ? (
-                      <Text style={{ color: t.textMuted, fontSize: 12 }}>{entry.brand}</Text>
-                    ) : null}
-                    {entry.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
-                  </View>
-                </View>
-
-                {/* Preview macros */}
-                <View
+                <Text style={{ fontSize: 16 }}>{MEAL_ICONS[m]}</Text>
+                <Text
                   style={{
-                    flexDirection: 'row',
-                    gap: spacing.md,
-                    backgroundColor: t.background,
-                    borderRadius: radii.lg,
-                    padding: spacing.md,
+                    fontSize: 9,
+                    fontWeight: '700',
+                    color: meal === m ? t.primary : t.textSecondary,
                   }}
+                  numberOfLines={1}
                 >
-                  {[
-                    { l: 'Cal', v: previewCal, u: 'kcal' },
-                    { l: 'Prot', v: previewProt, u: 'g' },
-                    { l: 'Carbs', v: previewCarb, u: 'g' },
-                    { l: 'Grasa', v: previewFat, u: 'g' },
-                  ].map((m) => (
-                    <View key={m.l} style={{ flex: 1, alignItems: 'center' }}>
-                      <Text style={{ fontFamily: fonts.display, fontSize: 18, fontWeight: '400', color: t.text }}>
-                        {m.v}
-                      </Text>
-                      <Text style={{ color: t.textMuted, fontSize: 10 }}>{m.l} · {m.u}</Text>
-                    </View>
-                  ))}
-                </View>
+                  {MEAL_LABELS[m]}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
 
-                {/* Cantidad */}
-                <View style={{ gap: spacing.sm }}>
-                  <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Cantidad (g)</Text>
-                  <TextInput
-                    value={grams}
-                    onChangeText={(v) => { setGrams(v); setError(null); }}
-                    keyboardType="numeric"
-                    selectTextOnFocus
-                    style={{
-                      backgroundColor: t.inputBg,
-                      borderColor: t.inputBorder,
-                      borderWidth: 1,
-                      borderRadius: radii.lg,
-                      paddingHorizontal: spacing.lg,
-                      paddingVertical: 12,
-                      fontSize: 17,
-                      fontWeight: '700',
-                      color: t.text,
-                    }}
-                  />
-                </View>
+        {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
 
-                {/* Comida */}
-                <View style={{ gap: spacing.sm }}>
-                  <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Comida</Text>
-                  <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                    {MEAL_ORDER.map((m) => (
-                      <Pressable
-                        key={m}
-                        onPress={() => setMeal(m)}
-                        style={{
-                          flex: 1,
-                          alignItems: 'center',
-                          paddingVertical: spacing.sm,
-                          borderRadius: radii.md,
-                          borderWidth: 1.5,
-                          borderColor: meal === m ? t.primary : t.cardBorder,
-                          backgroundColor: meal === m ? t.primarySoft : 'transparent',
-                          gap: 2,
-                        }}
-                      >
-                        <Text style={{ fontSize: 16 }}>{MEAL_ICONS[m]}</Text>
-                        <Text
-                          style={{
-                            fontSize: 9, fontWeight: '700',
-                            color: meal === m ? t.primary : t.textSecondary,
-                          }}
-                          numberOfLines={1}
-                        >
-                          {MEAL_LABELS[m]}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
+        <Button title="Guardar cambios" onPress={save} loading={saving} />
 
-                {error ? (
-                  <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text>
-                ) : null}
-
-                <Button title="Guardar cambios" onPress={save} loading={saving} />
-
-                <Pressable
-                  onPress={() => {
-                    onDelete();
-                    onClose();
-                  }}
-                  style={{ alignItems: 'center', paddingVertical: spacing.sm }}
-                >
-                  <Text style={{ color: semantic.danger, fontWeight: '700', fontSize: 14 }}>
-                    Eliminar del diario
-                  </Text>
-                </Pressable>
-              </ScrollView>
-            </Card>
-          </KeyboardAvoidingView>
+        <Pressable
+          onPress={() => {
+            onDelete();
+            onClose();
+          }}
+          style={{ alignItems: 'center', paddingVertical: spacing.sm }}
+        >
+          <Text style={{ color: semantic.danger, fontWeight: '700', fontSize: 14 }}>
+            Eliminar del diario
+          </Text>
         </Pressable>
-      </Pressable>
-    </Modal>
+      </View>
+    </BottomSheet>
   );
 }

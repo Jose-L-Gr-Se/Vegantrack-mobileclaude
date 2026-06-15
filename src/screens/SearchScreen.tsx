@@ -89,13 +89,19 @@ export function SearchScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setLockedMeal(route.params?.mealType ?? null);
+      // El meal lock solo dura una "intención": cuando vienes desde el
+      // + Desayuno del Diario, la nav trae mealType en los params. Lo
+      // consumimos al instante para que un toque manual en la pestaña
+      // Buscar (sin params nuevos) no arrastre el lock anterior.
+      const m = route.params?.mealType ?? null;
+      setLockedMeal(m);
+      if (m) navigation.setParams({ mealType: undefined } as never);
       if (user) {
         void fetchRecentFoods(user.id);
         void customFoodStore.fetchCustomFoods(user.id);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [route.params?.mealType, user?.id])
+    }, [user?.id])
   );
 
   // Barcode entrante desde el escáner

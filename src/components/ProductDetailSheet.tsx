@@ -1,31 +1,27 @@
 /**
  * ProductDetailSheet — ficha de producto antes de añadirlo al diario.
  *
- * Objetivo: dar al usuario información suficiente para una decisión consciente
- * sin ser alarmista. Aparte de macros y micros, mostramos tres indicadores de
- * OpenFoodFacts cuando están disponibles:
- *   · Nutri-Score (A-E)  → calidad nutricional global
- *   · Eco-Score (A-E)    → impacto medioambiental
- *   · NOVA (1-4)         → grado de procesamiento
+ * Apoyada en `BottomSheet`, que se encarga del comportamiento de teclado y
+ * del cierre por deslizamiento o por el botón de atrás.
  *
- * Se gestiona el teclado con `KeyboardAvoidingView` + `ScrollView` para que
- * el input de gramos no quede tapado por el teclado.
+ * Objetivo: dar información suficiente para una decisión consciente sin
+ * abrumar. Junto a macros y micros, mostramos cuando OFF los expone los
+ * indicadores Nutri-Score, Eco-Score y NOVA. Cada uno es pulsable y abre
+ * una hoja explicativa para quien no los conoce.
  */
 import React, { useState } from 'react';
 import {
   Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Button, Card, Pill, ProgressRing } from '@/components/ui';
+import { Button, Pill, ProgressRing } from '@/components/ui';
+import { BottomSheet } from '@/components/BottomSheet';
 import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBadges';
+import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
 import { useAuthStore } from '@/stores/authStore';
@@ -64,7 +60,6 @@ function MacroRingChip({
   );
 }
 
-/** Fila compacta de un micro (por ración). */
 function MicroRow({ label, value, unit }: { label: string; value: number | null; unit: string }) {
   const t = useTheme();
   if (value === null || value === undefined) return null;
@@ -108,6 +103,7 @@ export function ProductDetailSheet({
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [imageBroken, setImageBroken] = useState(false);
+  const [infoKind, setInfoKind] = useState<ScoreKind | null>(null);
 
   if (!food) return null;
 
@@ -124,7 +120,6 @@ export function ProductDetailSheet({
   const carbTarget = profile?.carbs_target_g ?? 0;
   const fatTarget = profile?.fat_target_g ?? 0;
 
-  // Sub-resumen extra por ración (impactan menos pero sirven para una compra consciente).
   const sugars = Math.round(food.sugar_g * scale * 10) / 10;
   const satFat = Math.round(food.saturated_fat_g * scale * 10) / 10;
   const fiber = Math.round(food.fiber_g * scale * 10) / 10;
@@ -156,306 +151,294 @@ export function ProductDetailSheet({
   const heroImage = food.image_large_url || food.image_url;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        onPress={onClose}
-      >
-        <Pressable onPress={() => undefined} style={{ maxHeight: '92%' }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <BottomSheet visible={true} onClose={onClose}>
+      <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
+        {/* ── Hero ────────────────────────────────────────────────── */}
+        <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' }}>
+          {heroImage && !imageBroken ? (
+            <Image
+              source={{ uri: heroImage }}
+              style={{ width: 96, height: 96, borderRadius: radii.lg, backgroundColor: t.separator }}
+              resizeMode="cover"
+              onError={() => setImageBroken(true)}
+            />
+          ) : (
             <View
               style={{
-                backgroundColor: t.card,
-                borderTopLeftRadius: radii.xl,
-                borderTopRightRadius: radii.xl,
-                borderWidth: 1,
-                borderColor: t.cardBorder,
-                borderBottomWidth: 0,
-                paddingBottom: spacing.xxl,
+                width: 96,
+                height: 96,
+                borderRadius: radii.lg,
+                backgroundColor: t.separator,
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              {/* Drag handle */}
-              <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
-                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
-              </View>
+              <Ionicons name={'fast-food-outline' as never} size={36} color={t.textMuted} />
+            </View>
+          )}
+          <View style={{ flex: 1, gap: 4, paddingTop: 2 }}>
+            <Text
+              style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: '400', color: t.text, lineHeight: 26 }}
+              numberOfLines={3}
+            >
+              {food.food_name}
+            </Text>
+            {food.brand ? (
+              <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text>
+            ) : null}
+            <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 4 }}>
+              {food.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
+              {veganConfidence === 'medium' ? (
+                <Pill text="Parece vegano" color={semantic.warning} />
+              ) : veganConfidence === 'low' ? (
+                <Pill text="No vegano" color={semantic.danger} />
+              ) : veganConfidence === 'unknown' && !food.is_vegan ? (
+                <Pill text="Sin datos vegano" color={t.textMuted} />
+              ) : null}
+            </View>
+          </View>
+        </View>
 
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ gap: spacing.lg, padding: spacing.lg, paddingTop: spacing.sm }}
-              >
-                {/* ── Hero ─────────────────────────────────────────────── */}
-                <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' }}>
-                  {heroImage && !imageBroken ? (
-                    <Image
-                      source={{ uri: heroImage }}
-                      style={{ width: 96, height: 96, borderRadius: radii.lg, backgroundColor: t.separator }}
-                      resizeMode="cover"
-                      onError={() => setImageBroken(true)}
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: 96,
-                        height: 96,
-                        borderRadius: radii.lg,
-                        backgroundColor: t.separator,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Ionicons name={'fast-food-outline' as never} size={36} color={t.textMuted} />
-                    </View>
-                  )}
-                  <View style={{ flex: 1, gap: 4, paddingTop: 2 }}>
-                    <Text
-                      style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: '400', color: t.text, lineHeight: 26 }}
-                      numberOfLines={3}
-                    >
-                      {food.food_name}
-                    </Text>
-                    {food.brand ? (
-                      <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text>
-                    ) : null}
-                    <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 4 }}>
-                      {food.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
-                      {veganConfidence === 'medium' ? (
-                        <Pill text="Parece vegano" color={semantic.warning} />
-                      ) : veganConfidence === 'low' ? (
-                        <Pill text="No vegano" color={semantic.danger} />
-                      ) : veganConfidence === 'unknown' && !food.is_vegan ? (
-                        <Pill text="Sin datos vegano" color={t.textMuted} />
-                      ) : null}
-                    </View>
-                  </View>
-                </View>
+        {/* ── Scores (Nutri / Eco / NOVA) ─────────────────────────── */}
+        {hasAnyScore ? (
+          <View style={{ gap: spacing.xs }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                gap: spacing.md,
+                padding: spacing.md,
+                backgroundColor: t.background,
+                borderRadius: radii.lg,
+                borderWidth: 1,
+                borderColor: t.cardBorder,
+              }}
+            >
+              {food.nutriscore_grade ? (
+                <NutriScoreBadge grade={food.nutriscore_grade} onInfo={(k) => setInfoKind(k)} />
+              ) : null}
+              {food.ecoscore_grade ? (
+                <EcoScoreBadge grade={food.ecoscore_grade} onInfo={(k) => setInfoKind(k)} />
+              ) : null}
+              {food.nova_group ? (
+                <NovaBadge group={food.nova_group} onInfo={(k) => setInfoKind(k)} />
+              ) : null}
+            </View>
+            <Text style={{ color: t.textMuted, fontSize: 11, paddingHorizontal: 2 }}>
+              Toca cualquier indicador para entender qué significa.
+            </Text>
+          </View>
+        ) : null}
 
-                {/* ── Scores (Nutri / Eco / NOVA) ─────────────────────── */}
-                {hasAnyScore ? (
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      gap: spacing.md,
-                      padding: spacing.md,
-                      backgroundColor: t.background,
-                      borderRadius: radii.lg,
-                      borderWidth: 1,
-                      borderColor: t.cardBorder,
-                    }}
-                  >
-                    {food.nutriscore_grade ? <NutriScoreBadge grade={food.nutriscore_grade} /> : null}
-                    {food.ecoscore_grade ? <EcoScoreBadge grade={food.ecoscore_grade} /> : null}
-                    {food.nova_group ? <NovaBadge group={food.nova_group} /> : null}
-                  </View>
-                ) : null}
+        {/* ── Macros (por ración seleccionada) ────────────────────── */}
+        <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+          <MacroRingChip label="Cal" value={cal} target={calTarget} unit="kcal" color={semantic.success} />
+          <MacroRingChip label="Prot" value={prot} target={protTarget} unit="g" color={semantic.protein} />
+          <MacroRingChip label="Carbs" value={carb} target={carbTarget} unit="g" color={semantic.carbs} />
+          <MacroRingChip label="Grasa" value={fat} target={fatTarget} unit="g" color={semantic.fat} />
+        </View>
 
-                {/* ── Macros (por ración seleccionada) ─────────────────── */}
-                <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                  <MacroRingChip label="Cal" value={cal} target={calTarget} unit="kcal" color={semantic.success} />
-                  <MacroRingChip label="Prot" value={prot} target={protTarget} unit="g" color={semantic.protein} />
-                  <MacroRingChip label="Carbs" value={carb} target={carbTarget} unit="g" color={semantic.carbs} />
-                  <MacroRingChip label="Grasa" value={fat} target={fatTarget} unit="g" color={semantic.fat} />
-                </View>
-
-                {/* ── Cantidad ──────────────────────────────────────────── */}
-                <View style={{ gap: spacing.sm }}>
-                  <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Cantidad (g)</Text>
-                  <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                    {SERVING_PRESETS.map((preset) => {
-                      const active = parseInt(grams, 10) === preset;
-                      return (
-                        <Pressable
-                          key={preset}
-                          onPress={() => setGrams(String(preset))}
-                          style={{
-                            paddingHorizontal: spacing.md,
-                            paddingVertical: 6,
-                            borderRadius: radii.pill,
-                            borderWidth: 1.5,
-                            borderColor: active ? t.primary : t.cardBorder,
-                            backgroundColor: active ? t.primarySoft : 'transparent',
-                          }}
-                        >
-                          <Text
-                            style={{ fontSize: 12, fontWeight: '700', color: active ? t.primary : t.textSecondary }}
-                          >
-                            {preset}g
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <TextInput
-                    value={grams}
-                    onChangeText={(v) => {
-                      setGrams(v);
-                      setError(null);
-                    }}
-                    keyboardType="numeric"
-                    selectTextOnFocus
-                    style={{
-                      backgroundColor: t.inputBg,
-                      borderColor: t.inputBorder,
-                      borderWidth: 1,
-                      borderRadius: radii.lg,
-                      paddingHorizontal: spacing.lg,
-                      paddingVertical: 12,
-                      fontSize: 17,
-                      fontWeight: '700',
-                      color: t.text,
-                    }}
-                    placeholder="100"
-                    placeholderTextColor={t.textMuted}
-                  />
-                </View>
-
-                {/* ── Selector de comida ───────────────────────────────── */}
-                {!lockedMealType && (
-                  <View style={{ gap: spacing.sm }}>
-                    <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Comida</Text>
-                    <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                      {MEAL_ORDER.map((m) => (
-                        <Pressable
-                          key={m}
-                          onPress={() => setMeal(m)}
-                          style={{
-                            flex: 1,
-                            alignItems: 'center',
-                            paddingVertical: spacing.sm,
-                            paddingHorizontal: spacing.xs,
-                            borderRadius: radii.md,
-                            borderWidth: 1.5,
-                            borderColor: meal === m ? t.primary : t.cardBorder,
-                            backgroundColor: meal === m ? t.primarySoft : 'transparent',
-                            gap: 2,
-                          }}
-                        >
-                          <Text style={{ fontSize: 16 }}>{MEAL_ICONS[m]}</Text>
-                          <Text
-                            style={{
-                              fontSize: 9,
-                              fontWeight: '700',
-                              color: meal === m ? t.primary : t.textSecondary,
-                              textAlign: 'center',
-                            }}
-                            numberOfLines={1}
-                          >
-                            {MEAL_LABELS[m]}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {/* ── Detalle nutricional adicional ───────────────────── */}
-                <View
+        {/* ── Cantidad ────────────────────────────────────────────── */}
+        <View style={{ gap: spacing.sm }}>
+          <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Cantidad (g)</Text>
+          <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+            {SERVING_PRESETS.map((preset) => {
+              const active = parseInt(grams, 10) === preset;
+              return (
+                <Pressable
+                  key={preset}
+                  onPress={() => setGrams(String(preset))}
                   style={{
-                    backgroundColor: t.background,
-                    borderRadius: radii.lg,
-                    borderWidth: 1,
-                    borderColor: t.cardBorder,
-                    padding: spacing.md,
-                    gap: 2,
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: 6,
+                    borderRadius: radii.pill,
+                    borderWidth: 1.5,
+                    borderColor: active ? t.primary : t.cardBorder,
+                    backgroundColor: active ? t.primarySoft : 'transparent',
                   }}
                 >
                   <Text
-                    style={{
-                      fontSize: 11,
-                      fontWeight: '700',
-                      letterSpacing: 0.8,
-                      color: t.textMuted,
-                      textTransform: 'uppercase',
-                      marginBottom: spacing.xs,
-                    }}
+                    style={{ fontSize: 12, fontWeight: '700', color: active ? t.primary : t.textSecondary }}
                   >
-                    Más detalle por ración
+                    {preset}g
                   </Text>
-                  <MicroRow label="Fibra" value={fiber} unit="g" />
-                  <MicroRow label="Azúcares" value={sugars} unit="g" />
-                  <MicroRow label="Grasas saturadas" value={satFat} unit="g" />
-                  {salt != null ? (
-                    <MicroRow label="Sal" value={salt} unit="g" />
-                  ) : sodium > 0 ? (
-                    <MicroRow label="Sodio" value={sodium} unit="mg" />
-                  ) : null}
-                  <MicroRow label="Hierro" value={food.iron_mg != null ? food.iron_mg * scale : null} unit="mg" />
-                  <MicroRow label="Calcio" value={food.calcium_mg != null ? food.calcium_mg * scale : null} unit="mg" />
-                  <MicroRow label="Zinc" value={food.zinc_mg != null ? food.zinc_mg * scale : null} unit="mg" />
-                  <MicroRow
-                    label="Vitamina B12"
-                    value={food.vitamin_b12_mcg != null ? food.vitamin_b12_mcg * scale : null}
-                    unit="mcg"
-                  />
-                  <MicroRow
-                    label="Vitamina D"
-                    value={food.vitamin_d_mcg != null ? food.vitamin_d_mcg * scale : null}
-                    unit="mcg"
-                  />
-                </View>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextInput
+            value={grams}
+            onChangeText={(v) => {
+              setGrams(v);
+              setError(null);
+            }}
+            keyboardType="numeric"
+            selectTextOnFocus
+            style={{
+              backgroundColor: t.inputBg,
+              borderColor: t.inputBorder,
+              borderWidth: 1,
+              borderRadius: radii.lg,
+              paddingHorizontal: spacing.lg,
+              paddingVertical: 12,
+              fontSize: 17,
+              fontWeight: '700',
+              color: t.text,
+            }}
+            placeholder="100"
+            placeholderTextColor={t.textMuted}
+          />
+        </View>
 
-                {/* ── Ingredientes (si vienen de OFF) ──────────────────── */}
-                {food.ingredients_text ? (
-                  <View
+        {/* ── Selector de comida ──────────────────────────────────── */}
+        {!lockedMealType && (
+          <View style={{ gap: spacing.sm }}>
+            <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Comida</Text>
+            <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+              {MEAL_ORDER.map((m) => (
+                <Pressable
+                  key={m}
+                  onPress={() => setMeal(m)}
+                  style={{
+                    flex: 1,
+                    alignItems: 'center',
+                    paddingVertical: spacing.sm,
+                    paddingHorizontal: spacing.xs,
+                    borderRadius: radii.md,
+                    borderWidth: 1.5,
+                    borderColor: meal === m ? t.primary : t.cardBorder,
+                    backgroundColor: meal === m ? t.primarySoft : 'transparent',
+                    gap: 2,
+                  }}
+                >
+                  <Text style={{ fontSize: 16 }}>{MEAL_ICONS[m]}</Text>
+                  <Text
                     style={{
-                      backgroundColor: t.background,
-                      borderRadius: radii.lg,
-                      borderWidth: 1,
-                      borderColor: t.cardBorder,
-                      padding: spacing.md,
-                      gap: 6,
+                      fontSize: 9,
+                      fontWeight: '700',
+                      color: meal === m ? t.primary : t.textSecondary,
+                      textAlign: 'center',
                     }}
+                    numberOfLines={1}
                   >
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        fontWeight: '700',
-                        letterSpacing: 0.8,
-                        color: t.textMuted,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      Ingredientes
-                    </Text>
-                    <Text style={{ color: t.textSecondary, fontSize: 12, lineHeight: 17 }}>
-                      {food.ingredients_text}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {/* ── Alternativas veganas ─────────────────────────────── */}
-                {showAlternativesButton && onShowAlternatives ? (
-                  <Pressable
-                    onPress={onShowAlternatives}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: spacing.sm,
-                      paddingVertical: spacing.md,
-                      borderRadius: radii.lg,
-                      borderWidth: 1.5,
-                      borderColor: semantic.success,
-                      backgroundColor: `${semantic.success}11`,
-                    }}
-                  >
-                    <Ionicons name={'leaf-outline' as never} size={16} color={semantic.success} />
-                    <Text style={{ color: semantic.success, fontWeight: '700', fontSize: 14 }}>
-                      Ver alternativas veganas
-                    </Text>
-                  </Pressable>
-                ) : null}
-
-                {error ? (
-                  <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text>
-                ) : null}
-
-                <Button title="Añadir al diario" onPress={confirm} loading={adding} />
-              </ScrollView>
+                    {MEAL_LABELS[m]}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
-          </KeyboardAvoidingView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+          </View>
+        )}
+
+        {/* ── Detalle nutricional adicional ───────────────────────── */}
+        <View
+          style={{
+            backgroundColor: t.background,
+            borderRadius: radii.lg,
+            borderWidth: 1,
+            borderColor: t.cardBorder,
+            padding: spacing.md,
+            gap: 2,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 11,
+              fontWeight: '700',
+              letterSpacing: 0.8,
+              color: t.textMuted,
+              textTransform: 'uppercase',
+              marginBottom: spacing.xs,
+            }}
+          >
+            Más detalle por ración
+          </Text>
+          <MicroRow label="Fibra" value={fiber} unit="g" />
+          <MicroRow label="Azúcares" value={sugars} unit="g" />
+          <MicroRow label="Grasas saturadas" value={satFat} unit="g" />
+          {salt != null ? (
+            <MicroRow label="Sal" value={salt} unit="g" />
+          ) : sodium > 0 ? (
+            <MicroRow label="Sodio" value={sodium} unit="mg" />
+          ) : null}
+          <MicroRow label="Hierro" value={food.iron_mg != null ? food.iron_mg * scale : null} unit="mg" />
+          <MicroRow label="Calcio" value={food.calcium_mg != null ? food.calcium_mg * scale : null} unit="mg" />
+          <MicroRow label="Zinc" value={food.zinc_mg != null ? food.zinc_mg * scale : null} unit="mg" />
+          <MicroRow
+            label="Vitamina B12"
+            value={food.vitamin_b12_mcg != null ? food.vitamin_b12_mcg * scale : null}
+            unit="mcg"
+          />
+          <MicroRow
+            label="Vitamina D"
+            value={food.vitamin_d_mcg != null ? food.vitamin_d_mcg * scale : null}
+            unit="mcg"
+          />
+        </View>
+
+        {/* ── Ingredientes ───────────────────────────────────────── */}
+        {food.ingredients_text ? (
+          <View
+            style={{
+              backgroundColor: t.background,
+              borderRadius: radii.lg,
+              borderWidth: 1,
+              borderColor: t.cardBorder,
+              padding: spacing.md,
+              gap: 6,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 11,
+                fontWeight: '700',
+                letterSpacing: 0.8,
+                color: t.textMuted,
+                textTransform: 'uppercase',
+              }}
+            >
+              Ingredientes
+            </Text>
+            <Text style={{ color: t.textSecondary, fontSize: 12, lineHeight: 17 }}>
+              {food.ingredients_text}
+            </Text>
+          </View>
+        ) : null}
+
+        {/* ── Alternativas veganas ────────────────────────────────── */}
+        {showAlternativesButton && onShowAlternatives ? (
+          <Pressable
+            onPress={onShowAlternatives}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              paddingVertical: spacing.md,
+              borderRadius: radii.lg,
+              borderWidth: 1.5,
+              borderColor: semantic.success,
+              backgroundColor: `${semantic.success}11`,
+            }}
+          >
+            <Ionicons name={'leaf-outline' as never} size={16} color={semantic.success} />
+            <Text style={{ color: semantic.success, fontWeight: '700', fontSize: 14 }}>
+              Ver alternativas veganas
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {error ? (
+          <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text>
+        ) : null}
+
+        <Button title="Añadir al diario" onPress={confirm} loading={adding} />
+      </View>
+
+      {/* Info sheet sobre Nutri/Eco/NOVA — modal por encima del modal */}
+      <ScoreInfoSheet
+        kind={infoKind}
+        visible={infoKind !== null}
+        onClose={() => setInfoKind(null)}
+      />
+    </BottomSheet>
   );
 }

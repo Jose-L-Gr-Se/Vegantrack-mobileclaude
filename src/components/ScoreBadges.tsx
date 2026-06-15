@@ -1,25 +1,27 @@
 /**
  * Insignias informativas de Nutri-Score, Eco-Score y NOVA, basadas en datos
- * abiertos de OpenFoodFacts. Su misión es informativa, no normativa: ayudan
- * a quien busca una alimentación más consciente sin caer en alarmismo. No
- * sustituyen al juicio del usuario.
+ * abiertos de OpenFoodFacts. Educan sin alarmar: cada badge es pulsable y
+ * abre un ScoreInfoSheet con la explicación al toque, marcado con un "ⓘ"
+ * pequeño para que quien no conoce el indicador descubra que hay más.
  *
  *  · Nutri-Score (A-E)  → calidad nutricional global del producto.
  *  · Eco-Score (A-E)    → impacto medioambiental estimado (ciclo de vida).
  *  · NOVA (1-4)         → grado de procesamiento (1 mínimo, 4 ultraprocesado).
  */
 import React from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme';
+import type { ScoreKind } from '@/components/ScoreInfoSheet';
 
 type Grade = 'a' | 'b' | 'c' | 'd' | 'e';
 
 const GRADE_COLORS: Record<Grade, string> = {
-  a: '#1e7d49', // verde oscuro
-  b: '#7cb238', // verde claro
-  c: '#e8a72c', // ámbar
-  d: '#e07a2c', // naranja
-  e: '#c0473e', // rojo
+  a: '#1e7d49',
+  b: '#7cb238',
+  c: '#e8a72c',
+  d: '#e07a2c',
+  e: '#c0473e',
 };
 
 const NOVA_COLORS: Record<1 | 2 | 3 | 4, string> = {
@@ -38,31 +40,43 @@ const NOVA_DESCRIPTIONS: Record<1 | 2 | 3 | 4, string> = {
 
 interface ScaleBadgeProps {
   label: string;
-  /** Valor activo: una letra A-E o un número 1-4. */
   value: Grade | 1 | 2 | 3 | 4;
-  /** Escala completa para situar al activo. */
   scale: (Grade | 1 | 2 | 3 | 4)[];
-  /** Sub-leyenda corta (p. ej. la descripción NOVA). */
   caption?: string;
+  onInfo?: () => void;
 }
 
-/** Renderiza una pildora con la escala completa y resalta el valor activo. */
-function ScaleBadge({ label, value, scale, caption }: ScaleBadgeProps) {
+function ScaleBadge({ label, value, scale, caption, onInfo }: ScaleBadgeProps) {
   const t = useTheme();
+  const Wrap: any = onInfo ? Pressable : View;
   return (
-    <View style={{ gap: 4, flex: 1, minWidth: 0 }}>
-      <Text
-        style={{
-          fontSize: 10,
-          fontWeight: '700',
-          letterSpacing: 0.6,
-          color: t.textMuted,
-          textTransform: 'uppercase',
-        }}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
+    <Wrap
+      onPress={onInfo}
+      style={{ gap: 4, flex: 1, minWidth: 0 }}
+      hitSlop={6}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Text
+          style={{
+            fontSize: 10,
+            fontWeight: '700',
+            letterSpacing: 0.6,
+            color: t.textMuted,
+            textTransform: 'uppercase',
+            flexShrink: 1,
+          }}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        {onInfo ? (
+          <Ionicons
+            name={'information-circle-outline' as never}
+            size={12}
+            color={t.textMuted}
+          />
+        ) : null}
+      </View>
       <View style={{ flexDirection: 'row', gap: 2 }}>
         {scale.map((step) => {
           const active = step === value;
@@ -95,25 +109,34 @@ function ScaleBadge({ label, value, scale, caption }: ScaleBadgeProps) {
           {caption}
         </Text>
       ) : null}
-    </View>
+    </Wrap>
   );
 }
 
-export function NutriScoreBadge({ grade }: { grade: Grade }) {
-  return <ScaleBadge label="Nutri-Score" value={grade} scale={['a', 'b', 'c', 'd', 'e']} />;
+export function NutriScoreBadge({ grade, onInfo }: { grade: Grade; onInfo?: (k: ScoreKind) => void }) {
+  return <ScaleBadge label="Nutri-Score" value={grade} scale={['a', 'b', 'c', 'd', 'e']} onInfo={onInfo ? () => onInfo('nutri') : undefined} />;
 }
 
-export function EcoScoreBadge({ grade }: { grade: Grade }) {
-  return <ScaleBadge label="Eco-Score" value={grade} scale={['a', 'b', 'c', 'd', 'e']} caption="impacto ambiental" />;
+export function EcoScoreBadge({ grade, onInfo }: { grade: Grade; onInfo?: (k: ScoreKind) => void }) {
+  return (
+    <ScaleBadge
+      label="Eco-Score"
+      value={grade}
+      scale={['a', 'b', 'c', 'd', 'e']}
+      caption="impacto ambiental"
+      onInfo={onInfo ? () => onInfo('eco') : undefined}
+    />
+  );
 }
 
-export function NovaBadge({ group }: { group: 1 | 2 | 3 | 4 }) {
+export function NovaBadge({ group, onInfo }: { group: 1 | 2 | 3 | 4; onInfo?: (k: ScoreKind) => void }) {
   return (
     <ScaleBadge
       label="NOVA · procesamiento"
       value={group}
       scale={[1, 2, 3, 4]}
       caption={NOVA_DESCRIPTIONS[group]}
+      onInfo={onInfo ? () => onInfo('nova') : undefined}
     />
   );
 }

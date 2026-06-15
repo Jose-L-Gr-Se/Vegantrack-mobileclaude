@@ -4,9 +4,10 @@
  * que la PWA, para no duplicar la pasarela de pago en móvil.
  */
 import React from 'react';
-import { Linking, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Linking, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
+import { BottomSheet } from '@/components/BottomSheet';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { WEB_BASE_URL } from '@/lib/supabase';
 
@@ -139,48 +140,26 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
   const t = useTheme();
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} onPress={onClose}>
-        <Pressable onPress={() => undefined}>
-          <View
-            style={{
-              backgroundColor: t.background,
-              borderTopLeftRadius: radii.xl,
-              borderTopRightRadius: radii.xl,
-              maxHeight: '92%',
-              paddingBottom: spacing.xxl,
-            }}
-          >
-            {/* Drag handle */}
-            <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
-              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
-            </View>
+    <BottomSheet visible onClose={onClose}>
+      <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
+        <View style={{ alignItems: 'center', gap: 4, marginBottom: spacing.sm }}>
+          <Text style={{ fontSize: 30 }}>👑</Text>
+          <Text style={{ fontFamily: fonts.display, fontSize: 28, fontWeight: '400', color: t.text }}>
+            Hazte Pro
+          </Text>
+          <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>
+            Sin límites, con tendencias de micros y exportación. Cancela cuando quieras.
+          </Text>
+        </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm, gap: spacing.md }}
-            >
-              <View style={{ alignItems: 'center', gap: 4, marginBottom: spacing.sm }}>
-                <Text style={{ fontSize: 30 }}>👑</Text>
-                <Text style={{ fontFamily: fonts.display, fontSize: 28, fontWeight: '400', color: t.text }}>
-                  Hazte Pro
-                </Text>
-                <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>
-                  Sin límites, con tendencias de micros y exportación. Cancela cuando quieras.
-                </Text>
-              </View>
+        {PLANS.map((plan) => (
+          <PlanCard key={plan.id} plan={plan} isCurrent={isPro ? plan.id !== 'free' : plan.id === 'free'} />
+        ))}
 
-              {PLANS.map((plan) => (
-                <PlanCard key={plan.id} plan={plan} isCurrent={isPro ? plan.id !== 'free' : plan.id === 'free'} />
-              ))}
-
-              <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', marginTop: spacing.xs }}>
-                El pago se gestiona de forma segura en la web (Stripe). Tu cuenta es la misma en la app y en la PWA.
-              </Text>
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', marginTop: spacing.xs }}>
+          El pago se gestiona de forma segura en la web (Stripe). Tu cuenta es la misma en la app y en la PWA.
+        </Text>
+      </View>
+    </BottomSheet>
   );
 }

@@ -7,10 +7,11 @@ import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import { EditEntryModal } from '@/components/EditEntryModal';
-import { fonts, semantic, spacing, useTheme } from '@/theme';
+import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
@@ -205,31 +206,116 @@ export function DiaryScreen() {
       })}
 
       {/* Suplementos */}
-      <Card style={{ gap: spacing.sm }}>
-        <SectionHeader title="💊 Suplementos" />
-        {supplements.supplements.length === 0 ? (
-          <Text style={{ color: t.textMuted, fontSize: 13 }}>
-            Añade tus suplementos desde Perfil.
+      <Card style={{ gap: spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text
+            style={{
+              fontSize: 11,
+              fontWeight: '700',
+              letterSpacing: 0.8,
+              color: t.textMuted,
+              textTransform: 'uppercase',
+            }}
+          >
+            Suplementos de hoy
           </Text>
+          {supplements.supplements.length > 0 ? (
+            <Text style={{ color: t.textMuted, fontSize: 11 }}>
+              {Object.keys(supplements.takenToday).length}/{supplements.supplements.length}
+            </Text>
+          ) : null}
+        </View>
+
+        {supplements.supplements.length === 0 ? (
+          <Pressable
+            onPress={() => navigation.navigate('Profile' as never)}
+            style={{
+              borderWidth: 1,
+              borderStyle: 'dashed',
+              borderColor: t.cardBorder,
+              borderRadius: radii.lg,
+              padding: spacing.lg,
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <Ionicons name={'fitness-outline' as any} size={22} color={t.textMuted} />
+            <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>
+              Aún no has añadido suplementos
+            </Text>
+            <Text style={{ color: t.textMuted, fontSize: 11 }}>Configúralos en Perfil → Suplementos</Text>
+          </Pressable>
         ) : (
-          supplements.supplements.map((s) => {
-            const taken = Boolean(supplements.takenToday[s.id]);
-            return (
-              <Pressable
-                key={s.id}
-                onPress={() => user && void supplements.toggleTaken(user.id, s.id)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 6 }}
-              >
-                <Text style={{ fontSize: 18 }}>{taken ? '✅' : '⬜'}</Text>
-                <Text style={{ flex: 1, color: t.text, fontWeight: '600' }}>
-                  {s.emoji ? `${s.emoji} ` : ''}{s.name}
-                </Text>
-                <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                  {s.dose_amount} {s.dose_unit}
-                </Text>
-              </Pressable>
-            );
-          })
+          <View style={{ gap: spacing.sm }}>
+            {supplements.supplements.map((s) => {
+              const taken = Boolean(supplements.takenToday[s.id]);
+              return (
+                <Pressable
+                  key={s.id}
+                  onPress={() => user && void supplements.toggleTaken(user.id, s.id)}
+                  style={({ pressed }) => ({
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: spacing.md,
+                    paddingVertical: spacing.sm,
+                    paddingHorizontal: spacing.md,
+                    borderRadius: radii.lg,
+                    borderWidth: 1,
+                    borderColor: taken ? t.primary : t.cardBorder,
+                    backgroundColor: taken ? t.primarySoft : t.card,
+                    opacity: pressed ? 0.7 : 1,
+                  })}
+                >
+                  {/* Avatar emoji con fondo */}
+                  <View
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: t.background,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{ fontSize: 20 }}>{s.emoji ?? '💊'}</Text>
+                  </View>
+
+                  {/* Texto */}
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        color: taken ? t.primary : t.text,
+                        fontWeight: '700',
+                        fontSize: 14,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {s.name}
+                    </Text>
+                    <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                      {s.dose_amount} {s.dose_unit}
+                    </Text>
+                  </View>
+
+                  {/* Indicador animado: círculo con check cuando está tomada */}
+                  <View
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 13,
+                      borderWidth: 1.5,
+                      borderColor: taken ? t.primary : t.cardBorder,
+                      backgroundColor: taken ? t.primary : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {taken ? <Ionicons name={'checkmark' as any} size={16} color="#fff" /> : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         )}
       </Card>
 
