@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import {
 import { RootNavigator } from '@/navigation';
 import { Logo } from '@/components/Logo';
 import { useTheme } from '@/theme';
+import { useThemeStore } from '@/stores/themeStore';
 
 function SplashGate() {
   const t = useTheme();
@@ -20,6 +21,13 @@ function SplashGate() {
   );
 }
 
+function ThemedStatusBar() {
+  // Sigue al tema efectivo (incluido el override manual del usuario) para que
+  // los iconos de batería/hora contrasten siempre con el fondo.
+  const t = useTheme();
+  return <StatusBar style={t.dark ? 'light' : 'dark'} />;
+}
+
 export default function App() {
   // La tipografía serif (Instrument Serif) define la voz editorial de los
   // títulos. Mostramos la marca mientras carga para evitar un salto de fuente.
@@ -28,10 +36,19 @@ export default function App() {
     InstrumentSerif_400Regular_Italic,
   });
 
+  // Rehidrata la preferencia de tema (claro/oscuro/sistema) desde SQLite.
+  const hydrateTheme = useThemeStore((s) => s.hydrate);
+  const themeHydrated = useThemeStore((s) => s.hydrated);
+  useEffect(() => {
+    void hydrateTheme();
+  }, [hydrateTheme]);
+
+  const ready = fontsLoaded && themeHydrated;
+
   return (
     <SafeAreaProvider>
-      <StatusBar style="auto" />
-      {fontsLoaded ? <RootNavigator /> : <SplashGate />}
+      <ThemedStatusBar />
+      {ready ? <RootNavigator /> : <SplashGate />}
     </SafeAreaProvider>
   );
 }

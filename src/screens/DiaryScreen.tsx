@@ -9,6 +9,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
+import { EditEntryModal } from '@/components/EditEntryModal';
 import { fonts, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
@@ -29,6 +30,7 @@ export function DiaryScreen() {
   const supplements = useSupplementStore();
   const { isPro } = usePro();
   const [refreshing, setRefreshing] = useState(false);
+  const [editing, setEditing] = useState<FoodLogEntry | null>(null);
 
   useEffect(() => {
     void loadOverrides();
@@ -177,8 +179,14 @@ export function DiaryScreen() {
               mealEntries.map((e) => (
                 <Pressable
                   key={e.id}
+                  onPress={() => setEditing(e)}
                   onLongPress={() => onDelete(e)}
-                  style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 }}
+                  style={({ pressed }) => ({
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    paddingVertical: 6,
+                    opacity: pressed ? 0.6 : 1,
+                  })}
                 >
                   <View style={{ flex: 1, paddingRight: spacing.md }}>
                     <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>
@@ -228,6 +236,14 @@ export function DiaryScreen() {
       <Button title="Copiar todo el día de ayer" variant="secondary" onPress={() => copyFromYesterday()} />
 
       {entries.length === 0 && <EmptyState emoji="🥗" text="Aún no has registrado nada hoy. Toca ＋ en una comida para buscar alimentos." />}
+
+      {editing ? (
+        <EditEntryModal
+          entry={editing}
+          onClose={() => setEditing(null)}
+          onDelete={() => void deleteEntry(editing.id)}
+        />
+      ) : null}
     </ScrollView>
   );
 }

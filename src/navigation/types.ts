@@ -13,7 +13,7 @@ export type RootStackParamList = {
   Auth: undefined;
   Onboarding: undefined;
   Main: NavigatorScreenParams<MainTabParamList>;
-  Scanner: undefined;
+  Scanner: { mealType?: MealType } | undefined;
   Recipes: undefined;
   MicroTrends: undefined;
 };

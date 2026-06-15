@@ -6,6 +6,7 @@
  * de producto: cálida, sobria y específica para nutrición vegana consciente.
  */
 import { useColorScheme } from 'react-native';
+import { useThemeStore } from '@/stores/themeStore';
 
 // Verde bosque (paleta cálida, no el verde brillante genérico).
 export const brand = {
@@ -101,8 +102,11 @@ export const darkTheme: Theme = {
 };
 
 export function useTheme(): Theme {
+  // El sistema dicta cuando la preferencia es 'system'; en otro caso, override.
   const scheme = useColorScheme();
-  return scheme === 'dark' ? darkTheme : lightTheme;
+  const preference = useThemeStore((s) => s.preference);
+  const resolved = preference === 'system' ? scheme : preference;
+  return resolved === 'dark' ? darkTheme : lightTheme;
 }
 
 export const radii = { sm: 12, md: 16, lg: 24, xl: 28, pill: 999 } as const;

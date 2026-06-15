@@ -12,7 +12,7 @@ import { cacheOffProduct, getCachedOffProduct } from '@/db/database';
 
 const BASE_URL = 'https://world.openfoodfacts.net';
 const FIELDS =
-  'code,product_name,brands,image_front_url,nutriments,labels_tags,categories_tags,serving_size,serving_quantity';
+  'code,product_name,brands,image_front_url,image_front_small_url,image_front_thumb_url,nutriments,labels_tags,categories_tags,serving_size,serving_quantity,nutriscore_grade,ecoscore_grade,nova_group,ingredients_text';
 
 export interface SearchResult {
   products: OpenFoodFactsProduct[];
@@ -317,6 +317,17 @@ function numberOrNull(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+function gradeOrNull(value: unknown): 'a' | 'b' | 'c' | 'd' | 'e' | null {
+  if (typeof value !== 'string') return null;
+  const v = value.toLowerCase();
+  return v === 'a' || v === 'b' || v === 'c' || v === 'd' || v === 'e' ? v : null;
+}
+
+function novaOrNull(value: unknown): 1 | 2 | 3 | 4 | null {
+  const n = Number(value);
+  return n === 1 || n === 2 || n === 3 || n === 4 ? (n as 1 | 2 | 3 | 4) : null;
+}
+
 export function normalizeProduct(raw: any): OpenFoodFactsProduct {
   const n = raw.nutriments || {};
   return {
@@ -324,6 +335,11 @@ export function normalizeProduct(raw: any): OpenFoodFactsProduct {
     product_name: raw.product_name || '',
     brands: raw.brands || '',
     image_front_url: raw.image_front_url || '',
+    image_front_large_url: raw.image_front_url || null,
+    ingredients_text: typeof raw.ingredients_text === 'string' ? raw.ingredients_text : null,
+    nutriscore_grade: gradeOrNull(raw.nutriscore_grade),
+    ecoscore_grade: gradeOrNull(raw.ecoscore_grade),
+    nova_group: novaOrNull(raw.nova_group),
     categories_tags: Array.isArray(raw.categories_tags) ? raw.categories_tags : [],
     labels_tags: Array.isArray(raw.labels_tags) ? raw.labels_tags : [],
     nutriments: {
@@ -336,6 +352,7 @@ export function normalizeProduct(raw: any): OpenFoodFactsProduct {
       sugars_100g: numberOrZero(n.sugars_100g),
       'saturated-fat_100g': numberOrZero(n['saturated-fat_100g']),
       sodium_100g: numberOrZero(n.sodium_100g),
+      salt_100g: numberOrZero(n.salt_100g),
       // Micros: null cuando no se reportan; nunca colapsar a 0
       'vitamin-b12_100g': numberOrNull(n['vitamin-b12_100g']),
       iron_100g: numberOrNull(n['iron_100g']),
@@ -385,5 +402,11 @@ export function productToFoodPer100g(product: OpenFoodFactsProduct): FoodPer100g
     calcium_known: calcium !== null,
     omega3_known: false,
     vitamin_d_known: vitD !== null,
+    nutriscore_grade: product.nutriscore_grade ?? null,
+    ecoscore_grade: product.ecoscore_grade ?? null,
+    nova_group: product.nova_group ?? null,
+    ingredients_text: product.ingredients_text ?? null,
+    salt_g: typeof product.nutriments.salt_100g === 'number' ? product.nutriments.salt_100g : null,
+    image_large_url: product.image_front_large_url ?? null,
   };
 }

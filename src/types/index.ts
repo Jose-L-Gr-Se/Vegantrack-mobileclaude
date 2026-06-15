@@ -72,8 +72,15 @@ export interface OpenFoodFactsProduct {
   product_name: string;
   brands: string;
   image_front_url: string;
+  /** Imagen frontal en alta resolución, si OFF la expone. */
+  image_front_large_url?: string | null;
   categories_tags: string[];
   labels_tags: string[];
+  ingredients_text?: string | null;
+  /** Etiquetas de calidad: A-E (Nutri-Score y Eco-Score) y 1-4 (NOVA). */
+  nutriscore_grade?: 'a' | 'b' | 'c' | 'd' | 'e' | null;
+  ecoscore_grade?: 'a' | 'b' | 'c' | 'd' | 'e' | null;
+  nova_group?: 1 | 2 | 3 | 4 | null;
   nutriments: {
     'energy-kcal_100g': number;
     proteins_100g: number;
@@ -83,6 +90,7 @@ export interface OpenFoodFactsProduct {
     sugars_100g: number;
     'saturated-fat_100g': number;
     sodium_100g: number;
+    salt_100g?: number;
     'vitamin-b12_100g'?: number | null;
     iron_100g?: number | null;
     zinc_100g?: number | null;
@@ -336,4 +344,11 @@ export interface FoodPer100g {
   calcium_known: boolean;
   omega3_known: boolean;
   vitamin_d_known: boolean;
+  /** Etiquetas informativas que sólo viven en memoria (no se persisten en food_log). */
+  nutriscore_grade?: 'a' | 'b' | 'c' | 'd' | 'e' | null;
+  ecoscore_grade?: 'a' | 'b' | 'c' | 'd' | 'e' | null;
+  nova_group?: 1 | 2 | 3 | 4 | null;
+  ingredients_text?: string | null;
+  salt_g?: number | null;
+  image_large_url?: string | null;
 }

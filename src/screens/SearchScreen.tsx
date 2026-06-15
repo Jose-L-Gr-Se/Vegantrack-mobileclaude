@@ -181,7 +181,7 @@ export function SearchScreen() {
             />
           </View>
           <IconButton
-            onPress={() => navigation.navigate('Scanner')}
+            onPress={() => navigation.navigate('Scanner', lockedMeal ? { mealType: lockedMeal } : undefined)}
             style={{ backgroundColor: t.primarySoft, borderRadius: 16, padding: 12 }}
           >
             <Ionicons name={'barcode-outline' as any} size={22} color={t.primary} />

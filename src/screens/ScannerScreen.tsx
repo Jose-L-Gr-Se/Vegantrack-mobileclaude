@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
@@ -16,6 +16,9 @@ const CORNER_COLOR_LIGHT = '#2f5d41'; // will use t.primary at runtime via inlin
 export function ScannerScreen() {
   const t = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  // Recibe el mealType del + de la comida para no perder el contexto al volver.
+  const route = useRoute<RouteProp<RootStackParamList, 'Scanner'>>();
+  const mealType = route.params?.mealType;
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const scannedRef = useRef(false);
@@ -30,7 +33,7 @@ export function ScannerScreen() {
     if (scannedRef.current || !data) return;
     scannedRef.current = true;
     setScanned(true);
-    navigation.navigate('Main', { screen: 'Search', params: { barcode: data } });
+    navigation.navigate('Main', { screen: 'Search', params: { barcode: data, mealType } });
   };
 
   if (!permission?.granted) {

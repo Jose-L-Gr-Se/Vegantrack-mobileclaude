@@ -13,6 +13,7 @@ import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
+import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
 import { calculateTargets } from '@/utils/nutrition';
 import { exportDiaryCsv } from '@/utils/exportCsv';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
@@ -385,6 +386,9 @@ export function ProfileScreen() {
           </View>
         )}
       </Card>
+
+      <AppearanceCard />
+
 
       {/* Account section */}
       <View>
@@ -1009,5 +1013,79 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
         </Pressable>
       </Pressable>
     </Modal>
+  );
+}
+
+function AppearanceCard() {
+  const t = useTheme();
+  const preference = useThemeStore((s) => s.preference);
+  const setPreference = useThemeStore((s) => s.setPreference);
+
+  const options: { value: ThemePreference; label: string; icon: string }[] = [
+    { value: 'system', label: 'Sistema', icon: 'phone-portrait-outline' },
+    { value: 'light', label: 'Claro', icon: 'sunny-outline' },
+    { value: 'dark', label: 'Oscuro', icon: 'moon-outline' },
+  ];
+
+  return (
+    <View>
+      <Text
+        style={{
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 0.8,
+          color: t.textMuted,
+          textTransform: 'uppercase',
+          marginBottom: spacing.sm,
+        }}
+      >
+        Apariencia
+      </Text>
+      <Card style={{ gap: spacing.sm }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            gap: spacing.xs,
+            backgroundColor: t.background,
+            borderRadius: radii.pill,
+            padding: 4,
+          }}
+        >
+          {options.map((opt) => {
+            const active = preference === opt.value;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => void setPreference(opt.value)}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 9,
+                  borderRadius: radii.pill,
+                  backgroundColor: active ? t.card : 'transparent',
+                }}
+              >
+                <Ionicons name={opt.icon as any} size={15} color={active ? t.primary : t.textMuted} />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: '700',
+                    color: active ? t.primary : t.textMuted,
+                  }}
+                >
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={{ color: t.textMuted, fontSize: 11 }}>
+          "Sistema" sigue automaticamente la apariencia de tu dispositivo.
+        </Text>
+      </Card>
+    </View>
   );
 }
