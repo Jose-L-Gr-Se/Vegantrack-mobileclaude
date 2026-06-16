@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline } from 'react-native-svg';
 import { Card, MacroBar, Pill, ProgressRing, SectionHeader } from '@/components/ui';
 import { ProModal } from '@/components/ProModal';
-import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
+import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type WeekDay } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
@@ -75,14 +75,14 @@ export function DashboardScreen() {
       style={{ flex: 1, backgroundColor: t.background }}
       contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md, gap: spacing.lg, paddingBottom: spacing.xxl }}
     >
-      <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>Resumen</Text>
+      <Text style={{ fontSize: 26, fontWeight: '700', color: t.text }}>Resumen</Text>
 
       {/* Hero: Calorías ring + macros compactos */}
       <Card style={{ gap: spacing.lg }}>
         {/* Calorie ring centrado */}
         <View style={{ alignItems: 'center' }}>
           <ProgressRing progress={calProgress} size={140} strokeWidth={12} color={semantic.success}>
-            <Text style={{ fontFamily: fonts.display, fontSize: 34, fontWeight: '400', color: t.text }}>{Math.round(summary.calories)}</Text>
+            <Text style={{ fontSize: 34, fontWeight: '800', color: t.text }}>{Math.round(summary.calories)}</Text>
             <Text style={{ fontSize: 11, color: t.textMuted }}>kcal</Text>
           </ProgressRing>
           {calTarget > 0 ? (
@@ -133,7 +133,7 @@ export function DashboardScreen() {
       {/* VeganScore horizontal */}
       <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
         <ProgressRing progress={score.total / 100} size={80} strokeWidth={8} color={scoreColor}>
-          <Text style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: '400', color: t.text }}>{score.total}</Text>
+          <Text style={{ fontSize: 24, fontWeight: '800', color: t.text }}>{score.total}</Text>
         </ProgressRing>
         <View style={{ flex: 1, gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

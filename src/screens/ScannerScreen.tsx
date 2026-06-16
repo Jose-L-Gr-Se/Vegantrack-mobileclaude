@@ -6,7 +6,7 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
-import { fonts, radii, spacing, useTheme } from '@/theme';
+import { radii, spacing, useTheme } from '@/theme';
 import type { RootStackParamList } from '@/navigation/types';
 
 const CORNER_SIZE = 24;
@@ -47,7 +47,7 @@ export function ScannerScreen() {
           gap: spacing.lg,
         }}
       >
-        <Text style={{ fontFamily: fonts.display, fontWeight: '400', color: t.text, textAlign: 'center', fontSize: 22 }}>
+        <Text style={{ fontWeight: '700', color: t.text, textAlign: 'center', fontSize: 22 }}>
           Escanear código de barras
         </Text>
         <Text style={{ color: t.textSecondary, textAlign: 'center', fontSize: 15 }}>

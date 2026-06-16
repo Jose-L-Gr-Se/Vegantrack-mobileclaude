@@ -11,6 +11,7 @@ interface CustomFoodState {
   fetchCustomFoods: (userId: string) => Promise<void>;
   searchCustomFoods: (query: string) => CustomFood[];
   createCustomFood: (userId: string, food: Omit<CustomFood, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => Promise<{ error: string | null }>;
+  updateCustomFood: (id: string, patch: Partial<Omit<CustomFood, 'id' | 'user_id' | 'created_at' | 'updated_at'>>) => Promise<{ error: string | null }>;
   deleteCustomFood: (id: string) => Promise<{ error: string | null }>;
 }
 
@@ -56,6 +57,14 @@ export const useCustomFoodStore = create<CustomFoodState>((set, get) => ({
     const next = [full, ...get().customFoods];
     set({ customFoods: next });
     void kvSet(`custom_foods:${userId}`, next);
+    return { error: null };
+  },
+
+  updateCustomFood: async (id, patch) => {
+    const { error } = await supabase.from('custom_foods').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) return { error: error.message };
+    const next = get().customFoods.map((f) => (f.id === id ? { ...f, ...patch, updated_at: new Date().toISOString() } : f));
+    set({ customFoods: next });
     return { error: null };
   },
 

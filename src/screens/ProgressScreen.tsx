@@ -6,7 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState } from '@/components/ui';
-import { brand, fonts, semantic, spacing, useTheme } from '@/theme';
+import { brand, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useWeightStore } from '@/stores/weightStore';
 import { todayISO } from '@/utils/dates';
@@ -84,7 +84,7 @@ export function ProgressScreen() {
       }}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={{ fontFamily: fonts.display, fontSize: 30, fontWeight: '400', color: t.text }}>Progreso</Text>
+      <Text style={{ fontSize: 30, fontWeight: '700', color: t.text }}>Progreso</Text>
 
       {/* Weight input hero */}
       <Card style={{ gap: spacing.md }}>
@@ -98,9 +98,8 @@ export function ProgressScreen() {
               placeholder="0.0"
               placeholderTextColor={t.textMuted}
               style={{
-                fontFamily: fonts.display,
                 fontSize: 54,
-                fontWeight: '400',
+                fontWeight: '800',
                 color: t.text,
                 textAlign: 'center',
                 minWidth: 120,

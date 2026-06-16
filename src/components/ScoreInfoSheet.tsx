@@ -9,7 +9,7 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { BottomSheet } from '@/components/BottomSheet';
-import { fonts, spacing, useTheme } from '@/theme';
+import { spacing, useTheme } from '@/theme';
 
 export type ScoreKind = 'nutri' | 'eco' | 'nova';
 
@@ -79,7 +79,7 @@ export function ScoreInfoSheet({
   return (
     <BottomSheet visible={visible} onClose={onClose} maxHeightFraction={0.7}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
-        <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>
+        <Text style={{ fontSize: 26, fontWeight: '700', color: t.text }}>
           {e.title}
         </Text>
         <Text style={{ color: t.textSecondary, fontSize: 14, lineHeight: 20 }}>{e.intro}</Text>

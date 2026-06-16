@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line, Polyline, Circle } from 'react-native-svg';
 import { Card, EmptyState } from '@/components/ui';
 import { ProModal } from '@/components/ProModal';
-import { fonts, semantic, spacing, useTheme } from '@/theme';
+import { semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type MicroKey, type MicroTrendPoint } from '@/stores/diaryStore';
 import { usePro } from '@/hooks/usePro';
@@ -82,7 +82,7 @@ export function MicroTrendsScreen() {
       <Pressable onPress={() => navigation.goBack()} hitSlop={10}>
         <Ionicons name={'arrow-back' as never} size={24} color={t.text} />
       </Pressable>
-      <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>
+      <Text style={{ fontSize: 26, fontWeight: '700', color: t.text }}>
         Tendencias de micros
       </Text>
     </View>
@@ -186,7 +186,7 @@ export function MicroTrendsScreen() {
                   {selected.label} · media del periodo
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                  <Text style={{ fontFamily: fonts.display, fontSize: 40, fontWeight: '400', color: coverageColor(avgPct) }}>
+                  <Text style={{ fontSize: 40, fontWeight: '800', color: coverageColor(avgPct) }}>
                     {Math.round(avgPct * 100)}%
                   </Text>
                   <Text style={{ color: t.textMuted, fontSize: 13 }}>de la RDA</Text>

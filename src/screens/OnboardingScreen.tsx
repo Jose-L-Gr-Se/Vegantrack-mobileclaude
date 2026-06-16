@@ -192,7 +192,7 @@ export function OnboardingScreen() {
 
         {/* Step title + subtitle (outside the card) */}
         <View style={{ gap: spacing.xs }}>
-          <Text style={{ fontFamily: fonts.display, fontSize: 30, fontWeight: '400', color: t.text }}>{meta.title}</Text>
+          <Text style={{ fontSize: 30, fontWeight: '700', color: t.text }}>{meta.title}</Text>
           <Text style={{ fontSize: 14, color: t.textMuted, lineHeight: 20 }}>{meta.subtitle}</Text>
         </View>
 

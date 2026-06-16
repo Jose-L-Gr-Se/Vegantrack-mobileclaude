@@ -22,7 +22,7 @@ import { Button, Pill, ProgressRing } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
 import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBadges';
 import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
-import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
+import { radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
@@ -96,7 +96,7 @@ function MacroRingChip({
   return (
     <View style={{ alignItems: 'center', flex: 1 }}>
       <ProgressRing progress={progress} size={64} strokeWidth={5} color={color}>
-        <Text style={{ fontFamily: fonts.display, fontSize: 15, fontWeight: '400', color: t.text }}>
+        <Text style={{ fontSize: 15, fontWeight: '800', color: t.text }}>
           {Math.round(value)}
         </Text>
       </ProgressRing>
@@ -322,7 +322,7 @@ export function ProductDetailSheet({
           )}
           <View style={{ flex: 1, gap: 4, paddingTop: 2 }}>
             <Text
-              style={{ fontFamily: fonts.display, fontSize: 22, fontWeight: '400', color: t.text, lineHeight: 26 }}
+              style={{ fontSize: 22, fontWeight: '700', color: t.text, lineHeight: 26 }}
               numberOfLines={3}
             >
               {food.food_name}

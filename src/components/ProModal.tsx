@@ -8,7 +8,7 @@ import { Linking, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
-import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
+import { radii, semantic, spacing, useTheme } from '@/theme';
 import { WEB_BASE_URL } from '@/lib/supabase';
 
 interface Plan {
@@ -108,7 +108,7 @@ function PlanCard({ plan, isCurrent }: { plan: Plan; isCurrent: boolean }) {
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-        <Text style={{ fontFamily: fonts.display, fontSize: 38, fontWeight: '400', color: t.text }}>
+        <Text style={{ fontSize: 38, fontWeight: '800', color: t.text }}>
           {plan.price}
         </Text>
         <Text style={{ color: t.textMuted, fontSize: 14 }}>{plan.cadence}</Text>
@@ -144,7 +144,7 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
         <View style={{ alignItems: 'center', gap: 4, marginBottom: spacing.sm }}>
           <Text style={{ fontSize: 30 }}>👑</Text>
-          <Text style={{ fontFamily: fonts.display, fontSize: 28, fontWeight: '400', color: t.text }}>
+          <Text style={{ fontSize: 28, fontWeight: '700', color: t.text }}>
             Hazte Pro
           </Text>
           <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>

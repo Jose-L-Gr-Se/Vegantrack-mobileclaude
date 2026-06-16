@@ -153,7 +153,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   getDaySummary: () => summarizeEntries(get().entries, get().overrides ?? []),
 
   fetchRecentFoods: async (userId) => {
-    // Agregamos los últimos 200 logs en cliente → top 20 por frecuencia
+    // Últimos 200 logs → únicos por recencia (el primero de cada key es el más reciente)
     const { data, error } = await supabase
       .from('food_log')
       .select('*')
@@ -170,9 +170,9 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       else byName.set(key, { entry: e, count: 1 });
     }
 
+    // Keep insertion order (= recency) instead of sorting by count
     const recents: RecentFood[] = [...byName.values()]
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20)
+      .slice(0, 15)
       .map(({ entry: e, count }) => {
         const ratio = e.serving_size_g > 0 ? 100 / e.serving_size_g : 0;
         const per100 = (v: number | null) => (v === null ? null : Math.round(v * ratio * 100) / 100);

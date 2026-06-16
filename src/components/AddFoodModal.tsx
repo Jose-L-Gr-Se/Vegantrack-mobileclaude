@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
 import { Button, Card, Input, Pill } from '@/components/ui';
-import { fonts, radii, spacing, useTheme } from '@/theme';
+import { radii, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
@@ -75,7 +75,7 @@ export function AddFoodModal({
         <Pressable onPress={() => undefined}>
           <Card style={{ borderBottomLeftRadius: 0, borderBottomRightRadius: 0, gap: spacing.lg, paddingBottom: spacing.xxl }}>
             <View style={{ gap: 4 }}>
-              <Text style={{ fontFamily: fonts.display, fontSize: 20, fontWeight: '400', color: t.text }}>{food.food_name}</Text>
+              <Text style={{ fontSize: 20, fontWeight: '700', color: t.text }}>{food.food_name}</Text>
               {food.brand ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
               {food.is_vegan ? <Pill text="Vegano ✓" /> : null}
             </View>

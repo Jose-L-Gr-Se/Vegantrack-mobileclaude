@@ -14,7 +14,7 @@ import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { SwipeableRow } from '@/components/SwipeableRow';
 import { SupplementEditor } from '@/components/SupplementEditor';
 import { BottomSheet } from '@/components/BottomSheet';
-import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
+import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
@@ -152,7 +152,7 @@ export function DiaryScreen() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View>
                 <Text style={{ fontSize: 13, color: t.textSecondary, fontWeight: '600' }}>Comido</Text>
-                <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>
+                <Text style={{ fontSize: 26, fontWeight: '800', color: t.text }}>
                   {Math.round(summary.calories)}
                   <Text style={{ fontSize: 13, color: t.textMuted }}> kcal</Text>
                 </Text>
@@ -480,7 +480,7 @@ function SupplementPickerSheet({
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
-        <Text style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: '400', color: t.text }}>
+        <Text style={{ fontSize: 24, fontWeight: '700', color: t.text }}>
           Añadir suplemento
         </Text>
         <Text style={{ color: t.textSecondary, fontSize: 13, lineHeight: 18 }}>

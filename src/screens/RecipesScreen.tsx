@@ -9,7 +9,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, Input, SectionHeader } from '@/components/ui';
 import { MEAL_LABELS } from '@/components/AddFoodModal';
-import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
+import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { computeRecipeNutrients, useRecipeStore } from '@/stores/recipeStore';
 import { productToFoodPer100g, searchProducts } from '@/lib/openfoodfacts';
@@ -84,7 +84,7 @@ export function RecipesScreen() {
     >
       {/* Header row */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontFamily: fonts.display, fontSize: 30, fontWeight: '400', color: t.text }}>Recetas</Text>
+        <Text style={{ fontSize: 30, fontWeight: '700', color: t.text }}>Recetas</Text>
         <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
           <Pressable
             onPress={() => setShowCreate(true)}
@@ -201,6 +201,10 @@ function RecipeDetail({
   const [logServings, setLogServings] = useState('1');
   const [logMeal, setLogMeal] = useState<MealType>('lunch');
   const [showLog, setShowLog] = useState(false);
+  const [editingHeader, setEditingHeader] = useState(false);
+  const [editName, setEditName] = useState(recipe.name);
+  const [editDescription, setEditDescription] = useState(recipe.description ?? '');
+  const [editServings, setEditServings] = useState(String(recipe.total_servings));
 
   const totals = computeRecipeNutrients(recipe);
   const perServing = recipe.total_servings > 0 ? totals.calories / recipe.total_servings : 0;
@@ -292,15 +296,56 @@ function RecipeDetail({
 
       {/* Recipe header */}
       <Card style={{ gap: spacing.md }}>
-        <View style={{ gap: 4 }}>
-          <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>{recipe.name}</Text>
-          {recipe.description ? (
-            <Text style={{ color: t.textMuted, fontSize: 14 }}>{recipe.description}</Text>
-          ) : null}
-          <Text style={{ color: t.textSecondary, fontSize: 13, marginTop: 2 }}>
-            {recipe.total_servings} raciones · {Math.round(totals.total_g)} g total
-          </Text>
-        </View>
+        {editingHeader ? (
+          <View style={{ gap: spacing.md }}>
+            <Input label="Nombre" value={editName} onChangeText={setEditName} />
+            <Input label="Descripción (opcional)" value={editDescription} onChangeText={setEditDescription} />
+            <Input label="Raciones" value={editServings} onChangeText={setEditServings} keyboardType="numeric" />
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  title="Guardar"
+                  onPress={async () => {
+                    const { error } = await store.updateRecipe(recipe.id, {
+                      name: editName.trim(),
+                      description: editDescription.trim() || null,
+                      total_servings: parseFloat(editServings) || 1,
+                    });
+                    if (error) Alert.alert('Error', error);
+                    else setEditingHeader(false);
+                  }}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button
+                  title="Cancelar"
+                  variant="secondary"
+                  onPress={() => {
+                    setEditName(recipe.name);
+                    setEditDescription(recipe.description ?? '');
+                    setEditServings(String(recipe.total_servings));
+                    setEditingHeader(false);
+                  }}
+                />
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={{ gap: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <Text style={{ fontSize: 26, fontWeight: '700', color: t.text, flex: 1 }}>{recipe.name}</Text>
+              <Pressable onPress={() => setEditingHeader(true)} hitSlop={8}>
+                <Ionicons name={'pencil-outline' as any} size={20} color={t.textMuted} />
+              </Pressable>
+            </View>
+            {recipe.description ? (
+              <Text style={{ color: t.textMuted, fontSize: 14 }}>{recipe.description}</Text>
+            ) : null}
+            <Text style={{ color: t.textSecondary, fontSize: 13, marginTop: 2 }}>
+              {recipe.total_servings} raciones · {Math.round(totals.total_g)} g total
+            </Text>
+          </View>
+        )}
 
         {/* Macro chips per serving */}
         <View style={{ flexDirection: 'row', gap: spacing.xs }}>
@@ -372,18 +417,8 @@ function RecipeDetail({
             recipe.ingredients.map((ing, idx) => {
               const ingKcal = (ing.calories_per_100g ?? 0) * (ing.serving_size_g / 100);
               return (
-                <Pressable
+                <View
                   key={ing.id}
-                  onLongPress={() =>
-                    Alert.alert('Quitar', `¿Quitar "${ing.food_name}"?`, [
-                      { text: 'Cancelar', style: 'cancel' },
-                      {
-                        text: 'Quitar',
-                        style: 'destructive',
-                        onPress: () => void store.removeIngredient(recipe.id, ing.id),
-                      },
-                    ])
-                  }
                   style={{
                     height: 52,
                     flexDirection: 'row',
@@ -404,10 +439,24 @@ function RecipeDetail({
                       {ing.serving_size_g} g
                     </Text>
                   </View>
-                  <Text style={{ color: t.textSecondary, fontWeight: '600', fontSize: 13 }}>
-                    {Math.round(ingKcal)} kcal
-                  </Text>
-                </Pressable>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ color: t.textSecondary, fontWeight: '600', fontSize: 13 }}>
+                      {Math.round(ingKcal)} kcal
+                    </Text>
+                    <Pressable
+                      onPress={() =>
+                        Alert.alert('Quitar', `¿Quitar "${ing.food_name}"?`, [
+                          { text: 'Cancelar', style: 'cancel' },
+                          { text: 'Quitar', style: 'destructive', onPress: () => void store.removeIngredient(recipe.id, ing.id) },
+                        ])
+                      }
+                      hitSlop={8}
+                      style={{ marginLeft: spacing.sm }}
+                    >
+                      <Ionicons name={'close-circle-outline' as any} size={18} color={t.textMuted} />
+                    </Pressable>
+                  </View>
+                </View>
               );
             })
           )}

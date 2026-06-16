@@ -9,7 +9,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input, Pill, SectionHeader } from '@/components/ui';
-import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
+import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
@@ -26,7 +26,7 @@ import {
 import { ProModal } from '@/components/ProModal';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SupplementEditor } from '@/components/SupplementEditor';
-import type { ActivityLevel, Goal, Supplement } from '@/types';
+import type { ActivityLevel, CustomFood, Goal, Supplement } from '@/types';
 import type { RootStackParamList } from '@/navigation/types';
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
@@ -208,7 +208,7 @@ export function ProfileScreen() {
         paddingBottom: spacing.xxl,
       }}
     >
-      <Text style={{ fontFamily: fonts.display, fontSize: 30, fontWeight: '400', color: t.text }}>Perfil</Text>
+      <Text style={{ fontSize: 30, fontWeight: '700', color: t.text }}>Perfil</Text>
 
       {/* Avatar header card */}
       <Card>
@@ -226,12 +226,12 @@ export function ProfileScreen() {
               justifyContent: 'center',
             }}
           >
-            <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.primary }}>{initials}</Text>
+            <Text style={{ fontSize: 26, fontWeight: '700', color: t.primary }}>{initials}</Text>
           </View>
           {/* Name + email */}
           <View style={{ flex: 1, gap: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Text style={{ fontFamily: fonts.display, fontSize: 20, fontWeight: '400', color: t.text }}>
+              <Text style={{ fontSize: 20, fontWeight: '700', color: t.text }}>
                 {displayName || 'Sin nombre'}
               </Text>
               {isPro ? <Pill text="PRO ⭐" color="#f59e0b" /> : null}
@@ -559,6 +559,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
               paddingBottom: insets.bottom + spacing.lg,
               borderWidth: 1,
               borderColor: t.cardBorder,
+              maxHeight: '92%',
             }}
           >
             {/* Drag handle */}
@@ -598,7 +599,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
                 >
                   Actividad
                 </Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+                <View style={{ gap: spacing.sm }}>
                   {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map((a) => (
                     <OptionRow
                       key={a}
@@ -622,7 +623,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
                 >
                   Objetivo
                 </Text>
-                <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+                <View style={{ gap: spacing.sm }}>
                   {(Object.keys(GOAL_LABELS) as Goal[]).map((g) => (
                     <OptionRow
                       key={g}
@@ -728,7 +729,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
     <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontFamily: fonts.display, fontSize: 26, fontWeight: '400', color: t.text }}>
+          <Text style={{ fontSize: 26, fontWeight: '700', color: t.text }}>
             Suplementos
           </Text>
           {!isPro ? (
@@ -875,200 +876,203 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
 
 function CustomFoodModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
-  const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const store = useCustomFoodStore();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
   const [name, setName] = useState('');
   const [kcal, setKcal] = useState('');
   const [protein, setProtein] = useState('');
   const [carbs, setCarbs] = useState('');
   const [fat, setFat] = useState('');
   const [fiber, setFiber] = useState('');
+  const [sugar, setSugar] = useState('');
+  const [satFat, setSatFat] = useState('');
 
   const num = (s: string) => parseFloat(s.replace(',', '.')) || 0;
 
-  const create = async () => {
+  const resetForm = () => {
+    setName(''); setKcal(''); setProtein(''); setCarbs('');
+    setFat(''); setFiber(''); setSugar(''); setSatFat('');
+  };
+
+  const startEdit = (f: CustomFood) => {
+    setEditingId(f.id);
+    setCreating(false);
+    setName(f.name);
+    setKcal(f.calories_per_100g ? String(f.calories_per_100g) : '');
+    setProtein(f.protein_per_100g ? String(f.protein_per_100g) : '');
+    setCarbs(f.carbs_per_100g ? String(f.carbs_per_100g) : '');
+    setFat(f.fat_per_100g ? String(f.fat_per_100g) : '');
+    setFiber(f.fiber_per_100g ? String(f.fiber_per_100g) : '');
+    setSugar(f.sugar_per_100g ? String(f.sugar_per_100g) : '');
+    setSatFat(f.saturated_fat_per_100g ? String(f.saturated_fat_per_100g) : '');
+  };
+
+  const startCreate = () => {
+    setEditingId(null);
+    setCreating(true);
+    resetForm();
+  };
+
+  const save = async () => {
     if (!user || !name.trim()) return;
-    const { error } = await store.createCustomFood(user.id, {
+    const foodData = {
       name: name.trim(),
-      brand: null,
       calories_per_100g: num(kcal),
       protein_per_100g: num(protein),
       carbs_per_100g: num(carbs),
       fat_per_100g: num(fat),
       fiber_per_100g: num(fiber),
-      sugar_per_100g: 0,
-      saturated_fat_per_100g: 0,
-      sodium_mg_per_100g: 0,
-      vitamin_b12_mcg_per_100g: null,
-      iron_mg_per_100g: null,
-      zinc_mg_per_100g: null,
-      calcium_mg_per_100g: null,
-      vitamin_d_mcg_per_100g: null,
-      omega3_g_per_100g: null,
-      is_vegan: true,
-      image_url: null,
-    });
-    if (error) Alert.alert('Error', error);
-    else {
-      setName('');
-      setKcal('');
-      setProtein('');
-      setCarbs('');
-      setFat('');
-      setFiber('');
+      sugar_per_100g: num(sugar),
+      saturated_fat_per_100g: num(satFat),
+    };
+
+    if (editingId) {
+      const { error } = await store.updateCustomFood(editingId, foodData);
+      if (error) Alert.alert('Error', error);
+      else { setEditingId(null); resetForm(); }
+    } else {
+      const { error } = await store.createCustomFood(user.id, {
+        ...foodData,
+        brand: null,
+        sodium_mg_per_100g: 0,
+        vitamin_b12_mcg_per_100g: null,
+        iron_mg_per_100g: null,
+        zinc_mg_per_100g: null,
+        calcium_mg_per_100g: null,
+        vitamin_d_mcg_per_100g: null,
+        omega3_g_per_100g: null,
+        is_vegan: true,
+        image_url: null,
+      });
+      if (error) Alert.alert('Error', error);
+      else { setCreating(false); resetForm(); }
     }
   };
 
+  const confirmDelete = (f: CustomFood) => {
+    Alert.alert('Eliminar', `¿Eliminar "${f.name}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: () => void store.deleteCustomFood(f.id) },
+    ]);
+  };
+
+  const showForm = editingId !== null || creating;
+
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        onPress={onClose}
-      >
-        <Pressable onPress={() => undefined}>
-          <View
-            style={{
-              backgroundColor: t.card,
-              borderTopLeftRadius: radii.xl,
-              borderTopRightRadius: radii.xl,
-              maxHeight: '90%',
-              borderWidth: 1,
-              borderColor: t.cardBorder,
-              paddingBottom: insets.bottom + spacing.lg,
-            }}
-          >
-            {/* Drag handle */}
-            <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
-              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
-            </View>
+    <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
+      <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>Mis alimentos</Text>
 
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingHorizontal: spacing.lg,
-                marginBottom: spacing.md,
-              }}
-            >
-              <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>⭐ Mis alimentos</Text>
-              <Pressable onPress={onClose} hitSlop={8}>
-                <Text style={{ color: t.primary, fontWeight: '700' }}>Cerrar</Text>
-              </Pressable>
-            </View>
-
-            <ScrollView
-              style={{ maxHeight: 520 }}
-              contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
-              keyboardShouldPersistTaps="handled"
-            >
-              {store.customFoods.length > 0 && (
-                <View>
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      fontWeight: '700',
-                      letterSpacing: 0.8,
-                      color: t.textMuted,
-                      textTransform: 'uppercase',
-                      marginBottom: spacing.sm,
-                    }}
-                  >
-                    Mis alimentos
-                  </Text>
-                  {store.customFoods.map((f) => (
-                    <Pressable
-                      key={f.id}
-                      onLongPress={() =>
-                        Alert.alert('Eliminar', `¿Eliminar "${f.name}"?`, [
-                          { text: 'Cancelar', style: 'cancel' },
-                          {
-                            text: 'Eliminar',
-                            style: 'destructive',
-                            onPress: () => void store.deleteCustomFood(f.id),
-                          },
-                        ])
-                      }
-                      style={{
-                        height: 52,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: spacing.md,
-                        borderBottomWidth: 1,
-                        borderBottomColor: t.separator,
-                      }}
-                    >
-                      <Text style={{ flex: 1, color: t.text, fontWeight: '600', fontSize: 15 }}>
-                        {f.name}
-                      </Text>
-                      <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                        {f.calories_per_100g} kcal/100g
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-              <Text
+        {store.customFoods.length > 0 && !showForm && (
+          <View style={{ gap: spacing.sm }}>
+            {store.customFoods.map((f) => (
+              <View
+                key={f.id}
                 style={{
-                  fontSize: 11,
-                  fontWeight: '700',
-                  letterSpacing: 0.8,
-                  color: t.textMuted,
-                  textTransform: 'uppercase',
-                  marginTop: spacing.lg,
-                  marginBottom: spacing.sm,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: spacing.md,
+                  padding: spacing.md,
+                  borderRadius: radii.lg,
+                  borderWidth: 1,
+                  borderColor: t.cardBorder,
+                  backgroundColor: t.card,
                 }}
               >
-                Crear (valores por 100 g)
-              </Text>
-              <Input
-                label="Nombre"
-                value={name}
-                onChangeText={setName}
-                placeholder="Mi tempeh casero"
-              />
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                 <View style={{ flex: 1 }}>
-                  <Input label="kcal" value={kcal} onChangeText={setKcal} keyboardType="numeric" />
+                  <Text style={{ color: t.text, fontWeight: '700', fontSize: 15 }}>{f.name}</Text>
+                  <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                    {f.calories_per_100g} kcal · P {f.protein_per_100g}g · C {f.carbs_per_100g}g · G {f.fat_per_100g}g
+                  </Text>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Input
-                    label="Prot."
-                    value={protein}
-                    onChangeText={setProtein}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Input
-                    label="Carb."
-                    value={carbs}
-                    onChangeText={setCarbs}
-                    keyboardType="numeric"
-                  />
-                </View>
+                <Pressable onPress={() => startEdit(f)} hitSlop={8}>
+                  <Ionicons name={'pencil-outline' as any} size={18} color={t.primary} />
+                </Pressable>
+                <Pressable onPress={() => confirmDelete(f)} hitSlop={8}>
+                  <Ionicons name={'trash-outline' as any} size={18} color={semantic.danger} />
+                </Pressable>
               </View>
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <Input label="Grasa" value={fat} onChangeText={setFat} keyboardType="numeric" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Input
-                    label="Fibra"
-                    value={fiber}
-                    onChangeText={setFiber}
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-              <Button title="Crear alimento" onPress={create} />
-            </ScrollView>
+            ))}
           </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        )}
+
+        {!showForm && (
+          <Pressable
+            onPress={startCreate}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              paddingVertical: spacing.md,
+              borderRadius: radii.lg,
+              borderWidth: 1.5,
+              borderColor: t.primary,
+              backgroundColor: t.primarySoft,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Ionicons name={'add' as any} size={18} color={t.primary} />
+            <Text style={{ color: t.primary, fontWeight: '700', fontSize: 14 }}>
+              Crear alimento personalizado
+            </Text>
+          </Pressable>
+        )}
+
+        {showForm && (
+          <View style={{ gap: spacing.md }}>
+            <Text style={{
+              fontSize: 11, fontWeight: '700', letterSpacing: 0.8,
+              color: t.textMuted, textTransform: 'uppercase',
+            }}>
+              {editingId ? 'Editar alimento' : 'Crear alimento (valores por 100 g)'}
+            </Text>
+            <Input label="Nombre" value={name} onChangeText={setName} placeholder="Mi tempeh casero" />
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Input label="kcal" value={kcal} onChangeText={setKcal} keyboardType="numeric" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input label="Prot." value={protein} onChangeText={setProtein} keyboardType="numeric" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input label="Carb." value={carbs} onChangeText={setCarbs} keyboardType="numeric" />
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Input label="Grasa" value={fat} onChangeText={setFat} keyboardType="numeric" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input label="Fibra" value={fiber} onChangeText={setFiber} keyboardType="numeric" />
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Input label="Azúcar" value={sugar} onChangeText={setSugar} keyboardType="numeric" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input label="G. sat." value={satFat} onChangeText={setSatFat} keyboardType="numeric" />
+              </View>
+            </View>
+            <Button title={editingId ? 'Guardar cambios' : 'Crear alimento'} onPress={save} />
+            <Button title="Cancelar" variant="secondary" onPress={() => { setEditingId(null); setCreating(false); resetForm(); }} />
+          </View>
+        )}
+
+        {store.customFoods.length === 0 && !showForm && (
+          <View style={{ alignItems: 'center', padding: spacing.xl, gap: spacing.md }}>
+            <Text style={{ fontSize: 40 }}>⭐</Text>
+            <Text style={{ color: t.textMuted, fontSize: 13, textAlign: 'center' }}>
+              Aún no tienes alimentos personalizados. Crea uno con los valores nutricionales por 100 g.
+            </Text>
+          </View>
+        )}
+      </View>
+    </BottomSheet>
   );
 }
 

@@ -14,7 +14,7 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
-import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
+import { radii, semantic, spacing, useTheme } from '@/theme';
 import type { Supplement, SupplementNutrientKey } from '@/types';
 
 const EMOJIS = ['💊', '☀️', '🌊', '🧂', '🩸', '⚡', '🦴', '🌙', '🛡️', '💪', '🌈', '🦠', '🌿', '✨'];
@@ -134,7 +134,7 @@ export function SupplementEditor({
       }
     >
       <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
-        <Text style={{ fontFamily: fonts.display, fontSize: 24, fontWeight: '400', color: t.text }}>
+        <Text style={{ fontSize: 24, fontWeight: '700', color: t.text }}>
           {title ?? 'Suplemento'}
         </Text>
 
