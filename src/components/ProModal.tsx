@@ -10,6 +10,7 @@ import { Button } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { WEB_BASE_URL } from '@/lib/supabase';
+import { track } from '@/lib/analytics';
 
 interface Plan {
   id: 'free' | 'monthly' | 'annual';
@@ -32,6 +33,7 @@ const PLANS: Plan[] = [
     cadence: 'para siempre',
     desc: 'Lo esencial para registrar y seguir tu día.',
     features: [
+      '3 fotos IA al día (analiza tu plato)',
       'Registro ilimitado de comidas',
       'Macros + 6 micros clave',
       '14 días de historial',
@@ -47,7 +49,7 @@ const PLANS: Plan[] = [
     cadence: 'al mes',
     desc: 'Sin límites y con estadísticas profundas.',
     features: [
-      'Todo lo de Free',
+      'Fotos IA ilimitadas + verificación vegana',
       'Historial ilimitado',
       'Tendencias de micros (30 / 90 días)',
       'Recetas y suplementos ilimitados',
@@ -80,6 +82,7 @@ function PlanCard({ plan, isCurrent }: { plan: Plan; isCurrent: boolean }) {
 
   const onChoose = () => {
     if (!plan.checkout) return;
+    track('checkout_opened', { plan: plan.checkout });
     void Linking.openURL(`${WEB_BASE_URL}/?upgrade=pro&plan=${plan.checkout}`);
   };
 
@@ -148,7 +151,7 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
             Hazte Pro
           </Text>
           <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>
-            Sin límites, con tendencias de micros y exportación. Cancela cuando quieras.
+            Fotos IA ilimitadas, historial sin límites y tendencias de micros. Cancela cuando quieras.
           </Text>
         </View>
 

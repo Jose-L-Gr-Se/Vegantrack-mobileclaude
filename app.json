@@ -46,6 +46,13 @@
         {
           "cameraPermission": "VeganTrack usa la cámara para escanear códigos de barras de alimentos."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "VeganTrack usa tus fotos para analizar platos y calcular sus nutrientes.",
+          "cameraPermission": "VeganTrack usa la cámara para fotografiar tus platos y analizarlos con IA."
+        }
       ]
     ]
   }

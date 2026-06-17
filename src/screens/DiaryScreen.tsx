@@ -3,7 +3,7 @@
  * suplementos y copia de comidas. Historial free limitado a 14 días.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import { ProductDetailSheet } from '@/components/ProductDetailSheet';
+import { ProModal } from '@/components/ProModal';
 import { SwipeableRow } from '@/components/SwipeableRow';
 import { SupplementEditor } from '@/components/SupplementEditor';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -18,6 +19,8 @@ import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
+import { useMealPhoto } from '@/hooks/useMealPhoto';
+import { track } from '@/lib/analytics';
 import { FREE_HISTORY_DAYS, FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import { addDays, daysBetween, formatDateHuman, todayISO } from '@/utils/dates';
 import type { FoodLogEntry, MealType, Supplement } from '@/types';
@@ -33,8 +36,35 @@ export function DiaryScreen() {
   const { entries, selectedDate, setDate, fetchEntries, deleteEntry, getDaySummary, copyDayEntries, copyMealEntries, loadOverrides } = useDiaryStore();
   const supplements = useSupplementStore();
   const { isPro } = usePro();
+  const photo = useMealPhoto();
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<FoodLogEntry | null>(null);
+
+  // Abre el paywall cuando se agota la cuota gratuita de fotos.
+  useEffect(() => {
+    if (photo.quotaBlocked) track('paywall_viewed', { source: 'photo_quota' });
+  }, [photo.quotaBlocked]);
+
+  const startPhoto = () => {
+    Alert.alert('Analizar plato con IA', '¿Cómo quieres añadir la foto?', [
+      { text: 'Hacer foto', onPress: () => void photo.capture('camera') },
+      { text: 'Elegir de galería', onPress: () => void photo.capture('library') },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  };
+
+  const sheetProfile =
+    profile?.calorie_target != null &&
+    profile?.protein_target_g != null &&
+    profile?.carbs_target_g != null &&
+    profile?.fat_target_g != null
+      ? {
+          calorie_target: profile.calorie_target,
+          protein_target_g: profile.protein_target_g,
+          carbs_target_g: profile.carbs_target_g,
+          fat_target_g: profile.fat_target_g,
+        }
+      : null;
 
   // Editor de suplementos en línea desde el Diario (sin ir a Perfil).
   // Estado posible:
@@ -178,6 +208,48 @@ export function DiaryScreen() {
         <MacroBar label="Carbohidratos" value={summary.carbs_g} target={profile?.carbs_target_g ?? 0} color={semantic.carbs} />
         <MacroBar label="Grasas" value={summary.fat_g} target={profile?.fat_target_g ?? 0} color={semantic.fat} />
       </Card>
+
+      {/* Analizar plato con IA (VeganLens) */}
+      <Pressable
+        onPress={startPhoto}
+        disabled={photo.analyzing}
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          backgroundColor: t.primary,
+          borderRadius: radii.lg,
+          padding: spacing.md,
+          opacity: pressed || photo.analyzing ? 0.85 : 1,
+        })}
+      >
+        <View
+          style={{
+            width: 40, height: 40, borderRadius: 20,
+            backgroundColor: 'rgba(255,255,255,0.18)',
+            alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          {photo.analyzing ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Ionicons name={'camera' as any} size={22} color="#fff" />
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
+            {photo.analyzing ? 'Analizando tu plato…' : 'Analizar plato con IA'}
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>
+            {isPro
+              ? 'Foto → calorías, macros y chequeo vegano'
+              : photo.remaining != null
+              ? `Te quedan ${photo.remaining} de ${photo.limit} fotos hoy`
+              : `${photo.limit} fotos gratis al día`}
+          </Text>
+        </View>
+        {!photo.analyzing ? <Ionicons name={'sparkles' as any} size={18} color="#fff" /> : null}
+      </Pressable>
 
       {/* Comidas */}
       {meals.map(({ type, entries: mealEntries }) => {
@@ -400,6 +472,25 @@ export function DiaryScreen() {
           onDelete={() => void deleteEntry(editing.id)}
         />
       ) : null}
+
+      {/* Ficha de revisión del plato analizado con IA */}
+      {photo.food ? (
+        <ProductDetailSheet
+          food={photo.food}
+          initialGrams={photo.grams}
+          veganConfidence={photo.confidence}
+          profile={sheetProfile}
+          onClose={photo.reset}
+          onAdded={() => {
+            track('photo_entry_saved', {});
+            if (user) void fetchEntries(user.id, selectedDate);
+            photo.reset();
+          }}
+        />
+      ) : null}
+
+      {/* Paywall al agotar la cuota gratuita de fotos */}
+      {photo.quotaBlocked ? <ProModal isPro={isPro} onClose={photo.clearQuota} /> : null}
 
       {/* Picker de suplementos (presets + crear personalizado) */}
       <SupplementPickerSheet
