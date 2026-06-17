@@ -4,8 +4,11 @@
  * al formato común `FoodPer100g` para reutilizar la ficha de producto y el alta
  * en el diario. La API key de IA vive en el servidor, nunca en el cliente.
  */
-import { supabase, WEB_BASE_URL } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import type { FoodPer100g, VeganConfidence } from '@/types';
+
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 export interface MealAnalysis {
   is_food: boolean;
@@ -38,9 +41,14 @@ export async function analyzeMealPhoto(base64: string, mime: string): Promise<An
   if (!token) return { ok: false, reason: 'error', message: 'Sesión no válida' };
 
   try {
-    const res = await fetch(`${WEB_BASE_URL}/api/analyze-meal`, {
+    // Edge Function de Supabase: {SUPABASE_URL}/functions/v1/analyze-meal
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/analyze-meal`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({ image_base64: base64, mime_type: mime }),
     });
 
