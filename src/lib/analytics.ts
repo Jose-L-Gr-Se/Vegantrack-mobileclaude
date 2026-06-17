@@ -17,6 +17,15 @@ export type AnalyticsEvent =
   | 'paywall_viewed'
   | 'checkout_opened';
 
+let appOpenTracked = false;
+
+/** Registra una apertura de sesión una sola vez por arranque (para DAU/retención). */
+export function trackAppOpenOnce(): void {
+  if (appOpenTracked) return;
+  appOpenTracked = true;
+  track('app_open');
+}
+
 export function track(event: AnalyticsEvent, props: Record<string, unknown> = {}): void {
   // Fire-and-forget: nunca bloquea ni lanza al llamador.
   void (async () => {

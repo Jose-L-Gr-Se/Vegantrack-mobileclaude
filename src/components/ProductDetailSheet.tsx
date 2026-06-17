@@ -131,6 +131,7 @@ export function ProductDetailSheet({
   onDelete,
   onShowAlternatives,
   veganConfidence,
+  notice,
   profile,
 }: {
   /** Alimento a mostrar (modo añadir). En modo edición se ignora si hay editEntry. */
@@ -146,6 +147,8 @@ export function ProductDetailSheet({
   onDelete?: () => void;
   onShowAlternatives?: (product: OpenFoodFactsProduct) => void;
   veganConfidence?: VeganConfidence;
+  /** Aviso opcional sobre la ficha (p. ej. ingredientes no veganos detectados por IA). */
+  notice?: { tone: 'warn' | 'info'; text: string } | null;
   profile?: {
     calorie_target: number;
     protein_target_g: number;
@@ -297,6 +300,29 @@ export function ProductDetailSheet({
       }
     >
       <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
+        {/* ── Aviso (p. ej. ingredientes no veganos detectados por IA) ── */}
+        {notice ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              gap: spacing.sm,
+              padding: spacing.md,
+              borderRadius: radii.md,
+              backgroundColor: notice.tone === 'warn' ? 'rgba(239,68,68,0.10)' : t.primarySoft,
+              borderLeftWidth: 3,
+              borderLeftColor: notice.tone === 'warn' ? semantic.danger : t.primary,
+            }}
+          >
+            <Ionicons
+              name={(notice.tone === 'warn' ? 'warning-outline' : 'information-circle-outline') as never}
+              size={18}
+              color={notice.tone === 'warn' ? semantic.danger : t.primary}
+              style={{ marginTop: 1 }}
+            />
+            <Text style={{ flex: 1, color: t.text, fontSize: 13, lineHeight: 18 }}>{notice.text}</Text>
+          </View>
+        ) : null}
+
         {/* ── Hero ────────────────────────────────────────────────── */}
         <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' }}>
           {heroImage && !imageBroken ? (

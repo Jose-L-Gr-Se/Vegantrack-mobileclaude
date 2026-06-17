@@ -20,7 +20,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { useMealPhoto } from '@/hooks/useMealPhoto';
-import { track } from '@/lib/analytics';
+import { track, trackAppOpenOnce } from '@/lib/analytics';
 import { FREE_HISTORY_DAYS, FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import { addDays, daysBetween, formatDateHuman, todayISO } from '@/utils/dates';
 import type { FoodLogEntry, MealType, Supplement } from '@/types';
@@ -66,6 +66,21 @@ export function DiaryScreen() {
         }
       : null;
 
+  // Aviso de la ficha tras analizar una foto: ingredientes no veganos (rojo) o
+  // los supuestos de la estimación (info).
+  const photoNotice: { tone: 'warn' | 'info'; text: string } | null = photo.analysis
+    ? !photo.analysis.is_vegan && photo.analysis.non_vegan_ingredients?.length
+      ? {
+          tone: 'warn',
+          text: `Posibles ingredientes no veganos: ${photo.analysis.non_vegan_ingredients.join(
+            ', '
+          )}. Revísalo antes de guardar.`,
+        }
+      : photo.analysis.notes
+      ? { tone: 'info', text: photo.analysis.notes }
+      : null
+    : null;
+
   // Editor de suplementos en línea desde el Diario (sin ir a Perfil).
   // Estado posible:
   //   · null            → sin editor abierto.
@@ -95,6 +110,7 @@ export function DiaryScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
+      trackAppOpenOnce();
       void fetchEntries(user.id, selectedDate);
       void supplements.fetchSupplements(user.id);
       void supplements.fetchTodayLogs(user.id);
@@ -479,6 +495,7 @@ export function DiaryScreen() {
           food={photo.food}
           initialGrams={photo.grams}
           veganConfidence={photo.confidence}
+          notice={photoNotice}
           profile={sheetProfile}
           onClose={photo.reset}
           onAdded={() => {
