@@ -42,4 +42,20 @@ describe('analysisToFood', () => {
     expect(f.iron_known).toBe(false);
     expect(f.calcium_known).toBe(false);
   });
+
+  it('mapea un plato NO vegano sin bloquearlo (análisis general para todos)', () => {
+    const nonVegan: MealAnalysis = {
+      ...analysis,
+      food_name: 'Pollo con arroz',
+      is_vegan: false,
+      vegan_confidence: 'low',
+      non_vegan_ingredients: ['pollo'],
+    };
+    const f = analysisToFood(nonVegan);
+    expect(f.is_vegan).toBe(false);
+    expect(f.food_name).toBe('Pollo con arroz');
+    // Sigue siendo un alimento válido y guardable (macros presentes).
+    expect(f.calories).toBeGreaterThan(0);
+    expect(f.source).toBe('ai_photo');
+  });
 });

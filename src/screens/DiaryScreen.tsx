@@ -46,7 +46,7 @@ export function DiaryScreen() {
   }, [photo.quotaBlocked]);
 
   const startPhoto = () => {
-    Alert.alert('Analizar plato con IA', '¿Cómo quieres añadir la foto?', [
+    Alert.alert('Análisis de plato con IA', '¿Cómo quieres añadir la foto?', [
       { text: 'Hacer foto', onPress: () => void photo.capture('camera') },
       { text: 'Elegir de galería', onPress: () => void photo.capture('library') },
       { text: 'Cancelar', style: 'cancel' },
@@ -66,15 +66,16 @@ export function DiaryScreen() {
         }
       : null;
 
-  // Aviso de la ficha tras analizar una foto: ingredientes no veganos (rojo) o
-  // los supuestos de la estimación (info).
+  // Aviso de la ficha tras analizar una foto: si hay ingredientes de origen
+  // animal, se muestra como dato suave e informativo (no bloquea ni juzga);
+  // si no, los supuestos de la estimación.
   const photoNotice: { tone: 'warn' | 'info'; text: string } | null = photo.analysis
     ? !photo.analysis.is_vegan && photo.analysis.non_vegan_ingredients?.length
       ? {
-          tone: 'warn',
-          text: `Posibles ingredientes no veganos: ${photo.analysis.non_vegan_ingredients.join(
+          tone: 'info',
+          text: `Posibles ingredientes de origen animal: ${photo.analysis.non_vegan_ingredients.join(
             ', '
-          )}. Revísalo antes de guardar.`,
+          )} (sólo informativo).`,
         }
       : photo.analysis.notes
       ? { tone: 'info', text: photo.analysis.notes }
@@ -258,10 +259,10 @@ export function DiaryScreen() {
           </Text>
           <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>
             {isPro
-              ? 'Foto → calorías, macros y chequeo vegano'
+              ? 'Foto → calorías y macros al instante'
               : photo.remaining != null
-              ? `Te quedan ${photo.remaining} de ${photo.limit} fotos hoy`
-              : `${photo.limit} fotos gratis al día`}
+              ? `Te quedan ${photo.remaining} de ${photo.limit} análisis hoy`
+              : `${photo.limit} análisis gratis al día`}
           </Text>
         </View>
         {!photo.analyzing ? <Ionicons name={'sparkles' as any} size={18} color="#fff" /> : null}
@@ -494,7 +495,7 @@ export function DiaryScreen() {
         <ProductDetailSheet
           food={photo.food}
           initialGrams={photo.grams}
-          veganConfidence={photo.confidence}
+          veganConfidence={photo.analysis?.is_vegan ? photo.confidence : undefined}
           notice={photoNotice}
           profile={sheetProfile}
           onClose={photo.reset}
