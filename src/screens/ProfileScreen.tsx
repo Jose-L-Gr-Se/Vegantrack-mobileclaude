@@ -2,19 +2,20 @@
  * Perfil: datos personales y objetivos, suplementos, alimentos personalizados,
  * recordatorio diario, exportación CSV, Pro y logout.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input, Pill, SectionHeader } from '@/components/ui';
+import { DateField } from '@/components/DateField';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
-import { calculateTargets } from '@/utils/nutrition';
+import { calculateTargets, calculateTDEE, formatNumber, getAge } from '@/utils/nutrition';
 import { exportDiaryCsv } from '@/utils/exportCsv';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import {
@@ -26,7 +27,7 @@ import {
 import { ProModal } from '@/components/ProModal';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SupplementEditor } from '@/components/SupplementEditor';
-import type { ActivityLevel, CustomFood, Goal, Supplement } from '@/types';
+import type { ActivityLevel, CustomFood, Goal, Profile, Sex, Supplement } from '@/types';
 import type { RootStackParamList } from '@/navigation/types';
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
@@ -42,6 +43,120 @@ const GOAL_LABELS: Record<Goal, string> = {
   maintain: 'Mantener',
   bulk: 'Ganar masa',
 };
+
+/** Índice de masa corporal y su clasificación con color. */
+function bmiInfo(weight?: number | null, height?: number | null) {
+  if (!weight || !height) return null;
+  const h = height / 100;
+  const bmi = weight / (h * h);
+  let label = 'Saludable';
+  let color: string = semantic.success;
+  if (bmi < 18.5) {
+    label = 'Bajo peso';
+    color = semantic.warning;
+  } else if (bmi < 25) {
+    label = 'Saludable';
+    color = semantic.success;
+  } else if (bmi < 30) {
+    label = 'Sobrepeso';
+    color = semantic.warning;
+  } else {
+    label = 'Obesidad';
+    color = semantic.danger;
+  }
+  return { bmi: Math.round(bmi * 10) / 10, label, color };
+}
+
+function StatCell({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  const t = useTheme();
+  return (
+    <View style={{ flex: 1, gap: 2 }}>
+      <Text style={{ fontSize: 18, fontWeight: '800', color: t.text }} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text
+        style={{
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 0.6,
+          color: t.textMuted,
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </Text>
+      {sub ? <Text style={{ fontSize: 11, color: t.textMuted }}>{sub}</Text> : null}
+    </View>
+  );
+}
+
+function PersonalDataCard({
+  profile,
+  onEdit,
+}: {
+  profile: Profile | null;
+  onEdit: () => void;
+}) {
+  const t = useTheme();
+  const age = profile?.birth_date ? getAge(profile.birth_date) : null;
+  const tdee = calculateTDEE(profile ?? {});
+  const bmi = bmiInfo(profile?.weight_kg, profile?.height_cm);
+  const sexLabel =
+    profile?.sex === 'male' ? 'Hombre' : profile?.sex === 'female' ? 'Mujer' : '—';
+
+  return (
+    <Card style={{ gap: spacing.md }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={{ fontWeight: '700', fontSize: 15, color: t.text }}>Datos personales</Text>
+        <Pressable
+          onPress={onEdit}
+          hitSlop={8}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+        >
+          <Ionicons name={'pencil-outline' as any} size={14} color={t.primary} />
+          <Text style={{ color: t.primary, fontWeight: '700', fontSize: 13 }}>Editar</Text>
+        </Pressable>
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: spacing.md }}>
+        <StatCell label="Sexo" value={sexLabel} />
+        <StatCell label="Edad" value={age != null ? String(age) : '—'} sub={age != null ? 'años' : undefined} />
+        <StatCell label="Altura" value={profile?.height_cm ? String(profile.height_cm) : '—'} sub="cm" />
+        <StatCell label="Peso" value={profile?.weight_kg ? String(profile.weight_kg) : '—'} sub="kg" />
+      </View>
+
+      <View style={{ height: 1, backgroundColor: t.separator }} />
+
+      <View style={{ flexDirection: 'row', gap: spacing.md }}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: bmi?.color ?? t.text }}>
+            {bmi ? bmi.bmi : '—'}
+          </Text>
+          <Text
+            style={{
+              fontSize: 11,
+              fontWeight: '700',
+              letterSpacing: 0.6,
+              color: t.textMuted,
+              textTransform: 'uppercase',
+            }}
+          >
+            IMC
+          </Text>
+          {bmi ? (
+            <Text style={{ fontSize: 11, color: bmi.color, fontWeight: '700' }}>{bmi.label}</Text>
+          ) : null}
+        </View>
+        <StatCell
+          label="Metabolismo"
+          value={tdee ? formatNumber(tdee) : '—'}
+          sub="kcal/día"
+        />
+        <StatCell label="Actividad" value={ACTIVITY_LABELS[profile?.activity_level ?? 'moderate']} />
+      </View>
+    </Card>
+  );
+}
 
 /** A reusable row inside a Card — 52px tall with icon, label+subtitle, and optional right element. */
 function MenuRow({
@@ -126,7 +241,7 @@ export function ProfileScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { user, profile, updateProfile, signOut } = useAuthStore();
+  const { user, profile, signOut } = useAuthStore();
   const supplementStore = useSupplementStore();
   const customFoods = useCustomFoodStore();
   const { isPro } = usePro();
@@ -247,6 +362,9 @@ export function ProfileScreen() {
           </View>
         </View>
       </Card>
+
+      {/* Datos personales */}
+      <PersonalDataCard profile={profile} onEdit={() => setEditing(true)} />
 
       {/* Targets macro chips */}
       <View>
@@ -391,7 +509,6 @@ export function ProfileScreen() {
 
       <AppearanceCard />
 
-
       {/* Account section */}
       <View>
         <Text
@@ -436,7 +553,7 @@ export function ProfileScreen() {
                     Desbloquea Pro
                   </Text>
                   <Text style={{ fontSize: 12, color: t.textMuted }}>
-                    Historial y recetas ilimitados
+                    Análisis de platos IA sin límite e historial completo
                   </Text>
                 </View>
                 <Ionicons name={'arrow-forward' as any} size={18} color={semantic.success} />
@@ -509,25 +626,44 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   const [height, setHeight] = useState(profile?.height_cm ? String(profile.height_cm) : '');
   const [weight, setWeight] = useState(profile?.weight_kg ? String(profile.weight_kg) : '');
   const [name, setName] = useState(profile?.display_name ?? '');
+  const [birthDate, setBirthDate] = useState(profile?.birth_date ?? '');
+  const [sex, setSex] = useState<Sex | null>(profile?.sex ?? null);
   const [activity, setActivity] = useState<ActivityLevel>(profile?.activity_level ?? 'moderate');
   const [goal, setGoal] = useState<Goal>(profile?.goal ?? 'maintain');
   const [saving, setSaving] = useState(false);
 
+  // Vista previa en vivo de los objetivos recalculados.
+  const preview = useMemo(
+    () =>
+      calculateTargets({
+        height_cm: parseFloat(height.replace(',', '.')) || profile?.height_cm || null,
+        weight_kg: parseFloat(weight.replace(',', '.')) || profile?.weight_kg || null,
+        birth_date: birthDate || profile?.birth_date || null,
+        sex,
+        activity_level: activity,
+        goal,
+      }),
+    [height, weight, birthDate, sex, activity, goal, profile]
+  );
+
   const save = async () => {
     setSaving(true);
-    const base = {
-      ...profile,
-      display_name: name.trim() || null,
-      height_cm: parseFloat(height.replace(',', '.')) || profile?.height_cm || null,
-      weight_kg: parseFloat(weight.replace(',', '.')) || profile?.weight_kg || null,
+    const height_cm = parseFloat(height.replace(',', '.')) || profile?.height_cm || null;
+    const weight_kg = parseFloat(weight.replace(',', '.')) || profile?.weight_kg || null;
+    const targets = calculateTargets({
+      height_cm,
+      weight_kg,
+      birth_date: birthDate || profile?.birth_date || null,
+      sex,
       activity_level: activity,
       goal,
-    };
-    const targets = calculateTargets(base);
+    });
     const { error } = await updateProfile({
-      display_name: base.display_name,
-      height_cm: base.height_cm,
-      weight_kg: base.weight_kg,
+      display_name: name.trim() || null,
+      height_cm,
+      weight_kg,
+      birth_date: birthDate || profile?.birth_date || null,
+      sex,
       activity_level: activity,
       goal,
       ...(targets
@@ -574,18 +710,53 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
               <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>Editar perfil</Text>
 
               <Input label="Nombre" value={name} onChangeText={setName} />
-              <Input
-                label="Altura (cm)"
-                value={height}
-                onChangeText={setHeight}
-                keyboardType="numeric"
+
+              <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                <View style={{ flex: 1 }}>
+                  <Input
+                    label="Altura (cm)"
+                    value={height}
+                    onChangeText={setHeight}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Input
+                    label="Peso (kg)"
+                    value={weight}
+                    onChangeText={setWeight}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              <DateField
+                label="Fecha de nacimiento"
+                value={birthDate}
+                onChange={setBirthDate}
               />
-              <Input
-                label="Peso (kg)"
-                value={weight}
-                onChangeText={setWeight}
-                keyboardType="numeric"
-              />
+
+              <View style={{ gap: spacing.sm }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    letterSpacing: 0.8,
+                    color: t.textMuted,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Sexo biológico
+                </Text>
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <OptionRow selected={sex === 'male'} label="Hombre" icon="👨" onPress={() => setSex('male')} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <OptionRow selected={sex === 'female'} label="Mujer" icon="👩" onPress={() => setSex('female')} />
+                  </View>
+                </View>
+              </View>
 
               <View style={{ gap: spacing.sm }}>
                 <Text
@@ -635,7 +806,37 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
                 </View>
               </View>
 
-              <Button title="Guardar (recalcula objetivos)" onPress={save} loading={saving} />
+              {/* Vista previa de objetivos recalculados */}
+              {preview ? (
+                <View
+                  style={{
+                    borderRadius: radii.lg,
+                    borderWidth: 1,
+                    borderColor: t.primary,
+                    backgroundColor: t.primarySoft,
+                    padding: spacing.md,
+                    gap: spacing.sm,
+                  }}
+                >
+                  <Text style={{ fontWeight: '800', fontSize: 12, color: t.primary, letterSpacing: 0.4 }}>
+                    NUEVOS OBJETIVOS
+                  </Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={{ color: t.text, fontWeight: '800', fontSize: 15 }}>
+                      {formatNumber(preview.calories)} kcal
+                    </Text>
+                    <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '700' }}>
+                      P {preview.protein_g}g · C {preview.carbs_g}g · G {preview.fat_g}g
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                  Completa altura, peso, fecha de nacimiento y sexo para recalcular tus objetivos.
+                </Text>
+              )}
+
+              <Button title="Guardar" onPress={save} loading={saving} />
               <Button title="Cancelar" variant="secondary" onPress={onClose} />
             </ScrollView>
           </View>
@@ -665,7 +866,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
     open();
   };
 
-  // ── Editor: nuevo desde preset ────────────────────────────────────────
+  // ── Editor: nuevo desde preset ──────────────────────────────
   if (editing && typeof editing === 'object' && 'preset' in editing) {
     const p = SUPPLEMENT_PRESETS[editing.preset];
     return (
@@ -688,7 +889,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
     );
   }
 
-  // ── Editor: nuevo en blanco ───────────────────────────────────────────
+  // ── Editor: nuevo en blanco ───────────────────────────────
   if (editing === 'new') {
     return (
       <SupplementEditor
@@ -704,7 +905,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
     );
   }
 
-  // ── Editor: edición de uno existente ──────────────────────────────────
+  // ── Editor: edición de uno existente ────────────────────────
   if (editing && typeof editing === 'object' && 'id' in editing) {
     const s = editing;
     return (
@@ -739,7 +940,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
           ) : null}
         </View>
 
-        {/* ── Mis suplementos ──────────────────────────────────────── */}
+        {/* ── Mis suplementos ─────────────────────────── */}
         {store.supplements.length > 0 ? (
           <View style={{ gap: spacing.sm }}>
             <Text
@@ -795,7 +996,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
           </View>
         ) : null}
 
-        {/* ── Acción: crear personalizado ──────────────────────────── */}
+        {/* ── Acción: crear personalizado ───────────────────── */}
         <Pressable
           onPress={() => tryAdd(() => setEditing('new'))}
           style={({ pressed }) => ({
@@ -817,7 +1018,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
           </Text>
         </Pressable>
 
-        {/* ── Presets sugeridos ────────────────────────────────────── */}
+        {/* ── Presets sugeridos ─────────────────────────── */}
         <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
           <Text
             style={{
@@ -1143,7 +1344,7 @@ function AppearanceCard() {
           })}
         </View>
         <Text style={{ color: t.textMuted, fontSize: 11 }}>
-          "Sistema" sigue automaticamente la apariencia de tu dispositivo.
+          "Sistema" sigue automáticamente la apariencia de tu dispositivo.
         </Text>
       </Card>
     </View>
