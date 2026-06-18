@@ -13,6 +13,9 @@
     },
     "android": {
       "package": "com.vegantrack.app",
+      "compileSdkVersion": 35,
+      "targetSdkVersion": 34,
+      "minSdkVersion": 26,
       "adaptiveIcon": {
         "backgroundColor": "#2f5d41",
         "foregroundImage": "./assets/android-icon-foreground.png",

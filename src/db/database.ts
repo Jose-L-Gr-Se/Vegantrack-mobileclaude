@@ -13,62 +13,79 @@
 import * as SQLite from 'expo-sqlite';
 
 const DB_NAME = 'vegantrack.db';
-const SCHEMA_VERSION = 1;
 
 let db: SQLite.SQLiteDatabase | null = null;
 
 export function getDb(): SQLite.SQLiteDatabase {
   if (!db) {
     db = SQLite.openDatabaseSync(DB_NAME);
-    migrate(db);
+    runMigrations(db);
   }
   return db;
 }
 
-function migrate(database: SQLite.SQLiteDatabase): void {
+/**
+ * Sequential migration runner. Each entry runs exactly once: the version
+ * stored in PRAGMA user_version acts as the applied-migration watermark.
+ * To add a new migration: append a new object — never modify existing ones.
+ */
+const MIGRATIONS: { version: number; sql: string }[] = [
+  {
+    version: 1,
+    sql: `
+      PRAGMA journal_mode = WAL;
+
+      CREATE TABLE IF NOT EXISTS food_log (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        meal_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0,
+        deleted INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_food_log_user_date ON food_log (user_id, date);
+      CREATE INDEX IF NOT EXISTS idx_food_log_unsynced ON food_log (synced) WHERE synced = 0;
+
+      CREATE TABLE IF NOT EXISTS weight_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0,
+        deleted INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_weight_user_date ON weight_logs (user_id, date);
+
+      CREATE TABLE IF NOT EXISTS off_cache (
+        barcode TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS kv (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
+  // Future migrations go here, e.g.:
+  // { version: 2, sql: `ALTER TABLE food_log ADD COLUMN source TEXT;` },
+];
+
+function runMigrations(database: SQLite.SQLiteDatabase): void {
   const row = database.getFirstSync<{ user_version: number }>('PRAGMA user_version');
-  const current = row?.user_version ?? 0;
-  if (current >= SCHEMA_VERSION) return;
+  let current = row?.user_version ?? 0;
 
-  database.execSync(`
-    PRAGMA journal_mode = WAL;
+  const pending = MIGRATIONS.filter((m) => m.version > current);
+  if (pending.length === 0) return;
 
-    CREATE TABLE IF NOT EXISTS food_log (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      date TEXT NOT NULL,
-      meal_type TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      synced INTEGER NOT NULL DEFAULT 0,
-      deleted INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_food_log_user_date ON food_log (user_id, date);
-    CREATE INDEX IF NOT EXISTS idx_food_log_unsynced ON food_log (synced) WHERE synced = 0;
-
-    CREATE TABLE IF NOT EXISTS weight_logs (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      date TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      synced INTEGER NOT NULL DEFAULT 0,
-      deleted INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_weight_user_date ON weight_logs (user_id, date);
-
-    CREATE TABLE IF NOT EXISTS off_cache (
-      barcode TEXT PRIMARY KEY,
-      data TEXT NOT NULL,
-      fetched_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS kv (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    PRAGMA user_version = ${SCHEMA_VERSION};
-  `);
+  for (const migration of pending) {
+    database.execSync(migration.sql);
+    database.execSync(`PRAGMA user_version = ${migration.version};`);
+    current = migration.version;
+  }
 }
 
 // ── kv: caché JSON genérica ─────────────────────────────────────────────────

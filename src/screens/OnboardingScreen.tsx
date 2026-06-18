@@ -313,6 +313,19 @@ export function OnboardingScreen() {
                 loading={saving}
               />
               <Button title="Atrás" variant="secondary" onPress={() => setStep(2)} />
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: t.textMuted,
+                  textAlign: 'center',
+                  lineHeight: 16,
+                  paddingHorizontal: spacing.sm,
+                }}
+              >
+                Los objetivos son estimaciones orientativas basadas en fórmulas estándar.
+                VeganTrack no es un servicio médico. Consulta a un profesional de la
+                salud antes de realizar cambios significativos en tu dieta.
+              </Text>
             </>
           )}
         </View>

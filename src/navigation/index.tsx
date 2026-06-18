@@ -24,11 +24,26 @@ import { ProfileScreen } from '@/screens/ProfileScreen';
 import { ScannerScreen } from '@/screens/ScannerScreen';
 import { RecipesScreen } from '@/screens/RecipesScreen';
 import { MicroTrendsScreen } from '@/screens/MicroTrendsScreen';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 import type { LinkingOptions } from '@react-navigation/native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
+
+/** Wraps a screen component with an ErrorBoundary so a crash is isolated. */
+function withErrorBoundary(
+  WrappedComponent: React.ComponentType,
+  screenName: string
+): React.ComponentType {
+  const Wrapped = () => (
+    <ErrorBoundary screenName={screenName}>
+      <WrappedComponent />
+    </ErrorBoundary>
+  );
+  Wrapped.displayName = `ErrorBoundary(${screenName})`;
+  return Wrapped;
+}
 
 const TAB_CONFIG: {
   name: keyof MainTabParamList;
@@ -37,11 +52,11 @@ const TAB_CONFIG: {
   iconActive: string;
   component: React.ComponentType;
 }[] = [
-  { name: 'Diary', label: 'Diario', icon: 'book-outline', iconActive: 'book', component: DiaryScreen },
-  { name: 'Search', label: 'Buscar', icon: 'search-outline', iconActive: 'search', component: SearchScreen },
-  { name: 'Dashboard', label: 'Resumen', icon: 'bar-chart-outline', iconActive: 'bar-chart', component: DashboardScreen },
-  { name: 'Progress', label: 'Progreso', icon: 'trending-up-outline', iconActive: 'trending-up', component: ProgressScreen },
-  { name: 'Profile', label: 'Perfil', icon: 'person-outline', iconActive: 'person', component: ProfileScreen },
+  { name: 'Diary', label: 'Diario', icon: 'book-outline', iconActive: 'book', component: withErrorBoundary(DiaryScreen, 'Diario') },
+  { name: 'Search', label: 'Buscar', icon: 'search-outline', iconActive: 'search', component: withErrorBoundary(SearchScreen, 'Buscar') },
+  { name: 'Dashboard', label: 'Resumen', icon: 'bar-chart-outline', iconActive: 'bar-chart', component: withErrorBoundary(DashboardScreen, 'Resumen') },
+  { name: 'Progress', label: 'Progreso', icon: 'trending-up-outline', iconActive: 'trending-up', component: withErrorBoundary(ProgressScreen, 'Progreso') },
+  { name: 'Profile', label: 'Perfil', icon: 'person-outline', iconActive: 'person', component: withErrorBoundary(ProfileScreen, 'Perfil') },
 ];
 
 function MainTabs() {
