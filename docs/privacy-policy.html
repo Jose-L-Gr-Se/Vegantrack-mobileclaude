@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Política de Privacidad – VeganTrack</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+      color: #1a2a20;
+      background: #f7f6f1;
+      padding: 2rem 1rem;
+    }
+    .container { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 2.5rem 2rem; }
+    h1 { font-size: 2rem; font-weight: 800; color: #2f5d41; margin-bottom: 0.25rem; }
+    .subtitle { color: #8a8577; font-size: 0.9rem; margin-bottom: 2rem; }
+    h2 { font-size: 1.15rem; font-weight: 700; color: #2f5d41; margin: 2rem 0 0.75rem; }
+    p, li { color: #4a5249; margin-bottom: 0.5rem; }
+    ul { padding-left: 1.5rem; margin-bottom: 0.75rem; }
+    a { color: #2f5d41; }
+    .highlight { background: #eef4ef; border-left: 4px solid #2f5d41; padding: 1rem 1.25rem; border-radius: 8px; margin: 1.5rem 0; }
+    .last-updated { font-size: 0.85rem; color: #8a8577; margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #e6e2d6; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+    th { background: #eef4ef; color: #2f5d41; font-weight: 700; text-align: left; padding: 0.6rem 0.75rem; }
+    td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #eeeae0; vertical-align: top; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>Política de Privacidad</h1>
+  <p class="subtitle">VeganTrack · Aplicación móvil de seguimiento nutricional vegano</p>
+
+  <div class="highlight">
+    <strong>Resumen rápido:</strong> VeganTrack recoge únicamente los datos que introduces tú
+    voluntariamente (perfil, diario de alimentos, peso). Nunca vendemos tus datos ni los
+    compartimos con anunciantes. Puedes eliminar tu cuenta y todos tus datos en cualquier momento
+    desde la app.
+  </div>
+
+  <h2>1. Responsable del tratamiento</h2>
+  <p>
+    <strong>Identidad:</strong> Jose Grande (VeganTrack)<br />
+    <strong>Contacto:</strong> <a href="mailto:josegrande051292@gmail.com">josegrande051292@gmail.com</a><br />
+    <strong>Web:</strong> <a href="https://vegantrack.app">https://vegantrack.app</a>
+  </p>
+
+  <h2>2. Datos que recogemos</h2>
+  <table>
+    <tr>
+      <th>Dato</th>
+      <th>Finalidad</th>
+      <th>Base legal</th>
+    </tr>
+    <tr>
+      <td>Correo electrónico</td>
+      <td>Identificación y autenticación</td>
+      <td>Ejecución del contrato</td>
+    </tr>
+    <tr>
+      <td>Nombre (opcional)</td>
+      <td>Personalización de la interfaz</td>
+      <td>Consentimiento</td>
+    </tr>
+    <tr>
+      <td>Altura, peso, fecha de nacimiento, sexo biológico</td>
+      <td>Cálculo de objetivos nutricionales (BMR/TDEE)</td>
+      <td>Ejecución del contrato</td>
+    </tr>
+    <tr>
+      <td>Registros de alimentos y calorías</td>
+      <td>Historial y seguimiento nutricional</td>
+      <td>Ejecución del contrato</td>
+    </tr>
+    <tr>
+      <td>Registros de peso</td>
+      <td>Seguimiento de progreso</td>
+      <td>Consentimiento</td>
+    </tr>
+    <tr>
+      <td>Eventos de uso anónimos (app_open, escaneos, paywall)</td>
+      <td>Mejora del producto</td>
+      <td>Interés legítimo</td>
+    </tr>
+  </table>
+  <p>
+    <strong>No recogemos:</strong> ubicación, contactos, cámara permanente (solo en el momento
+    del escaneo con tu permiso explícito), datos de salud de terceros, ni información de pago
+    (el pago se procesa directamente por Stripe).
+  </p>
+
+  <h2>3. Cómo usamos tus datos</h2>
+  <ul>
+    <li>Mostrar tu historial de alimentación y estadísticas de nutrición.</li>
+    <li>Calcular tus objetivos calóricos y de macronutrientes usando la fórmula Mifflin-St Jeor.</li>
+    <li>Sincronizar tu diario entre dispositivos (a través de Supabase, EU-West-1).</li>
+    <li>Enviarte recordatorios locales de registro si así lo configuras (sin servidor, solo notificaciones del dispositivo).</li>
+    <li>Mejorar la app mediante métricas agregadas y anónimas de uso.</li>
+  </ul>
+
+  <h2>4. Dónde se almacenan tus datos</h2>
+  <p>
+    Los datos se almacenan en servidores de <strong>Supabase</strong> (PostgreSQL) ubicados en
+    <strong>EU-West-1 (Irlanda)</strong>, dentro del Espacio Económico Europeo (EEE).
+    Adicionalmente, una copia local se guarda en el dispositivo mediante SQLite para permitir
+    el funcionamiento sin conexión.
+  </p>
+  <p>
+    Supabase cumple con el RGPD y dispone de cláusulas contractuales estándar (SCC) para
+    transferencias internacionales de datos. Más información:
+    <a href="https://supabase.com/privacy" target="_blank" rel="noopener">supabase.com/privacy</a>.
+  </p>
+
+  <h2>5. Proveedores de terceros</h2>
+  <table>
+    <tr><th>Servicio</th><th>Finalidad</th><th>Privacidad</th></tr>
+    <tr>
+      <td>Supabase</td>
+      <td>Base de datos y autenticación</td>
+      <td><a href="https://supabase.com/privacy" target="_blank" rel="noopener">supabase.com/privacy</a></td>
+    </tr>
+    <tr>
+      <td>OpenFoodFacts</td>
+      <td>Base de datos de productos alimentarios (licencia CC0)</td>
+      <td><a href="https://world.openfoodfacts.org/terms-of-use" target="_blank" rel="noopener">openfoodfacts.org</a></td>
+    </tr>
+    <tr>
+      <td>Google Gemini (vía Supabase Edge Functions)</td>
+      <td>Análisis de fotos de comida (sólo en la función premium de escaneo por foto)</td>
+      <td><a href="https://policies.google.com/privacy" target="_blank" rel="noopener">policies.google.com/privacy</a></td>
+    </tr>
+    <tr>
+      <td>Stripe</td>
+      <td>Procesamiento de pagos (no almacenamos datos de tarjeta)</td>
+      <td><a href="https://stripe.com/es/privacy" target="_blank" rel="noopener">stripe.com/es/privacy</a></td>
+    </tr>
+  </table>
+
+  <h2>6. Retención de datos</h2>
+  <p>
+    Conservamos tus datos mientras tu cuenta esté activa. Si eliminas tu cuenta desde
+    <strong>Perfil → Eliminar cuenta</strong>, todos tus datos personales (perfil, diario,
+    registros de peso, recetas, suplementos) se borran de forma permanente e irrecuperable
+    en un plazo de <strong>30 días</strong>.
+  </p>
+
+  <h2>7. Tus derechos (RGPD)</h2>
+  <p>Si eres residente en la Unión Europea, tienes derecho a:</p>
+  <ul>
+    <li><strong>Acceso:</strong> solicitar una copia de tus datos personales.</li>
+    <li><strong>Rectificación:</strong> corregir datos inexactos (directamente en la app).</li>
+    <li><strong>Supresión ("derecho al olvido"):</strong> eliminar tu cuenta y datos desde la app.</li>
+    <li><strong>Portabilidad:</strong> exportar tu diario en formato CSV desde Perfil → Exportar datos.</li>
+    <li><strong>Oposición:</strong> oponerte al tratamiento basado en interés legítimo.</li>
+    <li><strong>Limitación:</strong> solicitar la suspensión del tratamiento en determinados casos.</li>
+  </ul>
+  <p>
+    Para ejercer cualquiera de estos derechos, contacta con nosotros en
+    <a href="mailto:josegrande051292@gmail.com">josegrande051292@gmail.com</a>.
+    Respondemos en un plazo máximo de <strong>30 días</strong>.
+  </p>
+  <p>
+    También tienes derecho a presentar una reclamación ante la
+    <strong>Agencia Española de Protección de Datos (AEPD)</strong>:
+    <a href="https://www.aepd.es" target="_blank" rel="noopener">www.aepd.es</a>.
+  </p>
+
+  <h2>8. Derechos de usuarios de California (CCPA)</h2>
+  <p>
+    Los residentes de California tienen derecho a conocer qué datos personales recogemos,
+    a solicitar su eliminación y a optar por no vender sus datos.
+    <strong>VeganTrack no vende datos personales a terceros.</strong>
+    Para ejercer tus derechos CCPA, contacta:
+    <a href="mailto:josegrande051292@gmail.com">josegrande051292@gmail.com</a>.
+  </p>
+
+  <h2>9. Menores de edad</h2>
+  <p>
+    VeganTrack no está dirigida a menores de 16 años. Si eres menor de 16 años, no debes
+    crear una cuenta. Si detectamos que hemos recogido datos de un menor de 16 años sin
+    consentimiento parental, los eliminaremos inmediatamente.
+  </p>
+
+  <h2>10. Seguridad</h2>
+  <p>
+    Utilizamos las siguientes medidas técnicas para proteger tus datos:
+  </p>
+  <ul>
+    <li>Conexiones cifradas mediante TLS/HTTPS en todas las comunicaciones.</li>
+    <li>Tokens de sesión almacenados en el Keystore seguro de Android (nunca en texto plano).</li>
+    <li>Row Level Security (RLS) en la base de datos: ningún usuario puede acceder a datos de otro.</li>
+    <li>Claves de API del servidor almacenadas únicamente en el entorno de servidor (nunca en la app).</li>
+  </ul>
+
+  <h2>11. Aviso sobre información de salud y nutrición</h2>
+  <div class="highlight">
+    VeganTrack proporciona información nutricional y estimaciones calóricas con fines
+    <strong>informativos y orientativos únicamente</strong>. Los datos no constituyen
+    consejo médico, diagnóstico ni tratamiento. Consulta siempre a un profesional
+    de la salud o nutricionista antes de realizar cambios significativos en tu dieta.
+  </div>
+
+  <h2>12. Cookies y tecnologías de rastreo</h2>
+  <p>
+    La aplicación móvil <strong>no utiliza cookies</strong>. El sitio web vegantrack.app
+    puede utilizar cookies técnicas necesarias para su funcionamiento. No utilizamos
+    cookies de seguimiento ni publicidad.
+  </p>
+
+  <h2>13. Cambios en esta política</h2>
+  <p>
+    Podemos actualizar esta Política de Privacidad ocasionalmente. Cuando lo hagamos,
+    actualizaremos la fecha de "Última actualización" y, si los cambios son significativos,
+    te lo notificaremos por correo electrónico o mediante un aviso en la app.
+  </p>
+  <p>
+    El uso continuado de VeganTrack tras la publicación de cambios implica la aceptación
+    de la política actualizada.
+  </p>
+
+  <h2>14. Contacto</h2>
+  <p>
+    Para cualquier consulta sobre esta Política de Privacidad:<br />
+    <strong>Email:</strong> <a href="mailto:josegrande051292@gmail.com">josegrande051292@gmail.com</a><br />
+    <strong>Web:</strong> <a href="https://vegantrack.app">https://vegantrack.app</a>
+  </p>
+
+  <p class="last-updated">Última actualización: 18 de junio de 2026</p>
+
+</div>
+</body>
+</html>

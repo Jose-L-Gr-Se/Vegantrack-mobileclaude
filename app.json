@@ -36,6 +36,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withAndroidSigning",
       "expo-secure-store",
       "expo-sqlite",
       [

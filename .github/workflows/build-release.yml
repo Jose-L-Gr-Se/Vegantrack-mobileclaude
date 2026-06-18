@@ -1,0 +1,74 @@
+name: Build & Sign Release (AAB + APK)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-android:
+    name: Build signed Android release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Decode the base64-encoded keystore before prebuild so the config plugin
+      # can reference it. The keystore file never touches the git repo.
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > vegantrack.keystore
+
+      # The withAndroidSigning config plugin reads these env vars during prebuild
+      # and injects the signingConfigs block into build.gradle automatically.
+      - name: Generate native Android project (with signing)
+        run: npm run prebuild:android
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          VEGANTRACK_STORE_FILE: ../vegantrack.keystore
+          VEGANTRACK_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          VEGANTRACK_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          VEGANTRACK_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Build signed APK (internal testing)
+        run: npm run build:apk
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Build signed AAB (Play Store)
+        run: npm run build:aab
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vegantrack-signed-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Upload signed AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: vegantrack-signed-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          retention-days: 90
