@@ -19,12 +19,41 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
+  sendPasswordReset: (email: string) => Promise<{ error: string | null }>;
+  confirmPasswordReset: (
+    email: string,
+    token: string,
+    newPassword: string
+  ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   updateProfile: (patch: Partial<Profile>) => Promise<{ error: string | null }>;
 }
 
 const profileKvKey = (userId: string) => `profile:${userId}`;
+
+/** Extrae los parámetros de una URL de retorno, tanto de query (?) como de fragmento (#). */
+function parseRedirectParams(url: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const hashIndex = url.indexOf('#');
+  const queryIndex = url.indexOf('?');
+  const grab = (segment: string) => {
+    for (const pair of segment.split('&')) {
+      if (!pair) continue;
+      const eq = pair.indexOf('=');
+      const key = eq >= 0 ? pair.slice(0, eq) : pair;
+      const val = eq >= 0 ? pair.slice(eq + 1) : '';
+      try {
+        out[decodeURIComponent(key)] = decodeURIComponent(val);
+      } catch {
+        out[key] = val;
+      }
+    }
+  };
+  if (queryIndex >= 0) grab(url.slice(queryIndex + 1, hashIndex >= 0 ? hashIndex : undefined));
+  if (hashIndex >= 0) grab(url.slice(hashIndex + 1));
+  return out;
+}
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
@@ -88,25 +117,57 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { error: 'Autenticación cancelada' };
       }
 
-      // Supabase devuelve los tokens en el fragmento (#) de la URL de retorno
-      const fragment = result.url.split('#')[1] ?? result.url.split('?')[1] ?? '';
-      const params = new URLSearchParams(fragment);
-      const accessToken = params.get('access_token');
-      const refreshToken = params.get('refresh_token') ?? '';
+      const params = parseRedirectParams(result.url);
 
-      if (!accessToken) return { error: 'No se recibieron credenciales de Google' };
+      // Si el proveedor devolvió un error explícito, muéstralo.
+      if (params.error || params.error_description) {
+        return { error: params.error_description || params.error };
+      }
 
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      if (sessionError) return { error: sessionError.message };
+      // Flujo PKCE (por defecto): llega ?code=... y se intercambia por sesión.
+      if (params.code) {
+        const { error: exchErr } = await supabase.auth.exchangeCodeForSession(params.code);
+        if (exchErr) return { error: exchErr.message };
+        await get().fetchProfile();
+        return { error: null };
+      }
 
-      await get().fetchProfile();
-      return { error: null };
+      // Flujo implicit (compatibilidad): llegan los tokens en el fragmento #.
+      if (params.access_token) {
+        const { error: sessErr } = await supabase.auth.setSession({
+          access_token: params.access_token,
+          refresh_token: params.refresh_token ?? '',
+        });
+        if (sessErr) return { error: sessErr.message };
+        await get().fetchProfile();
+        return { error: null };
+      }
+
+      return { error: 'No se recibieron credenciales de Google' };
     } catch (e) {
       return { error: (e as Error).message };
     }
+  },
+
+  sendPasswordReset: async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) return { error: error.message };
+    return { error: null };
+  },
+
+  confirmPasswordReset: async (email, token, newPassword) => {
+    // El código de 6 dígitos del email crea una sesión temporal (type recovery)…
+    const { error: verifyErr } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'recovery',
+    });
+    if (verifyErr) return { error: verifyErr.message };
+    // …y con esa sesión fijamos la nueva contraseña.
+    const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+    if (updateErr) return { error: updateErr.message };
+    await get().fetchProfile();
+    return { error: null };
   },
 
   signOut: async () => {
