@@ -21,7 +21,6 @@ interface Plan {
   features: string[];
   badge?: string;
   featured?: boolean;
-  /** Parámetro de plan para el checkout; null = plan gratuito. */
   checkout: 'monthly' | 'annual' | null;
 }
 
@@ -33,7 +32,7 @@ const PLANS: Plan[] = [
     cadence: 'para siempre',
     desc: 'Lo esencial para registrar y seguir tu día.',
     features: [
-      '3 análisis de platos con IA al día',
+      '1 análisis de plato con IA al día',
       'Registro ilimitado de comidas',
       'Macros + 6 micros clave',
       '14 días de historial',
@@ -49,7 +48,7 @@ const PLANS: Plan[] = [
     cadence: 'al mes',
     desc: 'Sin límites y con estadísticas profundas.',
     features: [
-      'Foto-logueo avanzado (más análisis de platos al día)',
+      'Análisis de platos con IA sin límite',
       'Historial ilimitado',
       'Tendencias de micros (30 / 90 días)',
       'Recetas y suplementos ilimitados',
@@ -151,7 +150,7 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
             Hazte Pro
           </Text>
           <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>
-            Foto-logueo avanzado, historial sin límites y tendencias de micros. Cancela cuando quieras.
+            Análisis de platos con IA sin límite, historial completo y tendencias de micros. Cancela cuando quieras.
           </Text>
         </View>
 

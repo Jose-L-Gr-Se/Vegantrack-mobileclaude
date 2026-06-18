@@ -6,17 +6,27 @@
  * platos con carne, pescado, huevo o lácteos; la info vegana es un dato
  * opcional. La API key de Gemini vive sólo aquí (secret), nunca en la APK.
  *
- * Vive en Supabase (no en Vercel/PWA): la app móvil llama a
- *   POST {SUPABASE_URL}/functions/v1/analyze-meal
+ * Protecciones de coste (anti-abuso):
+ *   - Cuota diaria por usuario (free / pro distintos).
+ *   - Rate limit por usuario y minuto (anti-bot).
+ *   - Tope global diario para TODA la app (kill-switch).
+ *   - Validación de tamaño/MIME de la imagen.
  *
  * Secrets (supabase secrets set ...):
- *   GEMINI_API_KEY (obligatoria), GEMINI_MODEL (opcional), FREE_DAILY_SCANS (opcional)
+ *   GEMINI_API_KEY (obligatoria), GEMINI_MODEL (opcional)
+ *   FREE_DAILY_SCANS (def. 1), PRO_DAILY_SCANS (def. 100, anti-bot invisible)
+ *   RATE_LIMIT_PER_MIN (def. 5), GLOBAL_DAILY_LIMIT (def. 2000)
  * SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY los inyecta Supabase automáticamente.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash-lite';
-const FREE_DAILY_SCANS = Number(Deno.env.get('FREE_DAILY_SCANS') ?? '3');
+const FREE_DAILY_SCANS = Number(Deno.env.get('FREE_DAILY_SCANS') ?? '1');
+const PRO_DAILY_SCANS = Number(Deno.env.get('PRO_DAILY_SCANS') ?? '100');
+const RATE_LIMIT_PER_MIN = Number(Deno.env.get('RATE_LIMIT_PER_MIN') ?? '5');
+const GLOBAL_DAILY_LIMIT = Number(Deno.env.get('GLOBAL_DAILY_LIMIT') ?? '2000');
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic']);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,7 +42,6 @@ Si no estás seguro de algo, indícalo (vegan_confidence más baja, o una nota b
 Si la imagen no es comida, responde is_food=false.
 Devuelve ÚNICAMENTE el JSON con el contrato esperado.`;
 
-// Contrato de salida (idéntico al que espera la app móvil).
 const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
@@ -96,7 +105,6 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
   try {
-    // 1. Auth: validar el token de Supabase del usuario
     const authHeader = req.headers.get('Authorization') ?? '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!token) return json({ error: 'No autorizado' }, 401);
@@ -111,9 +119,39 @@ Deno.serve(async (req: Request) => {
     const userId = userData.user.id;
 
     const { image_base64, mime_type } = await req.json();
-    if (!image_base64) return json({ error: 'Falta la imagen' }, 400);
+    if (!image_base64 || typeof image_base64 !== 'string') {
+      return json({ error: 'Falta la imagen' }, 400);
+    }
 
-    // 2. Plan + cuota diaria
+    const mime = (mime_type || 'image/jpeg').toLowerCase();
+    if (!ALLOWED_MIME.has(mime)) {
+      return json({ error: 'Formato no soportado' }, 400);
+    }
+    const approxBytes = Math.floor(image_base64.length * 0.75);
+    if (approxBytes > MAX_IMAGE_BYTES) {
+      return json({ error: 'Imagen demasiado grande' }, 413);
+    }
+
+    const today = todayUTC();
+    const { count: globalToday } = await supabase
+      .from('meal_scans')
+      .select('id', { count: 'exact', head: true })
+      .eq('date', today);
+    if ((globalToday ?? 0) >= GLOBAL_DAILY_LIMIT) {
+      console.warn('GLOBAL DAILY LIMIT reached:', globalToday);
+      return json({ error: 'service_unavailable', retry_after: 'tomorrow' }, 503);
+    }
+
+    const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
+    const { count: lastMinute } = await supabase
+      .from('meal_scans')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('created_at', oneMinAgo);
+    if ((lastMinute ?? 0) >= RATE_LIMIT_PER_MIN) {
+      return json({ error: 'rate_limited', retry_after_seconds: 60 }, 429);
+    }
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('subscription_tier, subscription_expires_at')
@@ -125,21 +163,21 @@ Deno.serve(async (req: Request) => {
       (!profile.subscription_expires_at ||
         new Date(profile.subscription_expires_at).getTime() > Date.now());
 
-    const today = todayUTC();
-    let usedToday = 0;
-    if (!isPro) {
-      const { count } = await supabase
-        .from('meal_scans')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('date', today);
-      usedToday = count ?? 0;
-      if (usedToday >= FREE_DAILY_SCANS) {
-        return json({ error: 'quota_exceeded', remaining: 0, limit: FREE_DAILY_SCANS }, 402);
-      }
+    const dailyLimit = isPro ? PRO_DAILY_SCANS : FREE_DAILY_SCANS;
+
+    const { count: usedTodayCount } = await supabase
+      .from('meal_scans')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('date', today);
+    const usedToday = usedTodayCount ?? 0;
+    if (usedToday >= dailyLimit) {
+      return json(
+        { error: 'quota_exceeded', remaining: 0, limit: dailyLimit, is_pro: isPro },
+        402
+      );
     }
 
-    // 3. Gemini (visión) con salida JSON forzada por esquema
     const apiKey = Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) return json({ error: 'IA no configurada' }, 500);
 
@@ -152,7 +190,7 @@ Deno.serve(async (req: Request) => {
           {
             role: 'user',
             parts: [
-              { inline_data: { mime_type: mime_type || 'image/jpeg', data: image_base64 } },
+              { inline_data: { mime_type: mime, data: image_base64 } },
               { text: PROMPT },
             ],
           },
@@ -199,19 +237,18 @@ Deno.serve(async (req: Request) => {
     if (!Array.isArray(result.non_vegan_ingredients)) result.non_vegan_ingredients = [];
     if (typeof result.vegan_confidence !== 'string') result.vegan_confidence = 'unknown';
 
-    // 4. Registrar el escaneo (sólo en éxito) + analítica de servidor.
     await supabase.from('meal_scans').insert({ user_id: userId, date: today });
     void supabase
       .from('analytics_events')
       .insert({
         user_id: userId,
         event: 'meal_analyzed',
-        props: { model: MODEL, is_vegan: result.is_vegan, vegan_confidence: result.vegan_confidence },
+        props: { model: MODEL, is_vegan: result.is_vegan, vegan_confidence: result.vegan_confidence, is_pro: isPro },
       })
       .then(() => undefined, () => undefined);
 
-    const remaining = isPro ? null : Math.max(0, FREE_DAILY_SCANS - (usedToday + 1));
-    return json({ result, remaining, limit: FREE_DAILY_SCANS });
+    const remaining = Math.max(0, dailyLimit - (usedToday + 1));
+    return json({ result, remaining, limit: dailyLimit, is_pro: isPro });
   } catch (err: any) {
     console.error('analyze-meal error:', err);
     return json({ error: err?.message ?? 'Error interno' }, 500);

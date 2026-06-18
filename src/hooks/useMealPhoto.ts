@@ -30,7 +30,7 @@ const INITIAL: MealPhotoState = {
   grams: 100,
   confidence: undefined,
   remaining: null,
-  limit: 3,
+  limit: 1,
   quotaBlocked: false,
 };
 
@@ -41,7 +41,6 @@ export function useMealPhoto() {
   const clearQuota = useCallback(() => setState((s) => ({ ...s, quotaBlocked: false })), []);
 
   const capture = useCallback(async (source: 'camera' | 'library') => {
-    // Permisos
     const perm =
       source === 'camera'
         ? await ImagePicker.requestCameraPermissionsAsync()
@@ -97,6 +96,24 @@ export function useMealPhoto() {
     if (res.reason === 'quota') {
       track('photo_scan_quota_blocked', { limit: res.limit });
       setState((s) => ({ ...s, analyzing: false, quotaBlocked: true, remaining: 0, limit: res.limit }));
+      return;
+    }
+
+    if (res.reason === 'rate_limit') {
+      setState((s) => ({ ...s, analyzing: false }));
+      Alert.alert(
+        'Demasiado rápido',
+        'Has hecho varios análisis muy seguidos. Espera un minuto y vuelve a intentarlo.'
+      );
+      return;
+    }
+
+    if (res.reason === 'global_block') {
+      setState((s) => ({ ...s, analyzing: false }));
+      Alert.alert(
+        'Análisis no disponible',
+        'El análisis con IA está temporalmente saturado. Prueba mañana o añade el alimento manualmente.'
+      );
       return;
     }
 
