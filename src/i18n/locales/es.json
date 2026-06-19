@@ -68,7 +68,8 @@
     "cancel": "Cancelar",
     "back": "Volver",
     "error": "Error",
-    "delete": "Eliminar"
+    "delete": "Eliminar",
+    "save": "Guardar"
   },
   "diary": {
     "eaten": "Comido",
@@ -271,5 +272,180 @@
     "de": "Deutsch",
     "fr": "Français",
     "pt": "Português"
+  },
+  "pro": {
+    "title": "Hazte Pro",
+    "subtitle": "Foto-logueo avanzado, historial sin límites y tendencias de micros. Cancela cuando quieras.",
+    "footer": "El pago se gestiona de forma segura en la web (Stripe). Tu cuenta es la misma en la app y en la PWA.",
+    "currentPlan": "Tu plan actual",
+    "choosePlan": "Elegir {{name}}",
+    "free": {
+      "name": "Free",
+      "price": "0€",
+      "cadence": "para siempre",
+      "desc": "Lo esencial para registrar y seguir tu día.",
+      "f0": "3 análisis de platos con IA al día",
+      "f1": "Registro ilimitado de comidas",
+      "f2": "Macros + 6 micros clave",
+      "f3": "14 días de historial",
+      "f4": "Escáner de código de barras",
+      "f5": "3 recetas y 3 suplementos"
+    },
+    "monthly": {
+      "name": "Pro",
+      "price": "4,99€",
+      "cadence": "al mes",
+      "desc": "Sin límites y con estadísticas profundas.",
+      "badge": "Popular",
+      "f0": "Foto-logueo avanzado (más análisis de platos al día)",
+      "f1": "Historial ilimitado",
+      "f2": "Tendencias de micros (30 / 90 días)",
+      "f3": "Recetas y suplementos ilimitados",
+      "f4": "Exportar el diario a CSV",
+      "f5": "Soporte prioritario"
+    },
+    "annual": {
+      "name": "Pro anual",
+      "price": "39€",
+      "cadence": "al año",
+      "desc": "El mismo Pro pagando un año. Ahorra un 35%.",
+      "badge": "Ahorra 35%",
+      "f0": "Todo lo de Pro",
+      "f1": "35% de descuento (2 meses gratis)",
+      "f2": "Acceso anticipado a novedades"
+    }
+  },
+  "scoreInfo": {
+    "scaleHeader": "La escala, fácil",
+    "tipHeader": "Para tener en cuenta",
+    "nutri": {
+      "title": "Nutri-Score",
+      "intro": "Resume la calidad nutricional global del producto con una letra de la A a la E. Tiene en cuenta calorías, azúcares, grasas saturadas y sal en negativo; fibra, proteína, fruta y verdura en positivo.",
+      "a": "mejor perfil nutricional",
+      "b": "bueno",
+      "c": "medio",
+      "d": "mejorable",
+      "e": "peor perfil dentro de su categoría",
+      "tip": "Compara productos de la misma familia (p. ej. yogures con yogures). Que algo sea E no lo convierte en \"malo\": ayuda a elegir mejor entre varias opciones."
+    },
+    "eco": {
+      "title": "Eco-Score",
+      "intro": "Estima el impacto ambiental del producto a lo largo de su ciclo de vida: cómo se cultivan los ingredientes, transporte, envase y origen. Cuanto más cerca de A, menor huella estimada.",
+      "a": "huella ambiental muy baja",
+      "b": "baja",
+      "c": "media",
+      "d": "alta",
+      "e": "muy alta",
+      "tip": "Una alimentación basada en plantas suele puntuar mejor en eco que las opciones de origen animal. Es una orientación, no una sentencia."
+    },
+    "nova": {
+      "title": "NOVA · nivel de procesamiento",
+      "intro": "Clasifica los alimentos por cuánto se han procesado industrialmente, no por sus calorías. Un grupo NOVA alto no significa \"tóxico\", solo que el producto ha pasado por más transformaciones y aditivos.",
+      "1": "sin procesar (fruta, legumbre seca…)",
+      "2": "mínimamente procesado (aceite, sal…)",
+      "3": "procesado (conservas, pan…)",
+      "4": "ultraprocesado (con aditivos y formulaciones)",
+      "tip": "Una dieta consciente suele tirar hacia 1 y 2 como base, sin demonizar puntuales del 3 y 4 que te encajen en el día."
+    }
+  },
+  "scoreBadges": {
+    "ecoCaption": "impacto ambiental",
+    "nova_1": "sin procesar",
+    "nova_2": "mínimamente procesado",
+    "nova_3": "procesado",
+    "nova_4": "ultraprocesado"
+  },
+  "supplementEditor": {
+    "defaultTitle": "Suplemento",
+    "nameLabel": "Nombre",
+    "iconLabel": "Icono",
+    "contributesTo": "Aporta a",
+    "doseLabel": "Dosis por toma",
+    "doseHint": "Solo lo que tomas en una vez. Si tomas dos veces al día, añádelo como dos suplementos.",
+    "errorNoName": "Ponle un nombre.",
+    "errorBadAmount": "Introduce una cantidad válida.",
+    "deleteLabel": "Eliminar suplemento",
+    "nutrient": {
+      "none": "No aporta micro registrado",
+      "b12": "Vitamina B12",
+      "d": "Vitamina D",
+      "omega3": "Omega-3 (DHA/EPA)",
+      "iron": "Hierro",
+      "zinc": "Zinc",
+      "calcium": "Calcio",
+      "iodine": "Yodo"
+    }
+  },
+  "progress": {
+    "title": "Progreso",
+    "invalidWeight": "Peso inválido",
+    "invalidWeightMsg": "Introduce un peso válido en kg.",
+    "lastRecorded": "Último registrado: {{weight}} kg",
+    "save": "Guardar →",
+    "stats": "Estadísticas",
+    "statCurrent": "ACTUAL",
+    "statStart": "INICIO",
+    "statMin": "MÍNIMO",
+    "statMax": "MÁXIMO",
+    "totalChange": "Cambio total",
+    "chartEmpty": "Registra tu peso al menos dos días para ver el gráfico.",
+    "legendDaily": "Diario",
+    "legend7d": "Media 7d",
+    "records": "Registros",
+    "deleteConfirm": "¿Eliminar el registro del {{date}}?"
+  },
+  "recipes": {
+    "close": "Cerrar",
+    "emptyText": "Crea recetas con sus ingredientes y loguéalas al diario en un toque.",
+    "servingInfo": "{{servings}} raciones · {{kcal}} kcal · {{prot}}g prot",
+    "newTitle": "Nueva receta",
+    "nameLabel": "Nombre",
+    "descriptionLabel": "Descripción (opcional)",
+    "servingsLabel": "Raciones",
+    "create": "Crear",
+    "deleteTitle": "Eliminar receta",
+    "totalInfo": "{{servings}} raciones · {{g}} g total",
+    "perServing": "por ración",
+    "addToDiary": "🍽️ Añadir al diario",
+    "ingredientsCount": "Ingredientes ({{count}})",
+    "ingredientsEmpty": "Busca abajo para añadir ingredientes.",
+    "removeTitle": "Quitar",
+    "removeConfirm": "¿Quitar \"{{name}}\"?",
+    "remove": "Quitar",
+    "addIngredientTitle": "Añadir ingrediente",
+    "ingredientPlaceholder": "Buscar alimento…",
+    "search": "Buscar",
+    "quantityLabel": "Cantidad (g)",
+    "addIngredient": "Añadir a la receta",
+    "logTitle": "Loguear \"{{name}}\"",
+    "mealLabel": "Comida",
+    "logged": "{{name}} añadida a {{meal}}",
+    "limitMsg": "El plan free permite {{count}} recetas. Hazte Pro para recetas ilimitadas.",
+    "save": "Guardar"
+  },
+  "supplements": {
+    "preset": {
+      "b12": "Vitamina B12",
+      "d3": "Vitamina D3 vegana",
+      "omega3": "Omega-3 (DHA+EPA de algas)",
+      "iodine": "Yodo",
+      "iron": "Hierro",
+      "zinc": "Zinc",
+      "calcium": "Calcio",
+      "magnesium": "Magnesio",
+      "selenium": "Selenio",
+      "creatine": "Creatina",
+      "multivitamin": "Multivitamínico",
+      "probiotic": "Probiótico"
+    }
+  },
+  "reminders": {
+    "channelName": "Recordatorios",
+    "notifTitle": "Vegetrack 🌱",
+    "notifBody": "¿Has registrado tus comidas de hoy? Mantén tu racha viva."
+  },
+  "exportCsv": {
+    "freeSuffix": "# Exportado con Vegetrack Free (últimos {{days}} días)",
+    "shareError": "No se pudo compartir el archivo"
   }
 }
