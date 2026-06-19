@@ -1,0 +1,451 @@
+{
+  "auth": {
+    "subtitle": "Mais vegetais no seu prato, ao seu próprio ritmo",
+    "chip_plants": "Base vegetal",
+    "chip_offline": "Offline primeiro",
+    "chip_private": "Privado",
+    "email_label": "E-mail",
+    "email_placeholder": "voce@email.com",
+    "password_label": "Senha",
+    "password_placeholder": "••••••••",
+    "login": "Entrar",
+    "register": "Criar conta",
+    "divider": "ou continuar com",
+    "google": "Continuar com Google",
+    "error_empty": "Por favor, insira seu e-mail e senha"
+  },
+  "score": {
+    "total": {
+      "excellent":   "Excelente 🌟",
+      "good":        "Bom 👍",
+      "in_progress": "Em progresso 💪",
+      "improvable":  "Continue assim 🌱"
+    },
+    "calories": {
+      "no_data":   "Sem dados",
+      "on_target": "No alvo ✓",
+      "close":     "Próximo",
+      "far":       "Fora do alvo",
+      "very_far":  "Muito longe",
+      "no_target": "Sem meta definida"
+    },
+    "protein": {
+      "no_data":     "Sem dados",
+      "on_target":   "Meta atingida ✓",
+      "close":       "Quase lá",
+      "in_progress": "Em progresso",
+      "low":         "Baixo",
+      "very_low":    "Muito baixo",
+      "no_target":   "Sem meta definida"
+    },
+    "fiber": {
+      "no_data":     "Sem dados",
+      "excellent":   "Excelente ✓",
+      "good":        "Bom",
+      "in_progress": "Em progresso",
+      "low":         "Baixo",
+      "very_low":    "Muito baixo"
+    },
+    "streak": {
+      "no_data":      "Sem dados",
+      "fire":         "{{count}} dias 🔥",
+      "active_one":   "{{count}} dia",
+      "active_other": "{{count}} dias",
+      "none":         "Sem sequência"
+    },
+    "micros": {
+      "no_data": "Sem dados",
+      "covered": "{{count}}/{{total}} cobertos"
+    }
+  },
+  "meals": {
+    "breakfast": "Café da manhã",
+    "lunch": "Almoço",
+    "dinner": "Jantar",
+    "snack": "Lanches"
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "back": "Voltar",
+    "error": "Erro",
+    "delete": "Excluir",
+    "save": "Salvar"
+  },
+  "diary": {
+    "eaten": "Consumido",
+    "remaining": "Restante",
+    "streakBadge_one": "🔥 Sequência: {{count}} dia",
+    "streakBadge_other": "🔥 Sequência: {{count}} dias",
+    "noEntries": "Sem entradas · pressione longo para copiar de ontem",
+    "analyzeTitle": "Análise de prato com IA",
+    "analyzePickMsg": "Como deseja adicionar a foto?",
+    "photoCamera": "Tirar foto",
+    "photoGallery": "Escolher da galeria",
+    "analyzeBtn": "Analisar prato com IA",
+    "analyzing": "Analisando seu prato…",
+    "analyzeSubPro": "Foto → calorias e macros instantaneamente",
+    "analyzeSubFree": "{{remaining}} de {{limit}} análises restantes hoje",
+    "analyzeSubGuest": "{{limit}} análises gratuitas por dia",
+    "copyYesterday": "Copiar dia inteiro de ontem",
+    "emptyText": "Nada registrado hoje. Toque em ＋ em uma refeição para buscar alimentos.",
+    "supplementsToday": "Suplementos de hoje",
+    "supplementHint": "Toque para marcar como tomado. Pressione longo para editar.",
+    "supplementStart": "Comece sua rotina",
+    "supplementStartHint": "Mais comuns em dieta vegana: B12 (essencial), vitamina D, ômega-3 de algas e iodo. Toque para escolher um.",
+    "supplementSuggested": "Sugerido: {{amount}} {{unit}}",
+    "limitTitle": "Limite atingido",
+    "limitMsg": "O plano gratuito permite {{count}} suplementos. Assine Pro para adicionar mais.",
+    "historyLimitTitle": "Histórico limitado",
+    "historyLimitMsg": "O plano gratuito mostra {{count}} dias de histórico. Assine Pro para histórico ilimitado.",
+    "deleteTitle": "Excluir",
+    "deleteConfirm": "Excluir \"{{name}}\"?",
+    "nothingToCopy": "Nada a copiar",
+    "nothingToCopyMsg": "Sem entradas de ontem para copiar.",
+    "addSupplement": "Adicionar suplemento",
+    "editSupplement": "Editar suplemento",
+    "newSupplement": "Novo suplemento",
+    "createCustom": "Criar personalizado",
+    "pickerHint": "Toque em um suplemento vegano comum para ajustar a dose e salvá-lo. Você pode adicionar o mesmo suplemento várias vezes.",
+    "typicalSupplements": "Suplementos veganos típicos",
+    "noSession": "Nenhuma sessão ativa"
+  },
+  "search": {
+    "label": "Buscar alimento",
+    "addToMeal": "Adicionar a {{meal}}",
+    "placeholder": "tofu, grão-de-bico, leite de aveia…",
+    "veganOnly": "Somente vegano",
+    "fresh": "🥕 Fresco (BEDCA)",
+    "custom": "⭐ Meus alimentos",
+    "results": "🔍 Resultados",
+    "alternatives": "🌱 Alternativas",
+    "alternativesFor": "🌱 Alternativas veganas a \"{{name}}\"",
+    "recent": "🕐 Recentes",
+    "usedCount_one": "usado {{count}} vez",
+    "usedCount_other": "usado {{count}} vezes",
+    "noResults": "Sem resultados. Tente outro termo ou escaneie o código de barras.",
+    "notFound": "Produto não encontrado no OpenFoodFacts",
+    "noAlternatives": "Não encontramos uma alternativa vegana clara para este produto.",
+    "confidence": {
+      "high": "Vegano ✓",
+      "medium": "Provavelmente vegano",
+      "low": "Não vegano",
+      "unknown": "Sem dados"
+    }
+  },
+  "scanner": {
+    "title": "Escanear código de barras",
+    "permissionMsg": "Vegetrack precisa de acesso à câmera para escanear códigos de barras.",
+    "grantPermission": "Conceder permissão",
+    "instruction": "Aponte para o código de barras do produto"
+  },
+  "product": {
+    "scoreHint": "Toque em qualquer indicador para saber o que significa.",
+    "amount": "Quantidade (g)",
+    "chooseMeal": "A qual refeição você está adicionando isso?",
+    "addedTo": "Será adicionado a {{meal}}",
+    "moreDetail": "Mais detalhes por porção",
+    "ingredients": "Ingredientes",
+    "alternatives": "Ver alternativas veganas",
+    "save": "Salvar alterações",
+    "add": "Adicionar ao diário",
+    "delete": "Remover do diário",
+    "invalidAmount": "Por favor, insira uma quantidade válida em gramas",
+    "chooseMealError": "Escolha a refeição para adicionar (café da manhã, almoço, jantar ou lanche).",
+    "added": "{{name}} adicionado a {{meal}}",
+    "vegan": "Vegano ✓",
+    "veganLikely": "Provavelmente vegano",
+    "notVegan": "Não vegano",
+    "veganUnknown": "Status vegano desconhecido",
+    "addFoodModal": {
+      "amount": "Quantidade (g)",
+      "add": "Adicionar ao diário",
+      "invalidAmount": "Por favor, insira uma quantidade válida em gramas",
+      "added": "{{name}} adicionado a {{meal}}"
+    }
+  },
+  "profile": {
+    "title": "Perfil",
+    "noName": "Sem nome",
+    "editProfile": "Editar perfil",
+    "dailyTargets": "Metas diárias",
+    "tools": "Ferramentas",
+    "myRecipes": "Minhas receitas",
+    "myFoods": "Meus alimentos",
+    "microTrends": "Tendências de micros",
+    "microTrendsSub": "Pro",
+    "reminder": "Lembrete diário",
+    "permissionDenied": "Permissão negada",
+    "permissionMsg": "Ative as notificações do Vegetrack nas configurações do Android.",
+    "appearance": "Aparência",
+    "appearanceHint": "\"Sistema\" segue automaticamente as configurações de aparência do seu dispositivo.",
+    "themeSystem": "Sistema",
+    "themeLight": "Claro",
+    "themeDark": "Escuro",
+    "account": "Conta",
+    "exportCsv": "Exportar diário em CSV",
+    "unlockPro": "Desbloquear Pro",
+    "unlockProSub": "Histórico e receitas ilimitados",
+    "logout": "Sair",
+    "language": "Idioma",
+    "activity": {
+      "sedentary": "Sedentário",
+      "light": "Leve",
+      "moderate": "Moderado",
+      "active": "Ativo",
+      "very_active": "Muito ativo"
+    },
+    "goal": {
+      "cut": "Perder gordura",
+      "maintain": "Manter",
+      "bulk": "Ganhar músculo"
+    },
+    "editModal": {
+      "title": "Editar perfil",
+      "name": "Nome",
+      "height": "Altura (cm)",
+      "weight": "Peso (kg)",
+      "activityLabel": "Atividade",
+      "goalLabel": "Objetivo",
+      "save": "Salvar (recalcular metas)"
+    },
+    "supplementsModal": {
+      "title": "Suplementos",
+      "mine": "Meus suplementos",
+      "createCustom": "Criar suplemento personalizado",
+      "startFromPreset": "Começar de um modelo",
+      "presetHint": "Toque em um para revisar a dose e salvá-lo. Você pode adicionar o mesmo suplemento várias vezes."
+    },
+    "customFood": {
+      "title": "Meus alimentos",
+      "create": "Criar alimento personalizado",
+      "editTitle": "Editar alimento",
+      "createTitle": "Criar alimento (valores por 100 g)",
+      "save": "Salvar alterações",
+      "saveCreate": "Criar alimento",
+      "empty": "Nenhum alimento personalizado. Crie um com valores nutricionais por 100 g."
+    }
+  },
+  "onboarding": {
+    "step1Title": "Seu ponto de partida",
+    "step1Sub": "Calculamos seu metabolismo usando a fórmula de Mifflin-St Jeor",
+    "step2Title": "Seu estilo de vida",
+    "step2Sub": "Ajustamos suas calorias à sua atividade diária",
+    "step3Title": "Seu objetivo",
+    "step3Sub": "Tudo começa por saber onde você quer chegar",
+    "name": "Nome",
+    "namePlaceholder": "Qual é o seu nome?",
+    "height": "Altura (cm)",
+    "weight": "Peso (kg)",
+    "birthDate": "Data de nascimento (AAAA-MM-DD)",
+    "sex": "Sexo biológico",
+    "male": "Masculino",
+    "female": "Feminino",
+    "next": "Próximo →",
+    "back": "Voltar",
+    "finish": "Calcular metas ✓",
+    "calcError": "Verifique seus dados: não conseguimos calcular suas metas.",
+    "activity": {
+      "sedentary": "Sedentário",
+      "sedentaryDesc": "Sem exercício",
+      "light": "Leve",
+      "lightDesc": "1–2 dias/semana",
+      "moderate": "Moderado",
+      "moderateDesc": "3–4 dias/semana",
+      "active": "Ativo",
+      "activeDesc": "5–6 dias/semana",
+      "very_active": "Muito ativo",
+      "very_activeDesc": "Exercício intenso diário"
+    },
+    "goal": {
+      "cut": "Perder gordura",
+      "cutDesc": "Déficit de 500 kcal",
+      "maintain": "Manter",
+      "maintainDesc": "Calorias de manutenção",
+      "bulk": "Ganhar músculo",
+      "bulkDesc": "Superávit de 300 kcal"
+    }
+  },
+  "lang": {
+    "title": "Idioma",
+    "es": "Español",
+    "en": "English",
+    "de": "Deutsch",
+    "fr": "Français",
+    "pt": "Português"
+  },
+  "pro": {
+    "title": "Assinar Pro",
+    "subtitle": "Registro de fotos avançado, histórico ilimitado e tendências de micros. Cancele quando quiser.",
+    "footer": "Pagamento processado com segurança na web (Stripe). Sua conta é compartilhada entre o app e o PWA.",
+    "currentPlan": "Seu plano atual",
+    "choosePlan": "Escolher {{name}}",
+    "free": {
+      "name": "Gratuito",
+      "price": "€0",
+      "cadence": "sem cartão necessário",
+      "desc": "O essencial para registrar e acompanhar o seu dia.",
+      "f0": "3 análises de pratos com IA por dia",
+      "f1": "Registro ilimitado de refeições",
+      "f2": "Macros + 6 micros essenciais",
+      "f3": "14 dias de histórico",
+      "f4": "Scanner de código de barras",
+      "f5": "3 receitas e 3 suplementos"
+    },
+    "monthly": {
+      "name": "Pro",
+      "price": "€4,99",
+      "cadence": "por mês",
+      "desc": "Sem limites e com estatísticas detalhadas.",
+      "badge": "Popular",
+      "f0": "Registro de fotos avançado (mais análises por dia)",
+      "f1": "Histórico ilimitado",
+      "f2": "Tendências de micros (30 / 90 dias)",
+      "f3": "Receitas e suplementos ilimitados",
+      "f4": "Exportar diário em CSV",
+      "f5": "Suporte prioritário"
+    },
+    "annual": {
+      "name": "Pro anual",
+      "price": "€39",
+      "cadence": "por ano",
+      "desc": "Mesmo Pro, pago anualmente. Economize 35%.",
+      "badge": "Economize 35%",
+      "f0": "Tudo do Pro",
+      "f1": "2 meses grátis",
+      "f2": "Acesso antecipado a novidades"
+    }
+  },
+  "scoreInfo": {
+    "scaleHeader": "A escala, de forma simples",
+    "tipHeader": "Tenha em mente",
+    "nutri": {
+      "title": "Nutri-Score",
+      "intro": "Resume a qualidade nutricional geral de um produto com uma letra de A a E. Leva em conta negativamente calorias, açúcares, gorduras saturadas e sal; positivamente fibras, proteínas, frutas e vegetais.",
+      "a": "melhor perfil nutricional",
+      "b": "bom",
+      "c": "médio",
+      "d": "abaixo do esperado",
+      "e": "pior perfil na sua categoria",
+      "tip": "Compare produtos da mesma categoria (ex.: iogurtes com iogurtes). Um E não torna o produto \"ruim\" — ajuda a escolher a melhor opção entre várias."
+    },
+    "eco": {
+      "title": "Eco-Score",
+      "intro": "Estima o impacto ambiental de um produto ao longo do seu ciclo de vida: cultivo dos ingredientes, transporte, embalagem e origem. Quanto mais próximo de A, menor a pegada estimada.",
+      "a": "pegada ambiental muito baixa",
+      "b": "baixa",
+      "c": "média",
+      "d": "alta",
+      "e": "muito alta",
+      "tip": "Uma dieta à base de plantas geralmente pontua melhor no Eco-Score do que opções de origem animal. É uma orientação, não um veredicto."
+    },
+    "nova": {
+      "title": "NOVA · nível de processamento",
+      "intro": "Classifica os alimentos pelo grau de processamento industrial, não pelas calorias. Um grupo NOVA alto não significa \"tóxico\" — apenas que o produto passou por mais transformações e aditivos.",
+      "1": "não processado (frutas, leguminosas secas…)",
+      "2": "minimamente processado (azeite, sal…)",
+      "3": "processado (conservas, pão…)",
+      "4": "ultraprocessado (com aditivos e formulações)",
+      "tip": "Uma dieta consciente tende a usar 1 e 2 como base, sem demonizar os ocasionais 3 e 4 que se encaixam no seu dia."
+    }
+  },
+  "scoreBadges": {
+    "ecoCaption": "impacto ambiental",
+    "nova_1": "não processado",
+    "nova_2": "minimamente processado",
+    "nova_3": "processado",
+    "nova_4": "ultraprocessado"
+  },
+  "supplementEditor": {
+    "defaultTitle": "Suplemento",
+    "nameLabel": "Nome",
+    "iconLabel": "Ícone",
+    "contributesTo": "Contribui para",
+    "doseLabel": "Dose por tomada",
+    "doseHint": "Quantidade por vez. Se toma duas vezes ao dia, adicione como dois suplementos.",
+    "errorNoName": "Dê um nome a ele.",
+    "errorBadAmount": "Insira uma quantidade válida.",
+    "deleteLabel": "Excluir suplemento",
+    "nutrient": {
+      "none": "Nenhum micro rastreado",
+      "b12": "Vitamina B12",
+      "d": "Vitamina D",
+      "omega3": "Ômega-3 (DHA/EPA)",
+      "iron": "Ferro",
+      "zinc": "Zinco",
+      "calcium": "Cálcio",
+      "iodine": "Iodo"
+    }
+  },
+  "progress": {
+    "title": "Progresso",
+    "invalidWeight": "Peso inválido",
+    "invalidWeightMsg": "Insira um peso válido em kg.",
+    "lastRecorded": "Último registrado: {{weight}} kg",
+    "save": "Salvar →",
+    "stats": "Estatísticas",
+    "statCurrent": "ATUAL",
+    "statStart": "INÍCIO",
+    "statMin": "MÍN",
+    "statMax": "MÁX",
+    "totalChange": "Variação total",
+    "chartEmpty": "Registre seu peso por pelo menos dois dias para ver o gráfico.",
+    "legendDaily": "Diário",
+    "legend7d": "Méd. 7d",
+    "records": "Registros",
+    "deleteConfirm": "Excluir registro de {{date}}?"
+  },
+  "recipes": {
+    "close": "Fechar",
+    "emptyText": "Crie receitas com ingredientes e registre-as no diário com um toque.",
+    "servingInfo": "{{servings}} porções · {{kcal}} kcal · {{prot}} g prot",
+    "newTitle": "Nova receita",
+    "nameLabel": "Nome",
+    "descriptionLabel": "Descrição (opcional)",
+    "servingsLabel": "Porções",
+    "create": "Criar",
+    "deleteTitle": "Excluir receita",
+    "totalInfo": "{{servings}} porções · {{g}} g total",
+    "perServing": "por porção",
+    "addToDiary": "🍽️ Adicionar ao diário",
+    "ingredientsCount": "Ingredientes ({{count}})",
+    "ingredientsEmpty": "Busque abaixo para adicionar ingredientes.",
+    "removeTitle": "Remover",
+    "removeConfirm": "Remover \"{{name}}\"?",
+    "remove": "Remover",
+    "addIngredientTitle": "Adicionar ingrediente",
+    "ingredientPlaceholder": "Buscar alimento…",
+    "search": "Buscar",
+    "quantityLabel": "Quantidade (g)",
+    "addIngredient": "Adicionar à receita",
+    "logTitle": "Registrar \"{{name}}\"",
+    "mealLabel": "Refeição",
+    "logged": "{{name}} adicionado a {{meal}}",
+    "limitMsg": "O plano gratuito permite {{count}} receitas. Assine Pro para receitas ilimitadas.",
+    "save": "Salvar"
+  },
+  "supplements": {
+    "preset": {
+      "b12": "Vitamina B12",
+      "d3": "Vitamina D3 vegana",
+      "omega3": "Ômega-3 (DHA+EPA de algas)",
+      "iodine": "Iodo",
+      "iron": "Ferro",
+      "zinc": "Zinco",
+      "calcium": "Cálcio",
+      "magnesium": "Magnésio",
+      "selenium": "Selênio",
+      "creatine": "Creatina",
+      "multivitamin": "Multivitamínico",
+      "probiotic": "Probiótico"
+    }
+  },
+  "reminders": {
+    "channelName": "Lembretes",
+    "notifTitle": "Vegetrack 🌱",
+    "notifBody": "Você registrou suas refeições hoje? Mantenha sua sequência viva."
+  },
+  "exportCsv": {
+    "freeSuffix": "# Exportado com Vegetrack Free (últimos {{days}} dias)",
+    "shareError": "Não foi possível compartilhar o arquivo"
+  }
+}

@@ -3,6 +3,9 @@ import { initReactI18next } from 'react-i18next';
 import { deviceLanguage } from '@/utils/locale';
 import es from './locales/es.json';
 import en from './locales/en.json';
+import de from './locales/de.json';
+import fr from './locales/fr.json';
+import pt from './locales/pt.json';
 
 export const SUPPORTED_LANGUAGES = ['es', 'en', 'de', 'fr', 'pt'] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
@@ -19,6 +22,9 @@ i18n.use(initReactI18next).init({
   resources: {
     es: { translation: es },
     en: { translation: en },
+    de: { translation: de },
+    fr: { translation: fr },
+    pt: { translation: pt },
   },
   lng: resolveLanguage(deviceLanguage()),
   fallbackLng: 'en',
