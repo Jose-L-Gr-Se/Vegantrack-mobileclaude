@@ -18,6 +18,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Button, Pill, ProgressRing } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
 import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBadges';
@@ -31,7 +32,7 @@ import {
   getProductByBarcode,
   getVeganConfidence,
 } from '@/lib/openfoodfacts';
-import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
+import { MEAL_ICONS } from '@/components/AddFoodModal';
 import type {
   FoodLogEntry,
   FoodPer100g,
@@ -91,28 +92,28 @@ function MacroRingChip({
   unit: string;
   color: string;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   const progress = target > 0 ? Math.min(1, value / target) : 0;
   return (
     <View style={{ alignItems: 'center', flex: 1 }}>
       <ProgressRing progress={progress} size={64} strokeWidth={5} color={color}>
-        <Text style={{ fontSize: 15, fontWeight: '800', color: t.text }}>
+        <Text style={{ fontSize: 15, fontWeight: '800', color: theme.text }}>
           {Math.round(value)}
         </Text>
       </ProgressRing>
-      <Text style={{ color: t.textMuted, fontSize: 10, marginTop: 3 }}>{label}</Text>
-      <Text style={{ color: t.textMuted, fontSize: 9 }}>{unit}</Text>
+      <Text style={{ color: theme.textMuted, fontSize: 10, marginTop: 3 }}>{label}</Text>
+      <Text style={{ color: theme.textMuted, fontSize: 9 }}>{unit}</Text>
     </View>
   );
 }
 
 function MicroRow({ label, value, unit }: { label: string; value: number | null; unit: string }) {
-  const t = useTheme();
+  const theme = useTheme();
   if (value === null || value === undefined) return null;
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-      <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
-      <Text style={{ color: t.text, fontSize: 12, fontWeight: '700' }}>
+      <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{label}</Text>
+      <Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>
         {value < 1 ? value.toFixed(2) : value < 10 ? value.toFixed(1) : Math.round(value)} {unit}
       </Text>
     </View>
@@ -156,7 +157,8 @@ export function ProductDetailSheet({
     fat_target_g: number;
   } | null;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const user = useAuthStore((s) => s.user);
   const { addEntry, deleteEntry, selectedDate } = useDiaryStore();
 
@@ -236,12 +238,12 @@ export function ProductDetailSheet({
   const commit = async () => {
     const parsed = parseFloat(grams.replace(',', '.'));
     if (!Number.isFinite(parsed) || parsed <= 0) {
-      setError('Introduce una cantidad válida en gramos');
+      setError(t('product.invalidAmount'));
       return;
     }
     const target = lockedMealType ?? meal;
     if (!target) {
-      setError('Elige a qué comida añadirlo (desayuno, comida, cena o snack).');
+      setError(t('product.chooseMealError'));
       return;
     }
     if (!user) return;
@@ -261,7 +263,7 @@ export function ProductDetailSheet({
       setBusy(false);
       if (err) setError(err);
       else {
-        onAdded?.(`${food.food_name} añadido a ${MEAL_LABELS[target]}`);
+        onAdded?.(t('product.added', { name: food.food_name, meal: t(`meals.${target}` as any) }));
         onClose();
       }
     }
@@ -279,7 +281,7 @@ export function ProductDetailSheet({
         <View style={{ gap: spacing.sm }}>
           {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
           <Button
-            title={isEdit ? 'Guardar cambios' : 'Añadir al diario'}
+            title={isEdit ? t('product.save') : t('product.add')}
             onPress={commit}
             loading={busy}
           />
@@ -292,7 +294,7 @@ export function ProductDetailSheet({
               style={{ alignItems: 'center', paddingVertical: spacing.xs }}
             >
               <Text style={{ color: semantic.danger, fontWeight: '700', fontSize: 14 }}>
-                Eliminar del diario
+                {t('product.delete')}
               </Text>
             </Pressable>
           ) : null}
@@ -308,18 +310,18 @@ export function ProductDetailSheet({
               gap: spacing.sm,
               padding: spacing.md,
               borderRadius: radii.md,
-              backgroundColor: notice.tone === 'warn' ? 'rgba(239,68,68,0.10)' : t.primarySoft,
+              backgroundColor: notice.tone === 'warn' ? 'rgba(239,68,68,0.10)' : theme.primarySoft,
               borderLeftWidth: 3,
-              borderLeftColor: notice.tone === 'warn' ? semantic.danger : t.primary,
+              borderLeftColor: notice.tone === 'warn' ? semantic.danger : theme.primary,
             }}
           >
             <Ionicons
               name={(notice.tone === 'warn' ? 'warning-outline' : 'information-circle-outline') as never}
               size={18}
-              color={notice.tone === 'warn' ? semantic.danger : t.primary}
+              color={notice.tone === 'warn' ? semantic.danger : theme.primary}
               style={{ marginTop: 1 }}
             />
-            <Text style={{ flex: 1, color: t.text, fontSize: 13, lineHeight: 18 }}>{notice.text}</Text>
+            <Text style={{ flex: 1, color: theme.text, fontSize: 13, lineHeight: 18 }}>{notice.text}</Text>
           </View>
         ) : null}
 
@@ -328,7 +330,7 @@ export function ProductDetailSheet({
           {heroImage && !imageBroken ? (
             <Image
               source={{ uri: heroImage }}
-              style={{ width: 96, height: 96, borderRadius: radii.lg, backgroundColor: t.separator }}
+              style={{ width: 96, height: 96, borderRadius: radii.lg, backgroundColor: theme.separator }}
               resizeMode="cover"
               onError={() => setImageBroken(true)}
             />
@@ -338,30 +340,30 @@ export function ProductDetailSheet({
                 width: 96,
                 height: 96,
                 borderRadius: radii.lg,
-                backgroundColor: t.separator,
+                backgroundColor: theme.separator,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Ionicons name={'fast-food-outline' as never} size={36} color={t.textMuted} />
+              <Ionicons name={'fast-food-outline' as never} size={36} color={theme.textMuted} />
             </View>
           )}
           <View style={{ flex: 1, gap: 4, paddingTop: 2 }}>
             <Text
-              style={{ fontSize: 22, fontWeight: '700', color: t.text, lineHeight: 26 }}
+              style={{ fontSize: 22, fontWeight: '700', color: theme.text, lineHeight: 26 }}
               numberOfLines={3}
             >
               {food.food_name}
             </Text>
-            {food.brand ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
+            {food.brand ? <Text style={{ color: theme.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
             <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 4 }}>
-              {food.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
+              {food.is_vegan ? <Pill text={t('product.vegan')} color={semantic.success} /> : null}
               {confidence === 'medium' ? (
-                <Pill text="Parece vegano" color={semantic.warning} />
+                <Pill text={t('product.veganLikely')} color={semantic.warning} />
               ) : confidence === 'low' ? (
-                <Pill text="No vegano" color={semantic.danger} />
+                <Pill text={t('product.notVegan')} color={semantic.danger} />
               ) : confidence === 'unknown' && !food.is_vegan ? (
-                <Pill text="Sin datos vegano" color={t.textMuted} />
+                <Pill text={t('product.veganUnknown')} color={theme.textMuted} />
               ) : null}
             </View>
           </View>
@@ -375,10 +377,10 @@ export function ProductDetailSheet({
                 flexDirection: 'row',
                 gap: spacing.md,
                 padding: spacing.md,
-                backgroundColor: t.background,
+                backgroundColor: theme.background,
                 borderRadius: radii.lg,
                 borderWidth: 1,
-                borderColor: t.cardBorder,
+                borderColor: theme.cardBorder,
               }}
             >
               {food.nutriscore_grade ? (
@@ -391,8 +393,8 @@ export function ProductDetailSheet({
                 <NovaBadge group={food.nova_group} onInfo={(k) => setInfoKind(k)} />
               ) : null}
             </View>
-            <Text style={{ color: t.textMuted, fontSize: 11, paddingHorizontal: 2 }}>
-              Toca cualquier indicador para entender qué significa.
+            <Text style={{ color: theme.textMuted, fontSize: 11, paddingHorizontal: 2 }}>
+              {t('product.scoreHint')}
             </Text>
           </View>
         ) : null}
@@ -407,7 +409,7 @@ export function ProductDetailSheet({
 
         {/* ── Cantidad ────────────────────────────────────────────── */}
         <View style={{ gap: spacing.sm }}>
-          <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Cantidad (g)</Text>
+          <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>{t('product.amount')}</Text>
           <View style={{ flexDirection: 'row', gap: spacing.xs }}>
             {SERVING_PRESETS.map((preset) => {
               const active = parseInt(grams, 10) === preset;
@@ -420,11 +422,11 @@ export function ProductDetailSheet({
                     paddingVertical: 6,
                     borderRadius: radii.pill,
                     borderWidth: 1.5,
-                    borderColor: active ? t.primary : t.cardBorder,
-                    backgroundColor: active ? t.primarySoft : 'transparent',
+                    borderColor: active ? theme.primary : theme.cardBorder,
+                    backgroundColor: active ? theme.primarySoft : 'transparent',
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: active ? t.primary : t.textSecondary }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: active ? theme.primary : theme.textSecondary }}>
                     {preset}g
                   </Text>
                 </Pressable>
@@ -440,18 +442,18 @@ export function ProductDetailSheet({
             keyboardType="numeric"
             selectTextOnFocus
             style={{
-              backgroundColor: t.inputBg,
-              borderColor: t.inputBorder,
+              backgroundColor: theme.inputBg,
+              borderColor: theme.inputBorder,
               borderWidth: 1,
               borderRadius: radii.lg,
               paddingHorizontal: spacing.lg,
               paddingVertical: 12,
               fontSize: 17,
               fontWeight: '700',
-              color: t.text,
+              color: theme.text,
             }}
             placeholder="100"
-            placeholderTextColor={t.textMuted}
+            placeholderTextColor={theme.textMuted}
           />
         </View>
 
@@ -464,21 +466,21 @@ export function ProductDetailSheet({
               gap: spacing.sm,
               padding: spacing.md,
               borderRadius: radii.lg,
-              backgroundColor: t.primarySoft,
+              backgroundColor: theme.primarySoft,
               borderWidth: 1,
-              borderColor: t.primary,
+              borderColor: theme.primary,
             }}
           >
             <Text style={{ fontSize: 18 }}>{MEAL_ICONS[lockedMealType]}</Text>
-            <Text style={{ flex: 1, color: t.primary, fontWeight: '700', fontSize: 14 }}>
-              Se añadirá a {MEAL_LABELS[lockedMealType]}
+            <Text style={{ flex: 1, color: theme.primary, fontWeight: '700', fontSize: 14 }}>
+              {t('product.addedTo', { meal: t(`meals.${lockedMealType}` as any) })}
             </Text>
-            <Ionicons name={'lock-closed' as never} size={14} color={t.primary} />
+            <Ionicons name={'lock-closed' as never} size={14} color={theme.primary} />
           </View>
         ) : (
           <View style={{ gap: spacing.sm }}>
-            <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>
-              ¿A qué comida lo añades?
+            <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
+              {t('product.chooseMeal')}
             </Text>
             <View style={{ flexDirection: 'row', gap: spacing.xs }}>
               {MEAL_ORDER.map((m) => (
@@ -495,8 +497,8 @@ export function ProductDetailSheet({
                     paddingHorizontal: spacing.xs,
                     borderRadius: radii.md,
                     borderWidth: 1.5,
-                    borderColor: meal === m ? t.primary : t.cardBorder,
-                    backgroundColor: meal === m ? t.primarySoft : 'transparent',
+                    borderColor: meal === m ? theme.primary : theme.cardBorder,
+                    backgroundColor: meal === m ? theme.primarySoft : 'transparent',
                     gap: 2,
                   }}
                 >
@@ -505,12 +507,12 @@ export function ProductDetailSheet({
                     style={{
                       fontSize: 9,
                       fontWeight: '700',
-                      color: meal === m ? t.primary : t.textSecondary,
+                      color: meal === m ? theme.primary : theme.textSecondary,
                       textAlign: 'center',
                     }}
                     numberOfLines={1}
                   >
-                    {MEAL_LABELS[m]}
+                    {t(`meals.${m}` as any)}
                   </Text>
                 </Pressable>
               ))}
@@ -521,10 +523,10 @@ export function ProductDetailSheet({
         {/* ── Detalle nutricional adicional ───────────────────────── */}
         <View
           style={{
-            backgroundColor: t.background,
+            backgroundColor: theme.background,
             borderRadius: radii.lg,
             borderWidth: 1,
-            borderColor: t.cardBorder,
+            borderColor: theme.cardBorder,
             padding: spacing.md,
             gap: 2,
           }}
@@ -534,12 +536,12 @@ export function ProductDetailSheet({
               fontSize: 11,
               fontWeight: '700',
               letterSpacing: 0.8,
-              color: t.textMuted,
+              color: theme.textMuted,
               textTransform: 'uppercase',
               marginBottom: spacing.xs,
             }}
           >
-            Más detalle por ración
+            {t('product.moreDetail')}
           </Text>
           <MicroRow label="Fibra" value={fiber} unit="g" />
           <MicroRow label="Azúcares" value={sugars} unit="g" />
@@ -568,10 +570,10 @@ export function ProductDetailSheet({
         {food.ingredients_text ? (
           <View
             style={{
-              backgroundColor: t.background,
+              backgroundColor: theme.background,
               borderRadius: radii.lg,
               borderWidth: 1,
-              borderColor: t.cardBorder,
+              borderColor: theme.cardBorder,
               padding: spacing.md,
               gap: 6,
             }}
@@ -581,13 +583,13 @@ export function ProductDetailSheet({
                 fontSize: 11,
                 fontWeight: '700',
                 letterSpacing: 0.8,
-                color: t.textMuted,
+                color: theme.textMuted,
                 textTransform: 'uppercase',
               }}
             >
-              Ingredientes
+              {t('product.ingredients')}
             </Text>
-            <Text style={{ color: t.textSecondary, fontSize: 12, lineHeight: 17 }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 17 }}>
               {food.ingredients_text}
             </Text>
           </View>
@@ -611,7 +613,7 @@ export function ProductDetailSheet({
           >
             <Ionicons name={'leaf-outline' as never} size={16} color={semantic.success} />
             <Text style={{ color: semantic.success, fontWeight: '700', fontSize: 14 }}>
-              Ver alternativas veganas
+              {t('product.alternatives')}
             </Text>
           </Pressable>
         ) : null}

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Card, EmptyState, IconButton, Input, Pill, SectionHeader } from '@/components/ui';
 import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { semantic, spacing, useTheme } from '@/theme';
@@ -26,13 +27,6 @@ import { freshItemToProduct, searchFreshProduce } from '@/lib/freshProduce';
 import { normalizeProduct } from '@/lib/openfoodfacts';
 import type { FoodPer100g, MealType, OpenFoodFactsProduct, RecentFood, VeganConfidence } from '@/types';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
-
-const CONFIDENCE_LABEL: Record<VeganConfidence, { text: string; color: string }> = {
-  high: { text: 'Vegano ✓', color: semantic.success },
-  medium: { text: 'Parece vegano', color: semantic.warning },
-  low: { text: 'No vegano', color: semantic.danger },
-  unknown: { text: 'Sin datos', color: '#94a3b8' },
-};
 
 function recentToPer100g(r: RecentFood): FoodPer100g {
   return {
@@ -67,7 +61,8 @@ function recentToPer100g(r: RecentFood): FoodPer100g {
 }
 
 export function SearchScreen() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const route = useRoute<RouteProp<MainTabParamList, 'Search'>>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -87,6 +82,13 @@ export function SearchScreen() {
   const [lockedMeal, setLockedMeal] = useState<MealType | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const confidenceColor: Record<VeganConfidence, string> = {
+    high: semantic.success,
+    medium: semantic.warning,
+    low: semantic.danger,
+    unknown: '#94a3b8',
+  };
 
   // Datos al enfocar la pantalla.
   useFocusEffect(
@@ -132,10 +134,10 @@ export function SearchScreen() {
         setSelectedConfidence(getVeganConfidence(product));
         setSelected(productToFoodPer100g(product));
       } else {
-        setToast('Producto no encontrado en OpenFoodFacts');
+        setToast(t('search.notFound'));
       }
     })();
-  }, [route.params?.barcode, navigation]);
+  }, [route.params?.barcode, navigation, t]);
 
   // Búsqueda con debounce (400 ms) para no saturar la API
   useEffect(() => {
@@ -164,7 +166,7 @@ export function SearchScreen() {
     setSearching(false);
     setResults(alts);
     if (alts.length === 0) {
-      setToast('No encontramos una alternativa vegana clara para este producto.');
+      setToast(t('search.noAlternatives'));
     }
   };
 
@@ -198,7 +200,7 @@ export function SearchScreen() {
       : null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.background }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md, gap: spacing.lg, paddingBottom: spacing.xxl }}
         keyboardShouldPersistTaps="handled"
@@ -206,52 +208,52 @@ export function SearchScreen() {
         <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-end' }}>
           <View style={{ flex: 1 }}>
             <Input
-              label={lockedMeal ? `Añadir a ${lockedMeal === 'breakfast' ? 'Desayuno' : lockedMeal === 'lunch' ? 'Comida' : lockedMeal === 'dinner' ? 'Cena' : 'Snacks'}` : 'Buscar alimento'}
+              label={lockedMeal ? t('search.addToMeal', { meal: t(`meals.${lockedMeal}` as any) }) : t('search.label')}
               value={query}
               onChangeText={setQuery}
-              placeholder="tofu, garbanzos, bebida de soja…"
+              placeholder={t('search.placeholder')}
             />
           </View>
           <IconButton
             onPress={() => navigation.navigate('Scanner', lockedMeal ? { mealType: lockedMeal } : undefined)}
-            style={{ backgroundColor: t.primarySoft, borderRadius: 16, padding: 12 }}
+            style={{ backgroundColor: theme.primarySoft, borderRadius: 16, padding: 12 }}
           >
-            <Ionicons name={'barcode-outline' as any} size={22} color={t.primary} />
+            <Ionicons name={'barcode-outline' as any} size={22} color={theme.primary} />
           </IconButton>
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-          <Switch value={veganOnly} onValueChange={setVeganOnly} trackColor={{ true: t.primary }} />
-          <Text style={{ color: t.textSecondary, fontWeight: '600' }}>Solo veganos</Text>
-          {searching ? <ActivityIndicator color={t.primary} /> : null}
+          <Switch value={veganOnly} onValueChange={setVeganOnly} trackColor={{ true: theme.primary }} />
+          <Text style={{ color: theme.textSecondary, fontWeight: '600' }}>{t('search.veganOnly')}</Text>
+          {searching ? <ActivityIndicator color={theme.primary} /> : null}
         </View>
 
         {toast ? (
           <Pressable onPress={() => setToast(null)}>
-            <Card><Text style={{ color: t.textSecondary }}>{toast}</Text></Card>
+            <Card><Text style={{ color: theme.textSecondary }}>{toast}</Text></Card>
           </Pressable>
         ) : null}
 
         {alternativesFor ? (
-          <Text style={{ color: t.textSecondary, fontWeight: '600' }}>
-            🌱 Alternativas veganas a "{alternativesFor}"
+          <Text style={{ color: theme.textSecondary, fontWeight: '600' }}>
+            {t('search.alternativesFor', { name: alternativesFor })}
           </Text>
         ) : null}
 
         {/* Frescos locales */}
         {freshMatches.length > 0 && (
           <Card style={{ gap: 4 }}>
-            <SectionHeader title="🥕 Frescos (BEDCA)" />
+            <SectionHeader title={t('search.fresh')} />
             {freshMatches.slice(0, 6).map((item) => (
               <Pressable
                 key={item.id}
                 onPress={() => setSelected(productToFoodPer100g(normalizeProduct(freshItemToProduct(item))))}
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}
               >
-                <Text style={{ color: t.text, fontWeight: '600' }}>
+                <Text style={{ color: theme.text, fontWeight: '600' }}>
                   {item.emoji} {item.name}
                 </Text>
-                <Text style={{ color: t.textMuted, fontSize: 13 }}>{item.calories_per_100g} kcal/100g</Text>
+                <Text style={{ color: theme.textMuted, fontSize: 13 }}>{item.calories_per_100g} kcal/100g</Text>
               </Pressable>
             ))}
           </Card>
@@ -260,15 +262,15 @@ export function SearchScreen() {
         {/* Alimentos personalizados */}
         {customMatches.length > 0 && (
           <Card style={{ gap: 4 }}>
-            <SectionHeader title="⭐ Mis alimentos" />
+            <SectionHeader title={t('search.custom')} />
             {customMatches.slice(0, 6).map((f) => (
               <Pressable
                 key={f.id}
                 onPress={() => setSelected(customFoodToPer100g(f))}
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}
               >
-                <Text style={{ color: t.text, fontWeight: '600' }}>{f.name}</Text>
-                <Text style={{ color: t.textMuted, fontSize: 13 }}>{f.calories_per_100g} kcal/100g</Text>
+                <Text style={{ color: theme.text, fontWeight: '600' }}>{f.name}</Text>
+                <Text style={{ color: theme.textMuted, fontSize: 13 }}>{f.calories_per_100g} kcal/100g</Text>
               </Pressable>
             ))}
           </Card>
@@ -277,10 +279,9 @@ export function SearchScreen() {
         {/* Resultados OFF */}
         {results.length > 0 && (
           <Card style={{ gap: 4 }}>
-            <SectionHeader title={alternativesFor ? '🌱 Alternativas' : '🔍 Resultados'} />
+            <SectionHeader title={alternativesFor ? t('search.alternatives') : t('search.results')} />
             {results.map((p) => {
               const confidence = getVeganConfidence(p);
-              const c = CONFIDENCE_LABEL[confidence];
               return (
                 <Pressable
                   key={p.code}
@@ -290,19 +291,19 @@ export function SearchScreen() {
                   {p.image_front_url ? (
                     <Image source={{ uri: p.image_front_url }} style={{ width: 48, height: 48, borderRadius: 12 }} />
                   ) : (
-                    <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: t.separator, alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: theme.separator, alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ fontSize: 22 }}>🥫</Text>
                     </View>
                   )}
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
+                    <Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
                       {p.product_name}
                     </Text>
-                    <Text style={{ color: t.textMuted, fontSize: 12 }} numberOfLines={1}>
+                    <Text style={{ color: theme.textMuted, fontSize: 12 }} numberOfLines={1}>
                       {p.brands || '—'} · {Math.round(p.nutriments['energy-kcal_100g'])} kcal/100g
                     </Text>
                     <View style={{ flexDirection: 'row', gap: spacing.xs, marginTop: 2, flexWrap: 'wrap' }}>
-                      <Pill text={c.text} color={c.color} />
+                      <Pill text={t(`search.confidence.${confidence}` as any)} color={confidenceColor[confidence]} />
                       {!alternativesFor && canSuggestVeganAlternative(p) ? (
                         <Pressable onPress={() => void showAlternatives(p)} hitSlop={6}>
                           <Pill text="Alternativas 🌱" color={semantic.success} />
@@ -319,7 +320,7 @@ export function SearchScreen() {
         {/* Recientes */}
         {query.trim().length < 3 && recentFoods.length > 0 && (
           <Card style={{ gap: 4 }}>
-            <SectionHeader title="🕐 Recientes" />
+            <SectionHeader title={t('search.recent')} />
             {recentFoods.map((r, i) => (
               <Pressable
                 key={`${r.food_name}-${i}`}
@@ -327,13 +328,13 @@ export function SearchScreen() {
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, alignItems: 'center' }}
               >
                 <View style={{ flex: 1, paddingRight: spacing.md }}>
-                  <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>{r.food_name}</Text>
-                  <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                  <Text style={{ color: theme.text, fontWeight: '600' }} numberOfLines={1}>{r.food_name}</Text>
+                  <Text style={{ color: theme.textMuted, fontSize: 12 }}>
                     {r.brand ? `${r.brand} · ` : ''}{r.calories_per_100g} kcal/100g
                   </Text>
                 </View>
-                <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                  usado {r.use_count} {r.use_count === 1 ? 'vez' : 'veces'}
+                <Text style={{ color: theme.textMuted, fontSize: 12 }}>
+                  {t('search.usedCount', { count: r.use_count })}
                 </Text>
               </Pressable>
             ))}
@@ -341,7 +342,7 @@ export function SearchScreen() {
         )}
 
         {query.trim().length >= 3 && !searching && results.length === 0 && freshMatches.length === 0 && customMatches.length === 0 && (
-          <EmptyState emoji="🔍" text="Sin resultados. Prueba con otro término o escanea el código de barras." />
+          <EmptyState emoji="🔍" text={t('search.noResults')} />
         )}
       </ScrollView>
 

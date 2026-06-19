@@ -8,8 +8,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
-import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
+import { MEAL_ICONS } from '@/components/AddFoodModal';
 import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { ProModal } from '@/components/ProModal';
 import { SwipeableRow } from '@/components/SwipeableRow';
@@ -29,7 +30,8 @@ import type { MainTabParamList } from '@/navigation/types';
 const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 export function DiaryScreen() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList, 'Diary'>>();
   const { user, profile } = useAuthStore();
@@ -46,10 +48,10 @@ export function DiaryScreen() {
   }, [photo.quotaBlocked]);
 
   const startPhoto = () => {
-    Alert.alert('Análisis de plato con IA', '¿Cómo quieres añadir la foto?', [
-      { text: 'Hacer foto', onPress: () => void photo.capture('camera') },
-      { text: 'Elegir de galería', onPress: () => void photo.capture('library') },
-      { text: 'Cancelar', style: 'cancel' },
+    Alert.alert(t('diary.analyzeTitle'), t('diary.analyzePickMsg'), [
+      { text: t('diary.photoCamera'), onPress: () => void photo.capture('camera') },
+      { text: t('diary.photoGallery'), onPress: () => void photo.capture('library') },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
   };
 
@@ -96,8 +98,8 @@ export function DiaryScreen() {
   const tryAddSupplement = (open: () => void) => {
     if (!isPro && supplements.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
       Alert.alert(
-        'Límite alcanzado',
-        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`
+        t('diary.limitTitle'),
+        t('diary.limitMsg', { count: FREE_SUPPLEMENT_LIMIT })
       );
       return;
     }
@@ -124,7 +126,10 @@ export function DiaryScreen() {
   const changeDate = (delta: number) => {
     const next = addDays(selectedDate, delta);
     if (!isPro && daysBetween(next, todayISO()) > FREE_HISTORY_DAYS) {
-      Alert.alert('Historial limitado', `El plan free permite ver ${FREE_HISTORY_DAYS} días atrás. Hazte Pro para historial ilimitado.`);
+      Alert.alert(
+        t('diary.historyLimitTitle'),
+        t('diary.historyLimitMsg', { count: FREE_HISTORY_DAYS })
+      );
       return;
     }
     setDate(next);
@@ -138,9 +143,9 @@ export function DiaryScreen() {
   }, [entries]);
 
   const onDelete = (entry: FoodLogEntry) => {
-    Alert.alert('Eliminar', `¿Eliminar "${entry.food_name}"?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => void deleteEntry(entry.id) },
+    Alert.alert(t('diary.deleteTitle'), t('diary.deleteConfirm', { name: entry.food_name }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: () => void deleteEntry(entry.id) },
     ]);
   };
 
@@ -151,8 +156,8 @@ export function DiaryScreen() {
       ? copyMealEntries(user.id, from, selectedDate, mealType)
       : copyDayEntries(user.id, from, selectedDate);
     void action.then(({ count, error }) => {
-      if (error) Alert.alert('Error', error);
-      else if (count === 0) Alert.alert('Nada que copiar', 'Ayer no hay registros para copiar.');
+      if (error) Alert.alert(t('common.error'), error);
+      else if (count === 0) Alert.alert(t('diary.nothingToCopy'), t('diary.nothingToCopyMsg'));
     });
   };
 
@@ -169,22 +174,22 @@ export function DiaryScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: t.background }}
+      style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md, gap: spacing.lg, paddingBottom: spacing.xxl }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       {/* Selector de fecha */}
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Pressable onPress={() => changeDate(-1)} hitSlop={12}>
-          <Text style={{ fontSize: 26, color: t.primary, fontWeight: '800' }}>‹</Text>
+          <Text style={{ fontSize: 26, color: theme.primary, fontWeight: '800' }}>‹</Text>
         </Pressable>
         <Pressable onLongPress={() => setDate(todayISO())}>
-          <Text style={{ fontSize: 18, fontWeight: '800', color: t.text }}>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>
             {formatDateHuman(selectedDate)}
           </Text>
         </Pressable>
         <Pressable onPress={() => changeDate(1)} hitSlop={12}>
-          <Text style={{ fontSize: 26, color: t.primary, fontWeight: '800' }}>›</Text>
+          <Text style={{ fontSize: 26, color: theme.primary, fontWeight: '800' }}>›</Text>
         </Pressable>
       </View>
 
@@ -192,31 +197,31 @@ export function DiaryScreen() {
       <Card style={{ gap: spacing.md }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
           <ProgressRing progress={calProgress} size={80} strokeWidth={7} color={semantic.success}>
-            <Text style={{ fontSize: 16, fontWeight: '800', color: t.text }}>{Math.round(calProgress * 100)}</Text>
-            <Text style={{ fontSize: 9, color: t.textMuted }}>%</Text>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: theme.text }}>{Math.round(calProgress * 100)}</Text>
+            <Text style={{ fontSize: 9, color: theme.textMuted }}>%</Text>
           </ProgressRing>
           <View style={{ flex: 1, gap: 4 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View>
-                <Text style={{ fontSize: 13, color: t.textSecondary, fontWeight: '600' }}>Comido</Text>
-                <Text style={{ fontSize: 26, fontWeight: '800', color: t.text }}>
+                <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: '600' }}>{t('diary.eaten')}</Text>
+                <Text style={{ fontSize: 26, fontWeight: '800', color: theme.text }}>
                   {Math.round(summary.calories)}
-                  <Text style={{ fontSize: 13, color: t.textMuted }}> kcal</Text>
+                  <Text style={{ fontSize: 13, color: theme.textMuted }}> kcal</Text>
                 </Text>
               </View>
               {remaining !== null ? (
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={{ fontSize: 11, color: t.textSecondary }}>Restante</Text>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: remaining === 0 ? semantic.success : t.text }}>
+                  <Text style={{ fontSize: 11, color: theme.textSecondary }}>{t('diary.remaining')}</Text>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: remaining === 0 ? semantic.success : theme.text }}>
                     {remaining}
-                    <Text style={{ fontSize: 11, color: t.textMuted }}> kcal</Text>
+                    <Text style={{ fontSize: 11, color: theme.textMuted }}> kcal</Text>
                   </Text>
                 </View>
               ) : null}
             </View>
             {profile?.streak_count ? (
-              <Text style={{ color: t.textSecondary, fontWeight: '700', fontSize: 12 }}>
-                🔥 Racha: {profile.streak_count} días
+              <Text style={{ color: theme.textSecondary, fontWeight: '700', fontSize: 12 }}>
+                {t('diary.streakBadge', { count: profile.streak_count })}
               </Text>
             ) : null}
           </View>
@@ -234,7 +239,7 @@ export function DiaryScreen() {
           flexDirection: 'row',
           alignItems: 'center',
           gap: spacing.md,
-          backgroundColor: t.primary,
+          backgroundColor: theme.primary,
           borderRadius: radii.lg,
           padding: spacing.md,
           opacity: pressed || photo.analyzing ? 0.85 : 1,
@@ -255,14 +260,14 @@ export function DiaryScreen() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>
-            {photo.analyzing ? 'Analizando tu plato…' : 'Analizar plato con IA'}
+            {photo.analyzing ? t('diary.analyzing') : t('diary.analyzeBtn')}
           </Text>
           <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>
             {isPro
-              ? 'Foto → calorías y macros al instante'
+              ? t('diary.analyzeSubPro')
               : photo.remaining != null
-              ? `Te quedan ${photo.remaining} de ${photo.limit} análisis hoy`
-              : `${photo.limit} análisis gratis al día`}
+              ? t('diary.analyzeSubFree', { remaining: photo.remaining, limit: photo.limit })
+              : t('diary.analyzeSubGuest', { limit: photo.limit })}
           </Text>
         </View>
         {!photo.analyzing ? <Ionicons name={'sparkles' as any} size={18} color="#fff" /> : null}
@@ -274,20 +279,20 @@ export function DiaryScreen() {
         return (
           <Card key={type} style={{ gap: spacing.sm }}>
             <SectionHeader
-              title={`${MEAL_ICONS[type]} ${MEAL_LABELS[type]}`}
+              title={`${MEAL_ICONS[type]} ${t(`meals.${type}` as any)}`}
               right={
                 <View style={{ flexDirection: 'row', gap: spacing.lg, alignItems: 'center' }}>
-                  {kcal > 0 ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{Math.round(kcal)} kcal</Text> : null}
+                  {kcal > 0 ? <Text style={{ color: theme.textMuted, fontSize: 13 }}>{Math.round(kcal)} kcal</Text> : null}
                   <Pressable onPress={() => navigation.navigate('Search', { mealType: type })} hitSlop={8}>
-                    <Text style={{ color: t.primary, fontSize: 22, fontWeight: '800' }}>＋</Text>
+                    <Text style={{ color: theme.primary, fontSize: 22, fontWeight: '800' }}>＋</Text>
                   </Pressable>
                 </View>
               }
             />
             {mealEntries.length === 0 ? (
               <Pressable onLongPress={() => copyFromYesterday(type)}>
-                <Text style={{ color: t.textMuted, fontSize: 13 }}>
-                  Sin registros · mantén pulsado para copiar de ayer
+                <Text style={{ color: theme.textMuted, fontSize: 13 }}>
+                  {t('diary.noEntries')}
                 </Text>
               </Pressable>
             ) : (
@@ -307,14 +312,14 @@ export function DiaryScreen() {
                     }}
                   >
                     <View style={{ flex: 1, paddingRight: spacing.md }}>
-                      <Text style={{ color: t.text, fontWeight: '600' }} numberOfLines={1}>
+                      <Text style={{ color: theme.text, fontWeight: '600' }} numberOfLines={1}>
                         {e.food_name}
                       </Text>
-                      <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                      <Text style={{ color: theme.textMuted, fontSize: 12 }}>
                         {e.serving_size_g} g{e.brand ? ` · ${e.brand}` : ''}
                       </Text>
                     </View>
-                    <Text style={{ color: t.textSecondary, fontWeight: '700' }}>{Math.round(e.calories)}</Text>
+                    <Text style={{ color: theme.textSecondary, fontWeight: '700' }}>{Math.round(e.calories)}</Text>
                   </View>
                 </SwipeableRow>
               ))
@@ -332,14 +337,14 @@ export function DiaryScreen() {
                 fontSize: 11,
                 fontWeight: '700',
                 letterSpacing: 0.8,
-                color: t.textMuted,
+                color: theme.textMuted,
                 textTransform: 'uppercase',
               }}
             >
-              Suplementos de hoy
+              {t('diary.supplementsToday')}
             </Text>
             {supplements.supplements.length > 0 ? (
-              <Text style={{ color: t.textMuted, fontSize: 11 }}>
+              <Text style={{ color: theme.textMuted, fontSize: 11 }}>
                 · {Object.keys(supplements.takenToday).length}/{supplements.supplements.length}
               </Text>
             ) : null}
@@ -350,12 +355,12 @@ export function DiaryScreen() {
             hitSlop={8}
             style={({ pressed }) => ({
               width: 32, height: 32, borderRadius: 16,
-              backgroundColor: t.primarySoft,
+              backgroundColor: theme.primarySoft,
               alignItems: 'center', justifyContent: 'center',
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Ionicons name={'add' as any} size={20} color={t.primary} />
+            <Ionicons name={'add' as any} size={20} color={theme.primary} />
           </Pressable>
         </View>
 
@@ -365,7 +370,7 @@ export function DiaryScreen() {
             style={({ pressed }) => ({
               borderWidth: 1,
               borderStyle: 'dashed',
-              borderColor: t.cardBorder,
+              borderColor: theme.cardBorder,
               borderRadius: radii.lg,
               padding: spacing.lg,
               alignItems: 'center',
@@ -373,13 +378,12 @@ export function DiaryScreen() {
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Ionicons name={'fitness-outline' as any} size={22} color={t.primary} />
-            <Text style={{ color: t.text, fontSize: 14, fontWeight: '700' }}>
-              Empieza tu rutina
+            <Ionicons name={'fitness-outline' as any} size={22} color={theme.primary} />
+            <Text style={{ color: theme.text, fontSize: 14, fontWeight: '700' }}>
+              {t('diary.supplementStart')}
             </Text>
-            <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
-              Los más habituales en dieta vegana: B12 (esencial), vitamina D,
-              omega-3 de algas y yodo. Toca para elegir uno y registrar tu primera toma.
+            <Text style={{ color: theme.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
+              {t('diary.supplementStartHint')}
             </Text>
           </Pressable>
         ) : (
@@ -399,15 +403,15 @@ export function DiaryScreen() {
                     paddingHorizontal: spacing.md,
                     borderRadius: radii.lg,
                     borderWidth: 1,
-                    borderColor: taken ? t.primary : t.cardBorder,
-                    backgroundColor: taken ? t.primarySoft : t.card,
+                    borderColor: taken ? theme.primary : theme.cardBorder,
+                    backgroundColor: taken ? theme.primarySoft : theme.card,
                     opacity: pressed ? 0.7 : 1,
                   })}
                 >
                   <View
                     style={{
                       width: 40, height: 40, borderRadius: 20,
-                      backgroundColor: t.background,
+                      backgroundColor: theme.background,
                       alignItems: 'center', justifyContent: 'center',
                     }}
                   >
@@ -417,7 +421,7 @@ export function DiaryScreen() {
                   <View style={{ flex: 1 }}>
                     <Text
                       style={{
-                        color: taken ? t.primary : t.text,
+                        color: taken ? theme.primary : theme.text,
                         fontWeight: '700',
                         fontSize: 14,
                       }}
@@ -425,7 +429,7 @@ export function DiaryScreen() {
                     >
                       {s.name}
                     </Text>
-                    <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                    <Text style={{ color: theme.textMuted, fontSize: 12 }}>
                       {s.dose_amount} {s.dose_unit}
                     </Text>
                   </View>
@@ -439,15 +443,15 @@ export function DiaryScreen() {
                       alignItems: 'center', justifyContent: 'center',
                     }}
                   >
-                    <Ionicons name={'ellipsis-horizontal' as any} size={16} color={t.textMuted} />
+                    <Ionicons name={'ellipsis-horizontal' as any} size={16} color={theme.textMuted} />
                   </Pressable>
 
                   <View
                     style={{
                       width: 26, height: 26, borderRadius: 13,
                       borderWidth: 1.5,
-                      borderColor: taken ? t.primary : t.cardBorder,
-                      backgroundColor: taken ? t.primary : 'transparent',
+                      borderColor: taken ? theme.primary : theme.cardBorder,
+                      backgroundColor: taken ? theme.primary : 'transparent',
                       alignItems: 'center', justifyContent: 'center',
                     }}
                   >
@@ -457,16 +461,16 @@ export function DiaryScreen() {
               );
             })}
 
-            <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
-              Toca para marcar como tomado. Mantén pulsado para editar.
+            <Text style={{ color: theme.textMuted, fontSize: 11, textAlign: 'center', marginTop: 4 }}>
+              {t('diary.supplementHint')}
             </Text>
           </View>
         )}
       </Card>
 
-      <Button title="Copiar todo el día de ayer" variant="secondary" onPress={() => copyFromYesterday()} />
+      <Button title={t('diary.copyYesterday')} variant="secondary" onPress={() => copyFromYesterday()} />
 
-      {entries.length === 0 && <EmptyState emoji="🥗" text="Aún no has registrado nada hoy. Toca ＋ en una comida para buscar alimentos." />}
+      {entries.length === 0 && <EmptyState emoji="🥗" text={t('diary.emptyText')} />}
 
       {editing ? (
         <ProductDetailSheet
@@ -522,7 +526,7 @@ export function DiaryScreen() {
       {suppEditor && typeof suppEditor === 'object' && 'preset' in suppEditor ? (
         <SupplementEditor
           visible
-          title="Añadir suplemento"
+          title={t('diary.addSupplement')}
           initial={{
             name: SUPPLEMENT_PRESETS[suppEditor.preset].name,
             emoji: SUPPLEMENT_PRESETS[suppEditor.preset].emoji,
@@ -532,7 +536,7 @@ export function DiaryScreen() {
           }}
           onClose={() => setSuppEditor(null)}
           onSave={async (draft) => {
-            if (!user) return { error: 'No hay sesión' };
+            if (!user) return { error: t('diary.noSession') };
             return supplements.createSupplement(user.id, draft);
           }}
         />
@@ -542,11 +546,11 @@ export function DiaryScreen() {
       {suppEditor === 'new' ? (
         <SupplementEditor
           visible
-          title="Nuevo suplemento"
+          title={t('diary.newSupplement')}
           initial={{ name: '', emoji: '💊', nutrient_key: null, dose_amount: 1, dose_unit: 'mg' }}
           onClose={() => setSuppEditor(null)}
           onSave={async (draft) => {
-            if (!user) return { error: 'No hay sesión' };
+            if (!user) return { error: t('diary.noSession') };
             return supplements.createSupplement(user.id, draft);
           }}
         />
@@ -556,7 +560,7 @@ export function DiaryScreen() {
       {suppEditor && typeof suppEditor === 'object' && 'id' in suppEditor ? (
         <SupplementEditor
           visible
-          title="Editar suplemento"
+          title={t('diary.editSupplement')}
           initial={{
             name: suppEditor.name,
             emoji: suppEditor.emoji,
@@ -585,17 +589,16 @@ function SupplementPickerSheet({
   onChoosePreset: (index: number) => void;
   onChooseCustom: () => void;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   return (
     <BottomSheet visible={visible} onClose={onClose}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
-        <Text style={{ fontSize: 24, fontWeight: '700', color: t.text }}>
-          Añadir suplemento
+        <Text style={{ fontSize: 24, fontWeight: '700', color: theme.text }}>
+          {t('diary.addSupplement')}
         </Text>
-        <Text style={{ color: t.textSecondary, fontSize: 13, lineHeight: 18 }}>
-          Toca uno de los suplementos típicos en dieta vegana para ajustar la
-          dosis y guardarlo. Puedes añadir el mismo varias veces si lo tomas
-          en varios momentos del día (p. ej. B12 por la mañana y por la noche).
+        <Text style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 18 }}>
+          {t('diary.pickerHint')}
         </Text>
 
         {/* Crear personalizado destacado */}
@@ -612,14 +615,14 @@ function SupplementPickerSheet({
             paddingVertical: spacing.md,
             borderRadius: radii.lg,
             borderWidth: 1.5,
-            borderColor: t.primary,
-            backgroundColor: t.primarySoft,
+            borderColor: theme.primary,
+            backgroundColor: theme.primarySoft,
             opacity: pressed ? 0.7 : 1,
           })}
         >
-          <Ionicons name={'create-outline' as any} size={18} color={t.primary} />
-          <Text style={{ color: t.primary, fontWeight: '700', fontSize: 14 }}>
-            Crear uno personalizado
+          <Ionicons name={'create-outline' as any} size={18} color={theme.primary} />
+          <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 14 }}>
+            {t('diary.createCustom')}
           </Text>
         </Pressable>
 
@@ -628,12 +631,12 @@ function SupplementPickerSheet({
             fontSize: 11,
             fontWeight: '700',
             letterSpacing: 0.8,
-            color: t.textMuted,
+            color: theme.textMuted,
             textTransform: 'uppercase',
             marginTop: spacing.sm,
           }}
         >
-          Suplementos típicos en dieta vegana
+          {t('diary.typicalSupplements')}
         </Text>
 
         {SUPPLEMENT_PRESETS.map((p, i) => (
@@ -656,19 +659,19 @@ function SupplementPickerSheet({
             <View
               style={{
                 width: 40, height: 40, borderRadius: 20,
-                backgroundColor: t.background,
+                backgroundColor: theme.background,
                 alignItems: 'center', justifyContent: 'center',
               }}
             >
               <Text style={{ fontSize: 20 }}>{p.emoji}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }}>{p.name}</Text>
-              <Text style={{ color: t.textMuted, fontSize: 11 }}>
-                Sugerido: {p.dose_amount} {p.dose_unit}
+              <Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}>{p.name}</Text>
+              <Text style={{ color: theme.textMuted, fontSize: 11 }}>
+                {t('diary.supplementSuggested', { amount: p.dose_amount, unit: p.dose_unit })}
               </Text>
             </View>
-            <Ionicons name={'add-circle-outline' as any} size={20} color={t.primary} />
+            <Ionicons name={'add-circle-outline' as any} size={20} color={theme.primary} />
           </Pressable>
         ))}
       </View>

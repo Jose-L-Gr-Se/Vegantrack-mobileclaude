@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, Input, SectionHeader } from '@/components/ui';
-import { MEAL_LABELS } from '@/components/AddFoodModal';
+import { useTranslation } from 'react-i18next';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { computeRecipeNutrients, useRecipeStore } from '@/stores/recipeStore';
@@ -19,8 +19,11 @@ import { FREE_RECIPE_LIMIT, usePro } from '@/hooks/usePro';
 import { todayISO } from '@/utils/dates';
 import type { FoodPer100g, MealType, OpenFoodFactsProduct, Recipe } from '@/types';
 
+const MEAL_KEYS: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
 export function RecipesScreen() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { user } = useAuthStore();
@@ -74,7 +77,7 @@ export function RecipesScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: t.background }}
+      style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={{
         paddingHorizontal: spacing.lg,
         paddingTop: insets.top + spacing.md,
@@ -84,7 +87,7 @@ export function RecipesScreen() {
     >
       {/* Header row */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 30, fontWeight: '700', color: t.text }}>Recetas</Text>
+        <Text style={{ fontSize: 30, fontWeight: '700', color: theme.text }}>Recetas</Text>
         <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
           <Pressable
             onPress={() => setShowCreate(true)}
@@ -92,7 +95,7 @@ export function RecipesScreen() {
               width: 36,
               height: 36,
               borderRadius: radii.pill,
-              backgroundColor: t.primary,
+              backgroundColor: theme.primary,
               alignItems: 'center',
               justifyContent: 'center',
               opacity: pressed ? 0.8 : 1,
@@ -101,7 +104,7 @@ export function RecipesScreen() {
             <Ionicons name={'add' as any} size={22} color="#fff" />
           </Pressable>
           <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-            <Text style={{ color: t.primary, fontWeight: '700' }}>Cerrar</Text>
+            <Text style={{ color: theme.primary, fontWeight: '700' }}>Cerrar</Text>
           </Pressable>
         </View>
       </View>
@@ -121,13 +124,13 @@ export function RecipesScreen() {
             <Pressable key={r.id} onPress={() => setSelectedId(r.id)}>
               <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
                 <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={{ color: t.text, fontWeight: '700', fontSize: 16 }}>{r.name}</Text>
-                  <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                  <Text style={{ color: theme.text, fontWeight: '700', fontSize: 16 }}>{r.name}</Text>
+                  <Text style={{ color: theme.textMuted, fontSize: 12 }}>
                     {r.total_servings} raciones · {Math.round(perServing)} kcal ·{' '}
                     {Math.round(protPerServing)}g prot
                   </Text>
                 </View>
-                <Ionicons name={'chevron-forward' as any} size={16} color={t.textMuted} />
+                <Ionicons name={'chevron-forward' as any} size={16} color={theme.textMuted} />
               </Card>
             </Pressable>
           );
@@ -150,7 +153,7 @@ export function RecipesScreen() {
           }}
         >
           <Card style={{ gap: spacing.md }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>Nueva receta</Text>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: theme.text }}>Nueva receta</Text>
             <Input
               label="Nombre"
               value={name}
@@ -190,7 +193,8 @@ function RecipeDetail({
   onBack: () => void;
   topInset: number;
 }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const { user } = useAuthStore();
   const store = useRecipeStore();
 
@@ -240,7 +244,7 @@ function RecipeDetail({
     if (error) Alert.alert('Error', error);
     else {
       setShowLog(false);
-      Alert.alert('✓', `${recipe.name} añadida a ${MEAL_LABELS[logMeal]}`);
+      Alert.alert('✓', `${recipe.name} añadida a ${t(`meals.${logMeal}` as any)}`);
     }
   };
 
@@ -255,7 +259,7 @@ function RecipeDetail({
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: t.background }}
+      style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={{
         paddingHorizontal: spacing.lg,
         paddingTop: topInset + spacing.md,
@@ -271,8 +275,8 @@ function RecipeDetail({
           hitSlop={8}
           style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}
         >
-          <Ionicons name={'arrow-back' as any} size={20} color={t.primary} />
-          <Text style={{ color: t.primary, fontWeight: '700', fontSize: 15 }}>Recetas</Text>
+          <Ionicons name={'arrow-back' as any} size={20} color={theme.primary} />
+          <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 15 }}>Recetas</Text>
         </Pressable>
         <Pressable
           onPress={() =>
@@ -333,15 +337,15 @@ function RecipeDetail({
         ) : (
           <View style={{ gap: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Text style={{ fontSize: 26, fontWeight: '700', color: t.text, flex: 1 }}>{recipe.name}</Text>
+              <Text style={{ fontSize: 26, fontWeight: '700', color: theme.text, flex: 1 }}>{recipe.name}</Text>
               <Pressable onPress={() => setEditingHeader(true)} hitSlop={8}>
-                <Ionicons name={'pencil-outline' as any} size={20} color={t.textMuted} />
+                <Ionicons name={'pencil-outline' as any} size={20} color={theme.textMuted} />
               </Pressable>
             </View>
             {recipe.description ? (
-              <Text style={{ color: t.textMuted, fontSize: 14 }}>{recipe.description}</Text>
+              <Text style={{ color: theme.textMuted, fontSize: 14 }}>{recipe.description}</Text>
             ) : null}
-            <Text style={{ color: t.textSecondary, fontSize: 13, marginTop: 2 }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 13, marginTop: 2 }}>
               {recipe.total_servings} raciones · {Math.round(totals.total_g)} g total
             </Text>
           </View>
@@ -354,10 +358,10 @@ function RecipeDetail({
               key={label}
               style={{
                 flex: 1,
-                backgroundColor: t.background,
+                backgroundColor: theme.background,
                 borderRadius: radii.sm,
                 borderWidth: 1,
-                borderColor: t.cardBorder,
+                borderColor: theme.cardBorder,
                 borderTopWidth: 2,
                 borderTopColor: color,
                 padding: spacing.sm,
@@ -365,13 +369,13 @@ function RecipeDetail({
                 gap: 2,
               }}
             >
-              <Text style={{ fontSize: 15, fontWeight: '800', color: t.text }}>{value}</Text>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: theme.text }}>{value}</Text>
               <Text
                 style={{
                   fontSize: 9,
                   fontWeight: '700',
                   letterSpacing: 0.5,
-                  color: t.textMuted,
+                  color: theme.textMuted,
                   textTransform: 'uppercase',
                 }}
               >
@@ -380,7 +384,7 @@ function RecipeDetail({
             </View>
           ))}
         </View>
-        <Text style={{ fontSize: 11, color: t.textMuted, textAlign: 'center' }}>
+        <Text style={{ fontSize: 11, color: theme.textMuted, textAlign: 'center' }}>
           por ración
         </Text>
       </Card>
@@ -395,7 +399,7 @@ function RecipeDetail({
             fontSize: 11,
             fontWeight: '700',
             letterSpacing: 0.8,
-            color: t.textMuted,
+            color: theme.textMuted,
             textTransform: 'uppercase',
             marginBottom: spacing.sm,
           }}
@@ -406,7 +410,7 @@ function RecipeDetail({
           {recipe.ingredients.length === 0 ? (
             <Text
               style={{
-                color: t.textMuted,
+                color: theme.textMuted,
                 fontSize: 13,
                 paddingVertical: spacing.md,
               }}
@@ -425,22 +429,22 @@ function RecipeDetail({
                     alignItems: 'center',
                     gap: spacing.md,
                     borderBottomWidth: idx < recipe.ingredients.length - 1 ? 1 : 0,
-                    borderBottomColor: t.separator,
+                    borderBottomColor: theme.separator,
                   }}
                 >
                   <View style={{ flex: 1 }}>
                     <Text
-                      style={{ color: t.text, fontWeight: '700', fontSize: 14 }}
+                      style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}
                       numberOfLines={1}
                     >
                       {ing.food_name}
                     </Text>
-                    <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                    <Text style={{ color: theme.textMuted, fontSize: 12 }}>
                       {ing.serving_size_g} g
                     </Text>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ color: t.textSecondary, fontWeight: '600', fontSize: 13 }}>
+                    <Text style={{ color: theme.textSecondary, fontWeight: '600', fontSize: 13 }}>
                       {Math.round(ingKcal)} kcal
                     </Text>
                     <Pressable
@@ -453,7 +457,7 @@ function RecipeDetail({
                       hitSlop={8}
                       style={{ marginLeft: spacing.sm }}
                     >
-                      <Ionicons name={'close-circle-outline' as any} size={18} color={t.textMuted} />
+                      <Ionicons name={'close-circle-outline' as any} size={18} color={theme.textMuted} />
                     </Pressable>
                   </View>
                 </View>
@@ -489,7 +493,7 @@ function RecipeDetail({
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Text style={{ color: t.text, fontSize: 14 }}>
+            <Text style={{ color: theme.text, fontSize: 14 }}>
               {item.emoji} {item.name}
             </Text>
           </Pressable>
@@ -503,9 +507,9 @@ function RecipeDetail({
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Text style={{ color: t.text, fontSize: 14 }} numberOfLines={1}>
+            <Text style={{ color: theme.text, fontSize: 14 }} numberOfLines={1}>
               {p.product_name}{' '}
-              <Text style={{ color: t.textMuted, fontSize: 12 }}>({p.brands || '—'})</Text>
+              <Text style={{ color: theme.textMuted, fontSize: 12 }}>({p.brands || '—'})</Text>
             </Text>
           </Pressable>
         ))}
@@ -515,11 +519,11 @@ function RecipeDetail({
             style={{
               gap: spacing.md,
               borderTopWidth: 1,
-              borderTopColor: t.separator,
+              borderTopColor: theme.separator,
               paddingTop: spacing.md,
             }}
           >
-            <Text style={{ color: t.text, fontWeight: '700', fontSize: 15 }}>
+            <Text style={{ color: theme.text, fontWeight: '700', fontSize: 15 }}>
               {pendingFood.food_name}
             </Text>
             <Input
@@ -549,7 +553,7 @@ function RecipeDetail({
           }}
         >
           <Card style={{ gap: spacing.md }}>
-            <Text style={{ fontSize: 18, fontWeight: '800', color: t.text }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>
               Loguear "{recipe.name}"
             </Text>
 
@@ -560,14 +564,14 @@ function RecipeDetail({
                   fontSize: 11,
                   fontWeight: '700',
                   letterSpacing: 0.8,
-                  color: t.textMuted,
+                  color: theme.textMuted,
                   textTransform: 'uppercase',
                 }}
               >
                 Comida
               </Text>
               <View style={{ flexDirection: 'row', gap: spacing.xs }}>
-                {(Object.keys(MEAL_LABELS) as MealType[]).map((m) => (
+                {MEAL_KEYS.map((m) => (
                   <Pressable
                     key={m}
                     onPress={() => setLogMeal(m)}
@@ -577,18 +581,18 @@ function RecipeDetail({
                       paddingVertical: spacing.sm,
                       borderRadius: radii.pill,
                       borderWidth: 1.5,
-                      borderColor: logMeal === m ? t.primary : t.cardBorder,
-                      backgroundColor: logMeal === m ? t.primarySoft : 'transparent',
+                      borderColor: logMeal === m ? theme.primary : theme.cardBorder,
+                      backgroundColor: logMeal === m ? theme.primarySoft : 'transparent',
                     }}
                   >
                     <Text
                       style={{
                         fontSize: 11,
                         fontWeight: '700',
-                        color: logMeal === m ? t.primary : t.textSecondary,
+                        color: logMeal === m ? theme.primary : theme.textSecondary,
                       }}
                     >
-                      {MEAL_LABELS[m]}
+                      {t(`meals.${m}` as any)}
                     </Text>
                   </Pressable>
                 ))}
