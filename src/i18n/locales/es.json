@@ -161,5 +161,115 @@
       "invalidAmount": "Introduce una cantidad válida en gramos",
       "added": "{{name}} añadido a {{meal}}"
     }
+  },
+  "profile": {
+    "title": "Perfil",
+    "noName": "Sin nombre",
+    "editProfile": "Editar perfil",
+    "dailyTargets": "Objetivos diarios",
+    "tools": "Herramientas",
+    "myRecipes": "Mis recetas",
+    "myFoods": "Mis alimentos",
+    "microTrends": "Tendencias de micros",
+    "microTrendsSub": "Pro",
+    "reminder": "Recordatorio diario",
+    "permissionDenied": "Permiso denegado",
+    "permissionMsg": "Activa las notificaciones de Vegetrack en Ajustes de Android.",
+    "appearance": "Apariencia",
+    "appearanceHint": "\"Sistema\" sigue automáticamente la apariencia de tu dispositivo.",
+    "themeSystem": "Sistema",
+    "themeLight": "Claro",
+    "themeDark": "Oscuro",
+    "account": "Cuenta",
+    "exportCsv": "Exportar diario CSV",
+    "unlockPro": "Desbloquea Pro",
+    "unlockProSub": "Historial y recetas ilimitados",
+    "logout": "Cerrar sesión",
+    "language": "Idioma",
+    "activity": {
+      "sedentary": "Sedentario",
+      "light": "Ligero",
+      "moderate": "Moderado",
+      "active": "Activo",
+      "very_active": "Muy activo"
+    },
+    "goal": {
+      "cut": "Perder grasa",
+      "maintain": "Mantener",
+      "bulk": "Ganar masa"
+    },
+    "editModal": {
+      "title": "Editar perfil",
+      "name": "Nombre",
+      "height": "Altura (cm)",
+      "weight": "Peso (kg)",
+      "activityLabel": "Actividad",
+      "goalLabel": "Objetivo",
+      "save": "Guardar (recalcula objetivos)"
+    },
+    "supplementsModal": {
+      "title": "Suplementos",
+      "mine": "Mis suplementos",
+      "createCustom": "Crear suplemento personalizado",
+      "startFromPreset": "Empezar desde un preset",
+      "presetHint": "Toca uno para revisar dosis y guardarlo. Puedes añadir el mismo varias veces (p. ej. una toma por la mañana y otra por la noche)."
+    },
+    "customFood": {
+      "title": "Mis alimentos",
+      "create": "Crear alimento personalizado",
+      "editTitle": "Editar alimento",
+      "createTitle": "Crear alimento (valores por 100 g)",
+      "save": "Guardar cambios",
+      "saveCreate": "Crear alimento",
+      "empty": "Aún no tienes alimentos personalizados. Crea uno con los valores nutricionales por 100 g."
+    }
+  },
+  "onboarding": {
+    "step1Title": "Tu punto de partida",
+    "step1Sub": "Calculamos tu metabolismo con la fórmula Mifflin-St Jeor",
+    "step2Title": "Tu ritmo de vida",
+    "step2Sub": "Ajustamos las calorías a tu actividad diaria",
+    "step3Title": "Tu objetivo",
+    "step3Sub": "Todo empieza con saber a dónde quieres llegar",
+    "name": "Nombre",
+    "namePlaceholder": "¿Cómo te llamas?",
+    "height": "Altura (cm)",
+    "weight": "Peso (kg)",
+    "birthDate": "Fecha de nacimiento (AAAA-MM-DD)",
+    "sex": "Sexo biológico",
+    "male": "Hombre",
+    "female": "Mujer",
+    "next": "Siguiente →",
+    "back": "Atrás",
+    "finish": "Calcular objetivos ✓",
+    "calcError": "Revisa los datos: no se pudieron calcular tus objetivos.",
+    "activity": {
+      "sedentary": "Sedentario",
+      "sedentaryDesc": "Sin ejercicio",
+      "light": "Ligero",
+      "lightDesc": "1-2 días/semana",
+      "moderate": "Moderado",
+      "moderateDesc": "3-4 días/semana",
+      "active": "Activo",
+      "activeDesc": "5-6 días/semana",
+      "very_active": "Muy activo",
+      "very_activeDesc": "Ejercicio intenso diario"
+    },
+    "goal": {
+      "cut": "Perder grasa",
+      "cutDesc": "Déficit de 500 kcal",
+      "maintain": "Mantener",
+      "maintainDesc": "Calorías de mantenimiento",
+      "bulk": "Ganar masa",
+      "bulkDesc": "Superávit de 300 kcal"
+    }
+  },
+  "lang": {
+    "title": "Idioma",
+    "es": "Español",
+    "en": "English",
+    "de": "Deutsch",
+    "fr": "Français",
+    "pt": "Português"
   }
 }
