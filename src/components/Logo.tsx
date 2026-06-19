@@ -1,5 +1,5 @@
 /**
- * Marca de VeganTrack: círculo verde bosque con punto crema desplazado.
+ * Marca de Vegetrack: círculo verde bosque con punto crema desplazado.
  * Vectorial (react-native-svg) para escalar nítido en cualquier tamaño.
  * Sustituye al emoji 🌱 en splash, auth y onboarding.
  */

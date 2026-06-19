@@ -1,6 +1,6 @@
-# VeganTrack Mobile 🌱
+# Vegetrack Mobile 🌱
 
-App Android nativa (React Native + Expo) de **VeganTrack**, con paridad de
+App Android nativa (React Native + Expo) de **Vegetrack**, con paridad de
 features con la [PWA](https://github.com/Jose-L-Gr-Se/vegantrack) y mejoras
 arquitectónicas pensadas para móvil: persistencia offline-first con SQLite,
 notificaciones locales, deep linking y escáner de códigos de barras con la

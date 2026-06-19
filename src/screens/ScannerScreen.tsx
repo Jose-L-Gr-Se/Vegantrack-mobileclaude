@@ -51,7 +51,7 @@ export function ScannerScreen() {
           Escanear código de barras
         </Text>
         <Text style={{ color: t.textSecondary, textAlign: 'center', fontSize: 15 }}>
-          VeganTrack necesita acceso a la cámara para escanear códigos de barras.
+          Vegetrack necesita acceso a la cámara para escanear códigos de barras.
         </Text>
         <Button title="Conceder permiso" onPress={() => void requestPermission()} />
         <Button title="Volver" variant="secondary" onPress={() => navigation.goBack()} />

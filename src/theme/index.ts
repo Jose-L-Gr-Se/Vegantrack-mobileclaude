@@ -1,5 +1,5 @@
 /**
- * Tema de VeganTrack Mobile.
+ * Tema de Vegetrack Mobile.
  *
  * Identidad de marca: verde bosque profundo + crema cálido + tipografía
  * serif editorial (Instrument Serif para títulos). Inspirada en la landing

@@ -103,7 +103,7 @@ export function AuthScreen() {
               letterSpacing: -0.5, marginTop: spacing.sm,
             }}
           >
-            VeganTrack
+            Vegetrack
           </Text>
           <Text
             style={{
