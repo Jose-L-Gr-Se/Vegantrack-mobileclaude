@@ -161,5 +161,115 @@
       "invalidAmount": "Please enter a valid amount in grams",
       "added": "{{name}} added to {{meal}}"
     }
+  },
+  "profile": {
+    "title": "Profile",
+    "noName": "No name",
+    "editProfile": "Edit profile",
+    "dailyTargets": "Daily targets",
+    "tools": "Tools",
+    "myRecipes": "My recipes",
+    "myFoods": "My foods",
+    "microTrends": "Micro trends",
+    "microTrendsSub": "Pro",
+    "reminder": "Daily reminder",
+    "permissionDenied": "Permission denied",
+    "permissionMsg": "Enable Vegetrack notifications in Android Settings.",
+    "appearance": "Appearance",
+    "appearanceHint": "\"System\" automatically follows your device's appearance setting.",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "account": "Account",
+    "exportCsv": "Export diary CSV",
+    "unlockPro": "Unlock Pro",
+    "unlockProSub": "Unlimited history and recipes",
+    "logout": "Sign out",
+    "language": "Language",
+    "activity": {
+      "sedentary": "Sedentary",
+      "light": "Light",
+      "moderate": "Moderate",
+      "active": "Active",
+      "very_active": "Very active"
+    },
+    "goal": {
+      "cut": "Lose fat",
+      "maintain": "Maintain",
+      "bulk": "Build muscle"
+    },
+    "editModal": {
+      "title": "Edit profile",
+      "name": "Name",
+      "height": "Height (cm)",
+      "weight": "Weight (kg)",
+      "activityLabel": "Activity",
+      "goalLabel": "Goal",
+      "save": "Save (recalculate targets)"
+    },
+    "supplementsModal": {
+      "title": "Supplements",
+      "mine": "My supplements",
+      "createCustom": "Create custom supplement",
+      "startFromPreset": "Start from a preset",
+      "presetHint": "Tap one to review the dose and save it. You can add the same supplement multiple times (e.g. one dose in the morning and one at night)."
+    },
+    "customFood": {
+      "title": "My foods",
+      "create": "Create custom food",
+      "editTitle": "Edit food",
+      "createTitle": "Create food (values per 100 g)",
+      "save": "Save changes",
+      "saveCreate": "Create food",
+      "empty": "No custom foods yet. Create one with nutritional values per 100 g."
+    }
+  },
+  "onboarding": {
+    "step1Title": "Your starting point",
+    "step1Sub": "We calculate your metabolism using the Mifflin-St Jeor formula",
+    "step2Title": "Your lifestyle",
+    "step2Sub": "We adjust your calories to match your daily activity",
+    "step3Title": "Your goal",
+    "step3Sub": "It all starts with knowing where you want to go",
+    "name": "Name",
+    "namePlaceholder": "What's your name?",
+    "height": "Height (cm)",
+    "weight": "Weight (kg)",
+    "birthDate": "Date of birth (YYYY-MM-DD)",
+    "sex": "Biological sex",
+    "male": "Male",
+    "female": "Female",
+    "next": "Next →",
+    "back": "Back",
+    "finish": "Calculate targets ✓",
+    "calcError": "Please check your data: we couldn't calculate your targets.",
+    "activity": {
+      "sedentary": "Sedentary",
+      "sedentaryDesc": "No exercise",
+      "light": "Light",
+      "lightDesc": "1-2 days/week",
+      "moderate": "Moderate",
+      "moderateDesc": "3-4 days/week",
+      "active": "Active",
+      "activeDesc": "5-6 days/week",
+      "very_active": "Very active",
+      "very_activeDesc": "Intense daily exercise"
+    },
+    "goal": {
+      "cut": "Lose fat",
+      "cutDesc": "500 kcal deficit",
+      "maintain": "Maintain",
+      "maintainDesc": "Maintenance calories",
+      "bulk": "Build muscle",
+      "bulkDesc": "300 kcal surplus"
+    }
+  },
+  "lang": {
+    "title": "Language",
+    "es": "Español",
+    "en": "English",
+    "de": "Deutsch",
+    "fr": "Français",
+    "pt": "Português"
   }
 }

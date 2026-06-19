@@ -12,6 +12,7 @@ import { RootNavigator } from '@/navigation';
 import { Logo } from '@/components/Logo';
 import { useTheme } from '@/theme';
 import { useThemeStore } from '@/stores/themeStore';
+import { useLanguageStore } from '@/stores/languageStore';
 
 function SplashGate() {
   const t = useTheme();
@@ -44,7 +45,14 @@ export default function App() {
     void hydrateTheme();
   }, [hydrateTheme]);
 
-  const ready = fontsLoaded && themeHydrated;
+  // Rehidrata la preferencia de idioma desde SQLite.
+  const hydrateLanguage = useLanguageStore((s) => s.hydrate);
+  const languageHydrated = useLanguageStore((s) => s.hydrated);
+  useEffect(() => {
+    void hydrateLanguage();
+  }, [hydrateLanguage]);
+
+  const ready = fontsLoaded && themeHydrated && languageHydrated;
 
   return (
     <SafeAreaProvider>

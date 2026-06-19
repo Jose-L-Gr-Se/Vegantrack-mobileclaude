@@ -8,12 +8,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, Input, Pill, SectionHeader } from '@/components/ui';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
+import { useLanguageStore } from '@/stores/languageStore';
+import { SUPPORTED_LANGUAGES, type SupportedLanguage } from '@/i18n';
 import { calculateTargets } from '@/utils/nutrition';
 import { exportDiaryCsv } from '@/utils/exportCsv';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
@@ -28,20 +31,6 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { SupplementEditor } from '@/components/SupplementEditor';
 import type { ActivityLevel, CustomFood, Goal, Supplement } from '@/types';
 import type { RootStackParamList } from '@/navigation/types';
-
-const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
-  sedentary: 'Sedentario',
-  light: 'Ligero',
-  moderate: 'Moderado',
-  active: 'Activo',
-  very_active: 'Muy activo',
-};
-
-const GOAL_LABELS: Record<Goal, string> = {
-  cut: 'Perder grasa',
-  maintain: 'Mantener',
-  bulk: 'Ganar masa',
-};
 
 /** A reusable row inside a Card — 52px tall with icon, label+subtitle, and optional right element. */
 function MenuRow({
@@ -63,9 +52,9 @@ function MenuRow({
   iconColor?: string;
   danger?: boolean;
 }) {
-  const t = useTheme();
-  const bg = iconBg ?? t.primarySoft;
-  const ic = iconColor ?? t.primary;
+  const theme = useTheme();
+  const bg = iconBg ?? theme.primarySoft;
+  const ic = iconColor ?? theme.primary;
   return (
     <Pressable
       onPress={onPress}
@@ -94,36 +83,37 @@ function MenuRow({
           style={{
             fontWeight: '700',
             fontSize: 15,
-            color: danger ? semantic.danger : t.text,
+            color: danger ? semantic.danger : theme.text,
           }}
         >
           {label}
         </Text>
         {subtitle ? (
-          <Text style={{ fontSize: 12, color: t.textMuted }}>{subtitle}</Text>
+          <Text style={{ fontSize: 12, color: theme.textMuted }}>{subtitle}</Text>
         ) : null}
       </View>
       {badge !== undefined && badge > 0 ? (
         <View
           style={{
-            backgroundColor: t.primarySoft,
+            backgroundColor: theme.primarySoft,
             borderRadius: radii.pill,
             paddingHorizontal: 8,
             paddingVertical: 2,
           }}
         >
-          <Text style={{ color: t.primary, fontSize: 11, fontWeight: '700' }}>{badge}</Text>
+          <Text style={{ color: theme.primary, fontSize: 11, fontWeight: '700' }}>{badge}</Text>
         </View>
       ) : null}
       {!danger ? (
-        <Ionicons name={'chevron-forward' as any} size={16} color={t.textMuted} />
+        <Ionicons name={'chevron-forward' as any} size={16} color={theme.textMuted} />
       ) : null}
     </Pressable>
   );
 }
 
 export function ProfileScreen() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, profile, updateProfile, signOut } = useAuthStore();
@@ -152,10 +142,7 @@ export function ProfileScreen() {
       const ok = await scheduleDailyReminder(DEFAULT_REMINDER_HOUR);
       if (ok) setReminderHour(DEFAULT_REMINDER_HOUR);
       else
-        Alert.alert(
-          'Permiso denegado',
-          'Activa las notificaciones de Vegetrack en Ajustes de Android.'
-        );
+        Alert.alert(t('profile.permissionDenied'), t('profile.permissionMsg'));
     } else {
       await cancelDailyReminder();
       setReminderHour(null);
@@ -174,7 +161,7 @@ export function ProfileScreen() {
     setExporting(true);
     const { error } = await exportDiaryCsv(user.id, isPro);
     setExporting(false);
-    if (error) Alert.alert('Error', error);
+    if (error) Alert.alert(t('common.error'), error);
   };
 
   const openMicroTrends = () => {
@@ -200,7 +187,7 @@ export function ProfileScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: t.background }}
+      style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={{
         paddingHorizontal: spacing.lg,
         paddingTop: insets.top + spacing.md,
@@ -208,7 +195,7 @@ export function ProfileScreen() {
         paddingBottom: spacing.xxl,
       }}
     >
-      <Text style={{ fontSize: 30, fontWeight: '700', color: t.text }}>Perfil</Text>
+      <Text style={{ fontSize: 30, fontWeight: '700', color: theme.text }}>{t('profile.title')}</Text>
 
       {/* Avatar header card */}
       <Card>
@@ -219,29 +206,29 @@ export function ProfileScreen() {
               width: 56,
               height: 56,
               borderRadius: 28,
-              backgroundColor: t.primarySoft,
+              backgroundColor: theme.primarySoft,
               borderWidth: 2,
-              borderColor: t.primary,
+              borderColor: theme.primary,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Text style={{ fontSize: 26, fontWeight: '700', color: t.primary }}>{initials}</Text>
+            <Text style={{ fontSize: 26, fontWeight: '700', color: theme.primary }}>{initials}</Text>
           </View>
           {/* Name + email */}
           <View style={{ flex: 1, gap: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Text style={{ fontSize: 20, fontWeight: '700', color: t.text }}>
-                {displayName || 'Sin nombre'}
+              <Text style={{ fontSize: 20, fontWeight: '700', color: theme.text }}>
+                {displayName || t('profile.noName')}
               </Text>
               {isPro ? <Pill text="PRO ⭐" color="#f59e0b" /> : null}
             </View>
             {email ? (
-              <Text style={{ fontSize: 13, color: t.textMuted }}>{email}</Text>
+              <Text style={{ fontSize: 13, color: theme.textMuted }}>{email}</Text>
             ) : null}
             <Pressable onPress={() => setEditing(true)} hitSlop={8}>
-              <Text style={{ fontSize: 13, color: t.primary, fontWeight: '700', marginTop: 2 }}>
-                Editar perfil
+              <Text style={{ fontSize: 13, color: theme.primary, fontWeight: '700', marginTop: 2 }}>
+                {t('profile.editProfile')}
               </Text>
             </Pressable>
           </View>
@@ -255,12 +242,12 @@ export function ProfileScreen() {
             fontSize: 11,
             fontWeight: '700',
             letterSpacing: 0.8,
-            color: t.textMuted,
+            color: theme.textMuted,
             textTransform: 'uppercase',
             marginBottom: spacing.sm,
           }}
         >
-          Objetivos diarios
+          {t('profile.dailyTargets')}
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
           {macroChips.map(({ label, value, leftColor }) => (
@@ -269,16 +256,16 @@ export function ProfileScreen() {
               style={{
                 flex: 1,
                 minWidth: '48%',
-                backgroundColor: t.card,
+                backgroundColor: theme.card,
                 borderRadius: radii.lg,
                 borderWidth: 1,
-                borderColor: t.cardBorder,
+                borderColor: theme.cardBorder,
                 borderLeftWidth: 3,
                 borderLeftColor: leftColor,
                 padding: spacing.md,
               }}
             >
-              <Text style={{ fontSize: 18, fontWeight: '800', color: t.text }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>
                 {value ?? '—'}
               </Text>
               <Text
@@ -286,7 +273,7 @@ export function ProfileScreen() {
                   fontSize: 11,
                   fontWeight: '700',
                   letterSpacing: 0.8,
-                  color: t.textMuted,
+                  color: theme.textMuted,
                   textTransform: 'uppercase',
                   marginTop: 2,
                 }}
@@ -305,39 +292,39 @@ export function ProfileScreen() {
             fontSize: 11,
             fontWeight: '700',
             letterSpacing: 0.8,
-            color: t.textMuted,
+            color: theme.textMuted,
             textTransform: 'uppercase',
             marginBottom: spacing.sm,
           }}
         >
-          Herramientas
+          {t('profile.tools')}
         </Text>
         <Card style={{ gap: 0, padding: 0, paddingHorizontal: spacing.lg }}>
           <MenuRow
             iconName="restaurant-outline"
-            label="Mis recetas"
+            label={t('profile.myRecipes')}
             badge={undefined}
             onPress={() => navigation.navigate('Recipes')}
           />
-          <View style={{ height: 1, backgroundColor: t.separator }} />
+          <View style={{ height: 1, backgroundColor: theme.separator }} />
           <MenuRow
             iconName="fitness-outline"
-            label="Suplementos"
+            label={t('profile.supplementsModal.title')}
             badge={supplementStore.supplements.length}
             onPress={() => setShowSupplements(true)}
           />
-          <View style={{ height: 1, backgroundColor: t.separator }} />
+          <View style={{ height: 1, backgroundColor: theme.separator }} />
           <MenuRow
             iconName="star-outline"
-            label="Mis alimentos"
+            label={t('profile.myFoods')}
             badge={customFoods.customFoods.length}
             onPress={() => setShowCustomFood(true)}
           />
-          <View style={{ height: 1, backgroundColor: t.separator }} />
+          <View style={{ height: 1, backgroundColor: theme.separator }} />
           <MenuRow
             iconName="trending-up-outline"
-            label="Tendencias de micros"
-            subtitle={isPro ? undefined : 'Pro'}
+            label={t('profile.microTrends')}
+            subtitle={isPro ? undefined : t('profile.microTrendsSub')}
             onPress={openMicroTrends}
           />
         </Card>
@@ -359,12 +346,12 @@ export function ProfileScreen() {
             >
               <Ionicons name={'notifications-outline' as any} size={17} color="#f59e0b" />
             </View>
-            <Text style={{ fontWeight: '700', fontSize: 15, color: t.text }}>Recordatorio diario</Text>
+            <Text style={{ fontWeight: '700', fontSize: 15, color: theme.text }}>{t('profile.reminder')}</Text>
           </View>
           <Switch
             value={reminderHour !== null}
             onValueChange={(v) => void toggleReminder(v)}
-            trackColor={{ true: t.primary }}
+            trackColor={{ true: theme.primary }}
           />
         </View>
         {reminderHour !== null && (
@@ -377,20 +364,20 @@ export function ProfileScreen() {
             }}
           >
             <Pressable onPress={() => changeReminderHour(-1)} hitSlop={12}>
-              <Text style={{ color: t.primary, fontSize: 28, fontWeight: '800' }}>−</Text>
+              <Text style={{ color: theme.primary, fontSize: 28, fontWeight: '800' }}>−</Text>
             </Pressable>
-            <Text style={{ color: t.text, fontSize: 32, fontWeight: '800', letterSpacing: 2 }}>
+            <Text style={{ color: theme.text, fontSize: 32, fontWeight: '800', letterSpacing: 2 }}>
               {String(reminderHour).padStart(2, '0')}:00
             </Text>
             <Pressable onPress={() => changeReminderHour(1)} hitSlop={12}>
-              <Text style={{ color: t.primary, fontSize: 28, fontWeight: '800' }}>＋</Text>
+              <Text style={{ color: theme.primary, fontSize: 28, fontWeight: '800' }}>＋</Text>
             </Pressable>
           </View>
         )}
       </Card>
 
       <AppearanceCard />
-
+      <LanguageCard />
 
       {/* Account section */}
       <View>
@@ -399,28 +386,28 @@ export function ProfileScreen() {
             fontSize: 11,
             fontWeight: '700',
             letterSpacing: 0.8,
-            color: t.textMuted,
+            color: theme.textMuted,
             textTransform: 'uppercase',
             marginBottom: spacing.sm,
           }}
         >
-          Cuenta
+          {t('profile.account')}
         </Text>
         <Card style={{ gap: 0, padding: 0, paddingHorizontal: spacing.lg }}>
           <MenuRow
             iconName="document-text-outline"
-            label="Exportar diario CSV"
+            label={t('profile.exportCsv')}
             onPress={onExport}
           />
           {!isPro && (
             <>
-              <View style={{ height: 1, backgroundColor: t.separator }} />
+              <View style={{ height: 1, backgroundColor: theme.separator }} />
               <Pressable
                 onPress={() => setShowPro(true)}
                 style={({ pressed }) => ({
                   marginVertical: spacing.sm,
                   borderRadius: radii.lg,
-                  backgroundColor: t.primarySoft,
+                  backgroundColor: theme.primarySoft,
                   borderWidth: 1,
                   borderColor: semantic.success,
                   padding: spacing.md,
@@ -433,21 +420,21 @@ export function ProfileScreen() {
                 <Text style={{ fontSize: 20 }}>👑</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontWeight: '800', fontSize: 14, color: semantic.success }}>
-                    Desbloquea Pro
+                    {t('profile.unlockPro')}
                   </Text>
-                  <Text style={{ fontSize: 12, color: t.textMuted }}>
-                    Historial y recetas ilimitados
+                  <Text style={{ fontSize: 12, color: theme.textMuted }}>
+                    {t('profile.unlockProSub')}
                   </Text>
                 </View>
                 <Ionicons name={'arrow-forward' as any} size={18} color={semantic.success} />
               </Pressable>
-              <View style={{ height: 1, backgroundColor: t.separator }} />
+              <View style={{ height: 1, backgroundColor: theme.separator }} />
             </>
           )}
-          {isPro && <View style={{ height: 1, backgroundColor: t.separator }} />}
+          {isPro && <View style={{ height: 1, backgroundColor: theme.separator }} />}
           <MenuRow
             iconName="log-out-outline"
-            label="Cerrar sesión"
+            label={t('profile.logout')}
             onPress={() => void signOut()}
             iconBg="#fee2e2"
             iconColor={semantic.danger}
@@ -475,7 +462,7 @@ function OptionRow({
   icon?: string;
   onPress: () => void;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -484,26 +471,27 @@ function OptionRow({
         alignItems: 'center',
         gap: spacing.sm,
         borderWidth: 1.5,
-        borderColor: selected ? t.primary : t.cardBorder,
-        backgroundColor: selected ? t.primarySoft : t.card,
+        borderColor: selected ? theme.primary : theme.cardBorder,
+        backgroundColor: selected ? theme.primarySoft : theme.card,
         borderRadius: radii.md,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
       }}
     >
       {icon ? <Text style={{ fontSize: 16 }}>{icon}</Text> : null}
-      <Text style={{ flex: 1, fontWeight: '600', fontSize: 13, color: selected ? t.primary : t.text }}>
+      <Text style={{ flex: 1, fontWeight: '600', fontSize: 13, color: selected ? theme.primary : theme.text }}>
         {label}
       </Text>
       {selected ? (
-        <Ionicons name={'checkmark-circle' as any} size={16} color={t.primary} />
+        <Ionicons name={'checkmark-circle' as any} size={16} color={theme.primary} />
       ) : null}
     </Pressable>
   );
 }
 
 function EditProfileModal({ onClose }: { onClose: () => void }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { profile, updateProfile } = useAuthStore();
   const [height, setHeight] = useState(profile?.height_cm ? String(profile.height_cm) : '');
@@ -512,6 +500,9 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   const [activity, setActivity] = useState<ActivityLevel>(profile?.activity_level ?? 'moderate');
   const [goal, setGoal] = useState<Goal>(profile?.goal ?? 'maintain');
   const [saving, setSaving] = useState(false);
+
+  const activityKeys: ActivityLevel[] = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
+  const goalKeys: Goal[] = ['cut', 'maintain', 'bulk'];
 
   const save = async () => {
     setSaving(true);
@@ -540,7 +531,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
         : {}),
     });
     setSaving(false);
-    if (error) Alert.alert('Error', error);
+    if (error) Alert.alert(t('common.error'), error);
     else onClose();
   };
 
@@ -553,35 +544,35 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
         <Pressable onPress={() => undefined}>
           <View
             style={{
-              backgroundColor: t.card,
+              backgroundColor: theme.card,
               borderTopLeftRadius: radii.xl,
               borderTopRightRadius: radii.xl,
               paddingBottom: insets.bottom + spacing.lg,
               borderWidth: 1,
-              borderColor: t.cardBorder,
+              borderColor: theme.cardBorder,
               maxHeight: '92%',
             }}
           >
             {/* Drag handle */}
             <View style={{ alignItems: 'center', paddingTop: spacing.md, paddingBottom: spacing.sm }}>
-              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: t.separator }} />
+              <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: theme.separator }} />
             </View>
 
             <ScrollView
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ gap: spacing.lg, padding: spacing.lg, paddingTop: spacing.sm }}
             >
-              <Text style={{ fontSize: 20, fontWeight: '800', color: t.text }}>Editar perfil</Text>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: theme.text }}>{t('profile.editModal.title')}</Text>
 
-              <Input label="Nombre" value={name} onChangeText={setName} />
+              <Input label={t('profile.editModal.name')} value={name} onChangeText={setName} />
               <Input
-                label="Altura (cm)"
+                label={t('profile.editModal.height')}
                 value={height}
                 onChangeText={setHeight}
                 keyboardType="numeric"
               />
               <Input
-                label="Peso (kg)"
+                label={t('profile.editModal.weight')}
                 value={weight}
                 onChangeText={setWeight}
                 keyboardType="numeric"
@@ -593,18 +584,18 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
                     fontSize: 11,
                     fontWeight: '700',
                     letterSpacing: 0.8,
-                    color: t.textMuted,
+                    color: theme.textMuted,
                     textTransform: 'uppercase',
                   }}
                 >
-                  Actividad
+                  {t('profile.editModal.activityLabel')}
                 </Text>
                 <View style={{ gap: spacing.sm }}>
-                  {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map((a) => (
+                  {activityKeys.map((a) => (
                     <OptionRow
                       key={a}
                       selected={activity === a}
-                      label={ACTIVITY_LABELS[a]}
+                      label={t(`profile.activity.${a}` as any)}
                       onPress={() => setActivity(a)}
                     />
                   ))}
@@ -617,26 +608,26 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
                     fontSize: 11,
                     fontWeight: '700',
                     letterSpacing: 0.8,
-                    color: t.textMuted,
+                    color: theme.textMuted,
                     textTransform: 'uppercase',
                   }}
                 >
-                  Objetivo
+                  {t('profile.editModal.goalLabel')}
                 </Text>
                 <View style={{ gap: spacing.sm }}>
-                  {(Object.keys(GOAL_LABELS) as Goal[]).map((g) => (
+                  {goalKeys.map((g) => (
                     <OptionRow
                       key={g}
                       selected={goal === g}
-                      label={GOAL_LABELS[g]}
+                      label={t(`profile.goal.${g}` as any)}
                       onPress={() => setGoal(g)}
                     />
                   ))}
                 </View>
               </View>
 
-              <Button title="Guardar (recalcula objetivos)" onPress={save} loading={saving} />
-              <Button title="Cancelar" variant="secondary" onPress={onClose} />
+              <Button title={t('profile.editModal.save')} onPress={save} loading={saving} />
+              <Button title={t('common.cancel')} variant="secondary" onPress={onClose} />
             </ScrollView>
           </View>
         </Pressable>
@@ -646,32 +637,31 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
 }
 
 function SupplementsModal({ onClose }: { onClose: () => void }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const { user } = useAuthStore();
   const store = useSupplementStore();
   const { isPro } = usePro();
 
-  // Estado del editor: null = cerrado · 'new' o un Supplement = abierto.
   const [editing, setEditing] = React.useState<Supplement | 'new' | { preset: number } | null>(null);
 
   const tryAdd = (open: () => void) => {
     if (!isPro && store.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
       Alert.alert(
-        'Límite alcanzado',
-        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`
+        t('diary.limitTitle'),
+        t('diary.limitMsg', { count: FREE_SUPPLEMENT_LIMIT })
       );
       return;
     }
     open();
   };
 
-  // ── Editor: nuevo desde preset ────────────────────────────────────────
   if (editing && typeof editing === 'object' && 'preset' in editing) {
     const p = SUPPLEMENT_PRESETS[editing.preset];
     return (
       <SupplementEditor
         visible
-        title="Añadir suplemento"
+        title={t('diary.addSupplement')}
         initial={{
           name: p.name,
           emoji: p.emoji,
@@ -681,36 +671,34 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
         }}
         onClose={() => setEditing(null)}
         onSave={async (draft) => {
-          if (!user) return { error: 'No hay sesión' };
+          if (!user) return { error: t('diary.noSession') };
           return store.createSupplement(user.id, draft);
         }}
       />
     );
   }
 
-  // ── Editor: nuevo en blanco ───────────────────────────────────────────
   if (editing === 'new') {
     return (
       <SupplementEditor
         visible
-        title="Nuevo suplemento"
+        title={t('diary.newSupplement')}
         initial={{ name: '', emoji: '💊', nutrient_key: null, dose_amount: 1, dose_unit: 'mg' }}
         onClose={() => setEditing(null)}
         onSave={async (draft) => {
-          if (!user) return { error: 'No hay sesión' };
+          if (!user) return { error: t('diary.noSession') };
           return store.createSupplement(user.id, draft);
         }}
       />
     );
   }
 
-  // ── Editor: edición de uno existente ──────────────────────────────────
   if (editing && typeof editing === 'object' && 'id' in editing) {
     const s = editing;
     return (
       <SupplementEditor
         visible
-        title="Editar suplemento"
+        title={t('diary.editSupplement')}
         initial={{
           name: s.name,
           emoji: s.emoji,
@@ -729,17 +717,16 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
     <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ fontSize: 26, fontWeight: '700', color: t.text }}>
-            Suplementos
+          <Text style={{ fontSize: 26, fontWeight: '700', color: theme.text }}>
+            {t('profile.supplementsModal.title')}
           </Text>
           {!isPro ? (
-            <Text style={{ color: t.textMuted, fontSize: 11 }}>
+            <Text style={{ color: theme.textMuted, fontSize: 11 }}>
               {store.supplements.length}/{FREE_SUPPLEMENT_LIMIT} (free)
             </Text>
           ) : null}
         </View>
 
-        {/* ── Mis suplementos ──────────────────────────────────────── */}
         {store.supplements.length > 0 ? (
           <View style={{ gap: spacing.sm }}>
             <Text
@@ -747,11 +734,11 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                 fontSize: 11,
                 fontWeight: '700',
                 letterSpacing: 0.8,
-                color: t.textMuted,
+                color: theme.textMuted,
                 textTransform: 'uppercase',
               }}
             >
-              Mis suplementos
+              {t('profile.supplementsModal.mine')}
             </Text>
             {store.supplements.map((s) => (
               <Pressable
@@ -764,8 +751,8 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                   padding: spacing.md,
                   borderRadius: radii.lg,
                   borderWidth: 1,
-                  borderColor: t.cardBorder,
-                  backgroundColor: t.card,
+                  borderColor: theme.cardBorder,
+                  backgroundColor: theme.card,
                   opacity: pressed ? 0.7 : 1,
                 })}
               >
@@ -774,7 +761,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                     width: 40,
                     height: 40,
                     borderRadius: 20,
-                    backgroundColor: t.primarySoft,
+                    backgroundColor: theme.primarySoft,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
@@ -782,20 +769,19 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                   <Text style={{ fontSize: 20 }}>{s.emoji ?? '💊'}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
+                  <Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
                     {s.name}
                   </Text>
-                  <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                  <Text style={{ color: theme.textMuted, fontSize: 12 }}>
                     {s.dose_amount} {s.dose_unit}
                   </Text>
                 </View>
-                <Ionicons name={'pencil-outline' as any} size={16} color={t.textMuted} />
+                <Ionicons name={'pencil-outline' as any} size={16} color={theme.textMuted} />
               </Pressable>
             ))}
           </View>
         ) : null}
 
-        {/* ── Acción: crear personalizado ──────────────────────────── */}
         <Pressable
           onPress={() => tryAdd(() => setEditing('new'))}
           style={({ pressed }) => ({
@@ -806,32 +792,31 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
             paddingVertical: spacing.md,
             borderRadius: radii.lg,
             borderWidth: 1.5,
-            borderColor: t.primary,
-            backgroundColor: t.primarySoft,
+            borderColor: theme.primary,
+            backgroundColor: theme.primarySoft,
             opacity: pressed ? 0.7 : 1,
           })}
         >
-          <Ionicons name={'add' as any} size={18} color={t.primary} />
-          <Text style={{ color: t.primary, fontWeight: '700', fontSize: 14 }}>
-            Crear suplemento personalizado
+          <Ionicons name={'add' as any} size={18} color={theme.primary} />
+          <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 14 }}>
+            {t('profile.supplementsModal.createCustom')}
           </Text>
         </Pressable>
 
-        {/* ── Presets sugeridos ────────────────────────────────────── */}
         <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
           <Text
             style={{
               fontSize: 11,
               fontWeight: '700',
               letterSpacing: 0.8,
-              color: t.textMuted,
+              color: theme.textMuted,
               textTransform: 'uppercase',
             }}
           >
-            Empezar desde un preset
+            {t('profile.supplementsModal.startFromPreset')}
           </Text>
-          <Text style={{ color: t.textMuted, fontSize: 11 }}>
-            Toca uno para revisar dosis y guardarlo. Puedes añadir el mismo varias veces (p. ej. una toma por la mañana y otra por la noche).
+          <Text style={{ color: theme.textMuted, fontSize: 11 }}>
+            {t('profile.supplementsModal.presetHint')}
           </Text>
           {SUPPLEMENT_PRESETS.map((p, i) => (
             <Pressable
@@ -852,7 +837,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                   width: 36,
                   height: 36,
                   borderRadius: 18,
-                  backgroundColor: t.background,
+                  backgroundColor: theme.background,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
@@ -860,12 +845,12 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                 <Text style={{ fontSize: 18 }}>{p.emoji}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: t.text, fontWeight: '600', fontSize: 14 }}>{p.name}</Text>
-                <Text style={{ color: t.textMuted, fontSize: 11 }}>
-                  Sugerido: {p.dose_amount} {p.dose_unit}
+                <Text style={{ color: theme.text, fontWeight: '600', fontSize: 14 }}>{p.name}</Text>
+                <Text style={{ color: theme.textMuted, fontSize: 11 }}>
+                  {t('diary.supplementSuggested', { amount: p.dose_amount, unit: p.dose_unit })}
                 </Text>
               </View>
-              <Ionicons name={'add-circle-outline' as any} size={20} color={t.primary} />
+              <Ionicons name={'add-circle-outline' as any} size={20} color={theme.primary} />
             </Pressable>
           ))}
         </View>
@@ -875,7 +860,8 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
 }
 
 function CustomFoodModal({ onClose }: { onClose: () => void }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const { user } = useAuthStore();
   const store = useCustomFoodStore();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -931,7 +917,7 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
 
     if (editingId) {
       const { error } = await store.updateCustomFood(editingId, foodData);
-      if (error) Alert.alert('Error', error);
+      if (error) Alert.alert(t('common.error'), error);
       else { setEditingId(null); resetForm(); }
     } else {
       const { error } = await store.createCustomFood(user.id, {
@@ -947,15 +933,15 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
         is_vegan: true,
         image_url: null,
       });
-      if (error) Alert.alert('Error', error);
+      if (error) Alert.alert(t('common.error'), error);
       else { setCreating(false); resetForm(); }
     }
   };
 
   const confirmDelete = (f: CustomFood) => {
-    Alert.alert('Eliminar', `¿Eliminar "${f.name}"?`, [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => void store.deleteCustomFood(f.id) },
+    Alert.alert(t('common.delete'), t('diary.deleteConfirm', { name: f.name }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: () => void store.deleteCustomFood(f.id) },
     ]);
   };
 
@@ -964,7 +950,7 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
   return (
     <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
-        <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>Mis alimentos</Text>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: theme.text }}>{t('profile.customFood.title')}</Text>
 
         {store.customFoods.length > 0 && !showForm && (
           <View style={{ gap: spacing.sm }}>
@@ -978,18 +964,18 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
                   padding: spacing.md,
                   borderRadius: radii.lg,
                   borderWidth: 1,
-                  borderColor: t.cardBorder,
-                  backgroundColor: t.card,
+                  borderColor: theme.cardBorder,
+                  backgroundColor: theme.card,
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: t.text, fontWeight: '700', fontSize: 15 }}>{f.name}</Text>
-                  <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                  <Text style={{ color: theme.text, fontWeight: '700', fontSize: 15 }}>{f.name}</Text>
+                  <Text style={{ color: theme.textMuted, fontSize: 12 }}>
                     {f.calories_per_100g} kcal · P {f.protein_per_100g}g · C {f.carbs_per_100g}g · G {f.fat_per_100g}g
                   </Text>
                 </View>
                 <Pressable onPress={() => startEdit(f)} hitSlop={8}>
-                  <Ionicons name={'pencil-outline' as any} size={18} color={t.primary} />
+                  <Ionicons name={'pencil-outline' as any} size={18} color={theme.primary} />
                 </Pressable>
                 <Pressable onPress={() => confirmDelete(f)} hitSlop={8}>
                   <Ionicons name={'trash-outline' as any} size={18} color={semantic.danger} />
@@ -1010,14 +996,14 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
               paddingVertical: spacing.md,
               borderRadius: radii.lg,
               borderWidth: 1.5,
-              borderColor: t.primary,
-              backgroundColor: t.primarySoft,
+              borderColor: theme.primary,
+              backgroundColor: theme.primarySoft,
               opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Ionicons name={'add' as any} size={18} color={t.primary} />
-            <Text style={{ color: t.primary, fontWeight: '700', fontSize: 14 }}>
-              Crear alimento personalizado
+            <Ionicons name={'add' as any} size={18} color={theme.primary} />
+            <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 14 }}>
+              {t('profile.customFood.create')}
             </Text>
           </Pressable>
         )}
@@ -1026,11 +1012,11 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
           <View style={{ gap: spacing.md }}>
             <Text style={{
               fontSize: 11, fontWeight: '700', letterSpacing: 0.8,
-              color: t.textMuted, textTransform: 'uppercase',
+              color: theme.textMuted, textTransform: 'uppercase',
             }}>
-              {editingId ? 'Editar alimento' : 'Crear alimento (valores por 100 g)'}
+              {editingId ? t('profile.customFood.editTitle') : t('profile.customFood.createTitle')}
             </Text>
-            <Input label="Nombre" value={name} onChangeText={setName} placeholder="Mi tempeh casero" />
+            <Input label={t('profile.editModal.name')} value={name} onChangeText={setName} placeholder="Mi tempeh casero" />
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               <View style={{ flex: 1 }}>
                 <Input label="kcal" value={kcal} onChangeText={setKcal} keyboardType="numeric" />
@@ -1058,16 +1044,16 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
                 <Input label="G. sat." value={satFat} onChangeText={setSatFat} keyboardType="numeric" />
               </View>
             </View>
-            <Button title={editingId ? 'Guardar cambios' : 'Crear alimento'} onPress={save} />
-            <Button title="Cancelar" variant="secondary" onPress={() => { setEditingId(null); setCreating(false); resetForm(); }} />
+            <Button title={editingId ? t('profile.customFood.save') : t('profile.customFood.saveCreate')} onPress={save} />
+            <Button title={t('common.cancel')} variant="secondary" onPress={() => { setEditingId(null); setCreating(false); resetForm(); }} />
           </View>
         )}
 
         {store.customFoods.length === 0 && !showForm && (
           <View style={{ alignItems: 'center', padding: spacing.xl, gap: spacing.md }}>
             <Text style={{ fontSize: 40 }}>⭐</Text>
-            <Text style={{ color: t.textMuted, fontSize: 13, textAlign: 'center' }}>
-              Aún no tienes alimentos personalizados. Crea uno con los valores nutricionales por 100 g.
+            <Text style={{ color: theme.textMuted, fontSize: 13, textAlign: 'center' }}>
+              {t('profile.customFood.empty')}
             </Text>
           </View>
         )}
@@ -1077,14 +1063,15 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
 }
 
 function AppearanceCard() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const preference = useThemeStore((s) => s.preference);
   const setPreference = useThemeStore((s) => s.setPreference);
 
   const options: { value: ThemePreference; label: string; icon: string }[] = [
-    { value: 'system', label: 'Sistema', icon: 'phone-portrait-outline' },
-    { value: 'light', label: 'Claro', icon: 'sunny-outline' },
-    { value: 'dark', label: 'Oscuro', icon: 'moon-outline' },
+    { value: 'system', label: t('profile.themeSystem'), icon: 'phone-portrait-outline' },
+    { value: 'light', label: t('profile.themeLight'), icon: 'sunny-outline' },
+    { value: 'dark', label: t('profile.themeDark'), icon: 'moon-outline' },
   ];
 
   return (
@@ -1094,19 +1081,19 @@ function AppearanceCard() {
           fontSize: 11,
           fontWeight: '700',
           letterSpacing: 0.8,
-          color: t.textMuted,
+          color: theme.textMuted,
           textTransform: 'uppercase',
           marginBottom: spacing.sm,
         }}
       >
-        Apariencia
+        {t('profile.appearance')}
       </Text>
       <Card style={{ gap: spacing.sm }}>
         <View
           style={{
             flexDirection: 'row',
             gap: spacing.xs,
-            backgroundColor: t.background,
+            backgroundColor: theme.background,
             borderRadius: radii.pill,
             padding: 4,
           }}
@@ -1125,15 +1112,15 @@ function AppearanceCard() {
                   gap: 6,
                   paddingVertical: 9,
                   borderRadius: radii.pill,
-                  backgroundColor: active ? t.card : 'transparent',
+                  backgroundColor: active ? theme.card : 'transparent',
                 }}
               >
-                <Ionicons name={opt.icon as any} size={15} color={active ? t.primary : t.textMuted} />
+                <Ionicons name={opt.icon as any} size={15} color={active ? theme.primary : theme.textMuted} />
                 <Text
                   style={{
                     fontSize: 13,
                     fontWeight: '700',
-                    color: active ? t.primary : t.textMuted,
+                    color: active ? theme.primary : theme.textMuted,
                   }}
                 >
                   {opt.label}
@@ -1142,9 +1129,58 @@ function AppearanceCard() {
             );
           })}
         </View>
-        <Text style={{ color: t.textMuted, fontSize: 11 }}>
-          "Sistema" sigue automaticamente la apariencia de tu dispositivo.
+        <Text style={{ color: theme.textMuted, fontSize: 11 }}>
+          {t('profile.appearanceHint')}
         </Text>
+      </Card>
+    </View>
+  );
+}
+
+function LanguageCard() {
+  const { t } = useTranslation();
+  const theme = useTheme();
+  const language = useLanguageStore((s) => s.language);
+  const setLanguage = useLanguageStore((s) => s.setLanguage);
+
+  return (
+    <View>
+      <Text
+        style={{
+          fontSize: 11,
+          fontWeight: '700',
+          letterSpacing: 0.8,
+          color: theme.textMuted,
+          textTransform: 'uppercase',
+          marginBottom: spacing.sm,
+        }}
+      >
+        {t('profile.language')}
+      </Text>
+      <Card style={{ gap: spacing.sm }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+          {(SUPPORTED_LANGUAGES as readonly SupportedLanguage[]).map((lang) => {
+            const active = language === lang;
+            return (
+              <Pressable
+                key={lang}
+                onPress={() => void setLanguage(lang)}
+                style={{
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.sm,
+                  borderRadius: radii.pill,
+                  backgroundColor: active ? theme.primary : theme.background,
+                  borderWidth: 1,
+                  borderColor: active ? theme.primary : theme.cardBorder,
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: active ? '#fff' : theme.text }}>
+                  {t(`lang.${lang}` as any)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </Card>
     </View>
   );

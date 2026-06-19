@@ -3,41 +3,13 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, Input } from '@/components/ui';
 import { Logo } from '@/components/Logo';
 import { fonts, radii, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { calculateTargets } from '@/utils/nutrition';
 import type { ActivityLevel, Goal, Sex } from '@/types';
-
-const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; desc: string; icon: string }[] = [
-  { value: 'sedentary', label: 'Sedentario', desc: 'Sin ejercicio', icon: '🪑' },
-  { value: 'light', label: 'Ligero', desc: '1-2 días/semana', icon: '🚶' },
-  { value: 'moderate', label: 'Moderado', desc: '3-4 días/semana', icon: '🚴' },
-  { value: 'active', label: 'Activo', desc: '5-6 días/semana', icon: '🏋️' },
-  { value: 'very_active', label: 'Muy activo', desc: 'Ejercicio intenso diario', icon: '⚡' },
-];
-
-const GOAL_OPTIONS: { value: Goal; label: string; desc: string; icon: string }[] = [
-  { value: 'cut', label: 'Perder grasa', desc: 'Déficit de 500 kcal', icon: '🔥' },
-  { value: 'maintain', label: 'Mantener', desc: 'Calorías de mantenimiento', icon: '⚖️' },
-  { value: 'bulk', label: 'Ganar masa', desc: 'Superávit de 300 kcal', icon: '💪' },
-];
-
-const STEP_META = [
-  {
-    title: 'Tu punto de partida',
-    subtitle: 'Calculamos tu metabolismo con la fórmula Mifflin-St Jeor',
-  },
-  {
-    title: 'Tu ritmo de vida',
-    subtitle: 'Ajustamos las calorías a tu actividad diaria',
-  },
-  {
-    title: 'Tu objetivo',
-    subtitle: 'Todo empieza con saber a dónde quieres llegar',
-  },
-];
 
 function OptionRow({
   selected,
@@ -52,7 +24,7 @@ function OptionRow({
   icon?: string;
   onPress: () => void;
 }) {
-  const t = useTheme();
+  const theme = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -61,30 +33,31 @@ function OptionRow({
         alignItems: 'center',
         gap: spacing.md,
         borderWidth: 1.5,
-        borderColor: selected ? t.primary : t.cardBorder,
-        backgroundColor: selected ? t.primarySoft : t.card,
+        borderColor: selected ? theme.primary : theme.cardBorder,
+        backgroundColor: selected ? theme.primarySoft : theme.card,
         borderRadius: radii.lg,
         padding: spacing.lg,
       }}
     >
       {icon ? <Text style={{ fontSize: 20 }}>{icon}</Text> : null}
       <View style={{ flex: 1 }}>
-        <Text style={{ fontWeight: '700', color: selected ? t.primary : t.text, fontSize: 15 }}>
+        <Text style={{ fontWeight: '700', color: selected ? theme.primary : theme.text, fontSize: 15 }}>
           {label}
         </Text>
         {desc ? (
-          <Text style={{ color: t.textMuted, fontSize: 13, marginTop: 2 }}>{desc}</Text>
+          <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 2 }}>{desc}</Text>
         ) : null}
       </View>
       {selected ? (
-        <Ionicons name={'checkmark-circle' as any} size={20} color={t.primary} />
+        <Ionicons name={'checkmark-circle' as any} size={20} color={theme.primary} />
       ) : null}
     </Pressable>
   );
 }
 
 export function OnboardingScreen() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { profile, updateProfile } = useAuthStore();
   const [step, setStep] = useState(1);
@@ -97,6 +70,26 @@ export function OnboardingScreen() {
   const [goal, setGoal] = useState<Goal>('maintain');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const activityOptions: { value: ActivityLevel; icon: string }[] = [
+    { value: 'sedentary', icon: '🪑' },
+    { value: 'light', icon: '🚶' },
+    { value: 'moderate', icon: '🚴' },
+    { value: 'active', icon: '🏋️' },
+    { value: 'very_active', icon: '⚡' },
+  ];
+
+  const goalOptions: { value: Goal; icon: string }[] = [
+    { value: 'cut', icon: '🔥' },
+    { value: 'maintain', icon: '⚖️' },
+    { value: 'bulk', icon: '💪' },
+  ];
+
+  const stepMeta = [
+    { title: t('onboarding.step1Title'), subtitle: t('onboarding.step1Sub') },
+    { title: t('onboarding.step2Title'), subtitle: t('onboarding.step2Sub') },
+    { title: t('onboarding.step3Title'), subtitle: t('onboarding.step3Sub') },
+  ];
 
   const step1Valid =
     height.trim() !== '' &&
@@ -119,7 +112,7 @@ export function OnboardingScreen() {
     const targets = calculateTargets(base);
     if (!targets) {
       setSaving(false);
-      setError('Revisa los datos: no se pudieron calcular tus objetivos.');
+      setError(t('onboarding.calcError'));
       return;
     }
     const { error: err } = await updateProfile({
@@ -133,10 +126,10 @@ export function OnboardingScreen() {
     if (err) setError(err);
   };
 
-  const meta = STEP_META[step - 1];
+  const meta = stepMeta[step - 1];
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.background }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
       {/* Branding bar */}
       <View
         style={{
@@ -147,7 +140,7 @@ export function OnboardingScreen() {
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
           <Logo size={22} />
-          <Text style={{ fontFamily: fonts.display, fontSize: 19, fontWeight: '400', letterSpacing: -0.3, color: t.text }}>
+          <Text style={{ fontFamily: fonts.display, fontSize: 19, fontWeight: '400', letterSpacing: -0.3, color: theme.text }}>
             Vegetrack
           </Text>
         </View>
@@ -173,7 +166,7 @@ export function OnboardingScreen() {
                   width: 24,
                   height: 8,
                   borderRadius: radii.pill,
-                  backgroundColor: t.primary,
+                  backgroundColor: theme.primary,
                 }}
               />
             ) : (
@@ -183,44 +176,44 @@ export function OnboardingScreen() {
                   width: 8,
                   height: 8,
                   borderRadius: radii.pill,
-                  backgroundColor: t.separator,
+                  backgroundColor: theme.separator,
                 }}
               />
             )
           )}
         </View>
 
-        {/* Step title + subtitle (outside the card) */}
+        {/* Step title + subtitle */}
         <View style={{ gap: spacing.xs }}>
-          <Text style={{ fontSize: 30, fontWeight: '700', color: t.text }}>{meta.title}</Text>
-          <Text style={{ fontSize: 14, color: t.textMuted, lineHeight: 20 }}>{meta.subtitle}</Text>
+          <Text style={{ fontSize: 30, fontWeight: '700', color: theme.text }}>{meta.title}</Text>
+          <Text style={{ fontSize: 14, color: theme.textMuted, lineHeight: 20 }}>{meta.subtitle}</Text>
         </View>
 
         {/* Step 1: datos básicos */}
         {step === 1 && (
           <Card style={{ gap: spacing.lg }}>
             <Input
-              label="Nombre"
+              label={t('onboarding.name')}
               value={name}
               onChangeText={setName}
-              placeholder="¿Cómo te llamas?"
+              placeholder={t('onboarding.namePlaceholder')}
             />
             <Input
-              label="Altura (cm)"
+              label={t('onboarding.height')}
               value={height}
               onChangeText={setHeight}
               keyboardType="numeric"
               placeholder="170"
             />
             <Input
-              label="Peso (kg)"
+              label={t('onboarding.weight')}
               value={weight}
               onChangeText={setWeight}
               keyboardType="numeric"
               placeholder="65"
             />
             <Input
-              label="Fecha de nacimiento (AAAA-MM-DD)"
+              label={t('onboarding.birthDate')}
               value={birthDate}
               onChangeText={setBirthDate}
               placeholder="1992-12-05"
@@ -231,22 +224,22 @@ export function OnboardingScreen() {
                   fontSize: 11,
                   fontWeight: '700',
                   letterSpacing: 0.8,
-                  color: t.textMuted,
+                  color: theme.textMuted,
                   textTransform: 'uppercase',
                 }}
               >
-                Sexo biológico
+                {t('onboarding.sex')}
               </Text>
               <OptionRow
                 selected={sex === 'male'}
-                label="Hombre"
+                label={t('onboarding.male')}
                 desc=""
                 icon="👨"
                 onPress={() => setSex('male')}
               />
               <OptionRow
                 selected={sex === 'female'}
-                label="Mujer"
+                label={t('onboarding.female')}
                 desc=""
                 icon="👩"
                 onPress={() => setSex('female')}
@@ -258,12 +251,12 @@ export function OnboardingScreen() {
         {/* Step 2: actividad */}
         {step === 2 && (
           <Card style={{ gap: spacing.md }}>
-            {ACTIVITY_OPTIONS.map((o) => (
+            {activityOptions.map((o) => (
               <OptionRow
                 key={o.value}
                 selected={activity === o.value}
-                label={o.label}
-                desc={o.desc}
+                label={t(`onboarding.activity.${o.value}` as any)}
+                desc={t(`onboarding.activity.${o.value}Desc` as any)}
                 icon={o.icon}
                 onPress={() => setActivity(o.value)}
               />
@@ -274,12 +267,12 @@ export function OnboardingScreen() {
         {/* Step 3: objetivo */}
         {step === 3 && (
           <Card style={{ gap: spacing.md }}>
-            {GOAL_OPTIONS.map((o) => (
+            {goalOptions.map((o) => (
               <OptionRow
                 key={o.value}
                 selected={goal === o.value}
-                label={o.label}
-                desc={o.desc}
+                label={t(`onboarding.goal.${o.value}` as any)}
+                desc={t(`onboarding.goal.${o.value}Desc` as any)}
                 icon={o.icon}
                 onPress={() => setGoal(o.value)}
               />
@@ -290,29 +283,29 @@ export function OnboardingScreen() {
           </Card>
         )}
 
-        {/* Navigation buttons (outside the card) */}
+        {/* Navigation buttons */}
         <View style={{ gap: spacing.md }}>
           {step === 1 && (
             <Button
-              title="Siguiente →"
+              title={t('onboarding.next')}
               onPress={() => setStep(2)}
               disabled={!step1Valid}
             />
           )}
           {step === 2 && (
             <>
-              <Button title="Siguiente →" onPress={() => setStep(3)} />
-              <Button title="Atrás" variant="secondary" onPress={() => setStep(1)} />
+              <Button title={t('onboarding.next')} onPress={() => setStep(3)} />
+              <Button title={t('onboarding.back')} variant="secondary" onPress={() => setStep(1)} />
             </>
           )}
           {step === 3 && (
             <>
               <Button
-                title="Calcular objetivos ✓"
+                title={t('onboarding.finish')}
                 onPress={finish}
                 loading={saving}
               />
-              <Button title="Atrás" variant="secondary" onPress={() => setStep(2)} />
+              <Button title={t('onboarding.back')} variant="secondary" onPress={() => setStep(2)} />
             </>
           )}
         </View>
