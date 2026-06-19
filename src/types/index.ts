@@ -301,19 +301,27 @@ export interface SupplementLog {
   taken_at: string;
 }
 
-export interface VeganScorePart {
+export type ScoreTotalKey = 'excellent' | 'good' | 'in_progress' | 'improvable';
+export type CaloriesKey   = 'no_data' | 'on_target' | 'close' | 'far' | 'very_far' | 'no_target';
+export type ProteinKey    = 'no_data' | 'on_target' | 'close' | 'in_progress' | 'low' | 'very_low' | 'no_target';
+export type FiberKey      = 'no_data' | 'excellent' | 'good' | 'in_progress' | 'low' | 'very_low';
+export type StreakKey     = 'no_data' | 'fire' | 'active' | 'none';
+export type MicrosKey     = 'no_data' | 'covered';
+
+export interface VeganScorePart<L extends string = string> {
   score: number;
   max: number;
-  label: string;
+  label: L;
+  count?: number;
 }
 
 export interface VeganScoreBreakdown {
   total: number;
-  calories: VeganScorePart;
-  protein: VeganScorePart;
-  micros: VeganScorePart;
-  fiber: VeganScorePart;
-  streak: VeganScorePart;
+  calories: VeganScorePart<CaloriesKey>;
+  protein:  VeganScorePart<ProteinKey>;
+  micros:   VeganScorePart<MicrosKey>;
+  fiber:    VeganScorePart<FiberKey>;
+  streak:   VeganScorePart<StreakKey>;
   hasData: boolean;
 }
 

@@ -2,7 +2,10 @@
  * VeganScore: puntuación compuesta 0-100 del día.
  * Portado 1:1 de la PWA (vegantrack/src/utils/veganScore.ts).
  */
-import type { NutrientSummary, Sex, VeganScoreBreakdown } from '@/types';
+import type {
+  CaloriesKey, FiberKey, MicrosKey, NutrientSummary,
+  ProteinKey, ScoreTotalKey, Sex, StreakKey, VeganScoreBreakdown,
+} from '@/types';
 
 interface VeganScoreInput {
   summary: NutrientSummary;
@@ -22,7 +25,7 @@ export function computeVeganScore({
   sex,
 }: VeganScoreInput): VeganScoreBreakdown {
   if (summary.calories === 0) {
-    const empty = (max: number) => ({ score: 0, max, label: 'Sin datos' });
+    const empty = (max: number) => ({ score: 0, max, label: 'no_data' as const });
     return {
       total: 0,
       calories: empty(30),
@@ -36,25 +39,25 @@ export function computeVeganScore({
 
   // 1. Calorías (30 pts): en rango 85-115% del objetivo
   let calScore = 0;
-  let calLabel = '';
+  let calLabel: CaloriesKey = 'no_target'; // fix: era '' cuando calorieTarget === 0
   if (calorieTarget > 0) {
     const r = summary.calories / calorieTarget;
-    if (r >= 0.85 && r <= 1.15) { calScore = 30; calLabel = 'En rango ✓'; }
-    else if (r >= 0.7 && r <= 1.3) { calScore = 18; calLabel = 'Cerca'; }
-    else if (r >= 0.5) { calScore = 8; calLabel = 'Lejos'; }
-    else { calLabel = 'Muy lejos'; }
+    if (r >= 0.85 && r <= 1.15) { calScore = 30; calLabel = 'on_target'; }
+    else if (r >= 0.7 && r <= 1.3) { calScore = 18; calLabel = 'close'; }
+    else if (r >= 0.5) { calScore = 8; calLabel = 'far'; }
+    else { calLabel = 'very_far'; }
   }
 
   // 2. Proteína (25 pts)
   let proScore = 0;
-  let proLabel = '';
+  let proLabel: ProteinKey = 'no_target'; // fix: era '' cuando proteinTarget === 0
   if (proteinTarget > 0) {
     const r = summary.protein_g / proteinTarget;
-    if (r >= 1.0) { proScore = 25; proLabel = 'Objetivo ✓'; }
-    else if (r >= 0.8) { proScore = 18; proLabel = 'Casi'; }
-    else if (r >= 0.6) { proScore = 10; proLabel = 'En progreso'; }
-    else if (r >= 0.4) { proScore = 4; proLabel = 'Bajo'; }
-    else { proLabel = 'Muy bajo'; }
+    if (r >= 1.0) { proScore = 25; proLabel = 'on_target'; }
+    else if (r >= 0.8) { proScore = 18; proLabel = 'close'; }
+    else if (r >= 0.6) { proScore = 10; proLabel = 'in_progress'; }
+    else if (r >= 0.4) { proScore = 4; proLabel = 'low'; }
+    else { proLabel = 'very_low'; }
   }
 
   // 3. Micros clave (20 pts): B12, Vit D, Hierro.
@@ -77,33 +80,30 @@ export function computeVeganScore({
     if (ratio >= 0.9) { microScore += ptsEach; coveredCount++; }
     else if (ratio >= 0.5) { microScore += ptsEach * 0.5; }
   }
-  const microLabel = `${coveredCount}/3 cubiertos`;
+  const microLabel: MicrosKey = 'covered';
 
   // 4. Fibra (15 pts)
   let fiberScore = 0;
-  let fiberLabel = '';
+  let fiberLabel: FiberKey = 'very_low';
   const f = summary.fiber_g;
-  if (f >= 30) { fiberScore = 15; fiberLabel = 'Excelente ✓'; }
-  else if (f >= 25) { fiberScore = 11; fiberLabel = 'Bien'; }
-  else if (f >= 20) { fiberScore = 7; fiberLabel = 'En progreso'; }
-  else if (f >= 10) { fiberScore = 3; fiberLabel = 'Bajo'; }
-  else { fiberLabel = 'Muy bajo'; }
+  if (f >= 30) { fiberScore = 15; fiberLabel = 'excellent'; }
+  else if (f >= 25) { fiberScore = 11; fiberLabel = 'good'; }
+  else if (f >= 20) { fiberScore = 7; fiberLabel = 'in_progress'; }
+  else if (f >= 10) { fiberScore = 3; fiberLabel = 'low'; }
 
   // 5. Racha (10 pts)
   let streakScore = 0;
-  let streakLabel = '';
-  if (streakCount >= 7) { streakScore = 10; streakLabel = `${streakCount} días 🔥`; }
-  else if (streakCount >= 3) { streakScore = 7; streakLabel = `${streakCount} días`; }
-  else if (streakCount >= 1) { streakScore = 3; streakLabel = `${streakCount} día${streakCount > 1 ? 's' : ''}`; }
-  else { streakLabel = 'Sin racha'; }
+  let streakLabel: StreakKey = 'none';
+  if (streakCount >= 7) { streakScore = 10; streakLabel = 'fire'; }
+  else if (streakCount >= 1) { streakScore = streakCount >= 3 ? 7 : 3; streakLabel = 'active'; }
 
   return {
     total: Math.min(100, Math.round(calScore + proScore + microScore + fiberScore + streakScore)),
     calories: { score: Math.round(calScore), max: 30, label: calLabel },
-    protein: { score: Math.round(proScore), max: 25, label: proLabel },
-    micros: { score: Math.round(microScore), max: 20, label: microLabel },
-    fiber: { score: Math.round(fiberScore), max: 15, label: fiberLabel },
-    streak: { score: Math.round(streakScore), max: 10, label: streakLabel },
+    protein:  { score: Math.round(proScore), max: 25, label: proLabel },
+    micros:   { score: Math.round(microScore), max: 20, label: microLabel, count: coveredCount },
+    fiber:    { score: Math.round(fiberScore), max: 15, label: fiberLabel },
+    streak:   { score: Math.round(streakScore), max: 10, label: streakLabel, count: streakCount },
     hasData: true,
   };
 }
@@ -115,9 +115,9 @@ export function getScoreColor(score: number): string {
   return '#c0473e';
 }
 
-export function getScoreLabel(score: number): string {
-  if (score >= 81) return 'Excelente 🌟';
-  if (score >= 61) return 'Bien 👍';
-  if (score >= 41) return 'En progreso 💪';
-  return 'Mejorable 🌱';
+export function getScoreLabel(score: number): ScoreTotalKey {
+  if (score >= 81) return 'excellent';
+  if (score >= 61) return 'good';
+  if (score >= 41) return 'in_progress';
+  return 'improvable';
 }

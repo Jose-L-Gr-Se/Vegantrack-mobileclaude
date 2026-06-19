@@ -52,10 +52,10 @@ describe('computeVeganScore', () => {
     expect(s.total).toBe(100);
   });
 
-  it('calorías al 75% del objetivo dan 18 pts ("Cerca")', () => {
+  it('calorías al 75% del objetivo dan 18 pts (close)', () => {
     const s = computeVeganScore({ ...base, summary: summary({ calories: 1500 }) });
     expect(s.calories.score).toBe(18);
-    expect(s.calories.label).toBe('Cerca');
+    expect(s.calories.label).toBe('close');
   });
 
   it('los suplementos cubren micros sin datos de comida', () => {
@@ -66,7 +66,8 @@ describe('computeVeganScore', () => {
     });
     // 2 de 3 micros cubiertos al 100% → 2 × 6.67 ≈ 13
     expect(s.micros.score).toBe(13);
-    expect(s.micros.label).toBe('2/3 cubiertos');
+    expect(s.micros.label).toBe('covered');
+    expect(s.micros.count).toBe(2);
   });
 
   it('RDA de hierro depende del sexo (8 ♂ / 18 ♀)', () => {
@@ -82,17 +83,18 @@ describe('computeVeganScore', () => {
     s.micros.iron_mg = { value: 20, knownEntries: 1, totalEntries: 4, coverage: 0.25 };
     const result = computeVeganScore({ ...base, summary: s });
     // hierro no cuenta pese a value=20
-    expect(result.micros.label).toBe('0/3 cubiertos');
+    expect(result.micros.label).toBe('covered');
+    expect(result.micros.count).toBe(0);
   });
 });
 
 describe('score color/label', () => {
   it.each([
-    [85, '#2f5d41', 'Excelente 🌟'],
-    [70, '#c98a2b', 'Bien 👍'],
-    [50, '#cc7a3b', 'En progreso 💪'],
-    [20, '#c0473e', 'Mejorable 🌱'],
-  ])('score %i', (score, color, label) => {
+    [85, '#2f5d41', 'excellent'],
+    [70, '#c98a2b', 'good'],
+    [50, '#cc7a3b', 'in_progress'],
+    [20, '#c0473e', 'improvable'],
+  ])('score %i → color %s, label %s', (score, color, label) => {
     expect(getScoreColor(score)).toBe(color);
     expect(getScoreLabel(score)).toBe(label);
   });

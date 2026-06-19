@@ -13,5 +13,49 @@
     "divider": "o continúa con",
     "google": "Continuar con Google",
     "error_empty": "Introduce email y contraseña"
+  },
+  "score": {
+    "total": {
+      "excellent":   "Excelente 🌟",
+      "good":        "Bien 👍",
+      "in_progress": "En progreso 💪",
+      "improvable":  "Mejorable 🌱"
+    },
+    "calories": {
+      "no_data":   "Sin datos",
+      "on_target": "En rango ✓",
+      "close":     "Cerca",
+      "far":       "Lejos",
+      "very_far":  "Muy lejos",
+      "no_target": "Sin objetivo"
+    },
+    "protein": {
+      "no_data":     "Sin datos",
+      "on_target":   "Objetivo ✓",
+      "close":       "Casi",
+      "in_progress": "En progreso",
+      "low":         "Bajo",
+      "very_low":    "Muy bajo",
+      "no_target":   "Sin objetivo"
+    },
+    "fiber": {
+      "no_data":     "Sin datos",
+      "excellent":   "Excelente ✓",
+      "good":        "Bien",
+      "in_progress": "En progreso",
+      "low":         "Bajo",
+      "very_low":    "Muy bajo"
+    },
+    "streak": {
+      "no_data":      "Sin datos",
+      "fire":         "{{count}} días 🔥",
+      "active_one":   "{{count}} día",
+      "active_other": "{{count}} días",
+      "none":         "Sin racha"
+    },
+    "micros": {
+      "no_data": "Sin datos",
+      "covered": "{{count}}/{{total}} cubiertos"
+    }
   }
 }

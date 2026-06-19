@@ -6,6 +6,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
 import { Card, MacroBar, Pill, ProgressRing, SectionHeader } from '@/components/ui';
 import { ProModal } from '@/components/ProModal';
 import { radii, semantic, spacing, useTheme } from '@/theme';
@@ -18,7 +19,8 @@ import { ironRdaForSex, MICRO_RDA } from '@/utils/nutrition';
 import type { RootStackParamList } from '@/navigation/types';
 
 export function DashboardScreen() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { user, profile } = useAuthStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -72,21 +74,21 @@ export function DashboardScreen() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: t.background }}
+      style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md, gap: spacing.lg, paddingBottom: spacing.xxl }}
     >
-      <Text style={{ fontSize: 26, fontWeight: '700', color: t.text }}>Resumen</Text>
+      <Text style={{ fontSize: 26, fontWeight: '700', color: theme.text }}>Resumen</Text>
 
       {/* Hero: Calorías ring + macros compactos */}
       <Card style={{ gap: spacing.lg }}>
         {/* Calorie ring centrado */}
         <View style={{ alignItems: 'center' }}>
           <ProgressRing progress={calProgress} size={140} strokeWidth={12} color={semantic.success}>
-            <Text style={{ fontSize: 34, fontWeight: '800', color: t.text }}>{Math.round(summary.calories)}</Text>
-            <Text style={{ fontSize: 11, color: t.textMuted }}>kcal</Text>
+            <Text style={{ fontSize: 34, fontWeight: '800', color: theme.text }}>{Math.round(summary.calories)}</Text>
+            <Text style={{ fontSize: 11, color: theme.textMuted }}>kcal</Text>
           </ProgressRing>
           {calTarget > 0 ? (
-            <Text style={{ color: t.textSecondary, fontSize: 13, marginTop: spacing.sm }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 13, marginTop: spacing.sm }}>
               {remaining !== null ? `${remaining} kcal restantes` : `Objetivo: ${calTarget} kcal`} · Objetivo: {calTarget}
             </Text>
           ) : null}
@@ -105,24 +107,24 @@ export function DashboardScreen() {
                 key={label}
                 style={{
                   flex: 1,
-                  backgroundColor: t.background,
+                  backgroundColor: theme.background,
                   borderRadius: spacing.md,
                   padding: spacing.sm,
                   gap: 6,
                   borderWidth: 1,
-                  borderColor: t.cardBorder,
+                  borderColor: theme.cardBorder,
                 }}
               >
-                <Text style={{ color: t.textSecondary, fontSize: 11, fontWeight: '600' }}>{label}</Text>
-                <Text style={{ color: t.text, fontSize: 16, fontWeight: '800' }}>
+                <Text style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '600' }}>{label}</Text>
+                <Text style={{ color: theme.text, fontSize: 16, fontWeight: '800' }}>
                   {Math.round(value)}
-                  <Text style={{ fontSize: 11, color: t.textMuted }}>g</Text>
+                  <Text style={{ fontSize: 11, color: theme.textMuted }}>g</Text>
                 </Text>
-                <View style={{ height: 4, borderRadius: 2, backgroundColor: t.separator, overflow: 'hidden' }}>
+                <View style={{ height: 4, borderRadius: 2, backgroundColor: theme.separator, overflow: 'hidden' }}>
                   <View style={{ width: `${pct * 100}%`, height: 4, backgroundColor: color, borderRadius: 2 }} />
                 </View>
                 {target > 0 ? (
-                  <Text style={{ color: t.textMuted, fontSize: 10 }}>{Math.round(target)}g obj.</Text>
+                  <Text style={{ color: theme.textMuted, fontSize: 10 }}>{Math.round(target)}g obj.</Text>
                 ) : null}
               </View>
             );
@@ -130,20 +132,22 @@ export function DashboardScreen() {
         </View>
       </Card>
 
-      {/* VeganScore horizontal */}
+      {/* VegeScore horizontal */}
       <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
         <ProgressRing progress={score.total / 100} size={80} strokeWidth={8} color={scoreColor}>
-          <Text style={{ fontSize: 24, fontWeight: '800', color: t.text }}>{score.total}</Text>
+          <Text style={{ fontSize: 24, fontWeight: '800', color: theme.text }}>{score.total}</Text>
         </ProgressRing>
         <View style={{ flex: 1, gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontWeight: '800', fontSize: 16, color: t.text }}>VegeScore</Text>
-            <Text style={{ fontWeight: '700', color: scoreColor, fontSize: 14 }}>{getScoreLabel(score.total)}</Text>
+            <Text style={{ fontWeight: '800', fontSize: 16, color: theme.text }}>VegeScore</Text>
+            <Text style={{ fontWeight: '700', color: scoreColor, fontSize: 14 }}>
+              {t(`score.total.${getScoreLabel(score.total)}`)}
+            </Text>
           </View>
           {breakdownRows.map(({ label, part }) => (
             <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
-              <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }}>
+              <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{label}</Text>
+              <Text style={{ color: theme.text, fontSize: 12, fontWeight: '600' }}>
                 {part.score}/{part.max}
               </Text>
             </View>
@@ -175,16 +179,16 @@ export function DashboardScreen() {
           return (
             <View key={key} style={{ gap: 4 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>
+                <Text style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600' }}>
                   {info.label}
                   {fromSupp > 0 ? ' 💊' : ''}
                 </Text>
-                <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                <Text style={{ color: theme.textMuted, fontSize: 12 }}>
                   {Math.round(total * 100) / 100}/{rda} {info.unit}
                   {m.totalEntries > 0 && m.coverage < 0.5 ? ' · datos incompletos' : ''}
                 </Text>
               </View>
-              <View style={{ height: 6, borderRadius: 3, backgroundColor: t.separator, overflow: 'hidden' }}>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: theme.separator, overflow: 'hidden' }}>
                 <View
                   style={{
                     width: `${pct * 100}%`,
@@ -196,7 +200,7 @@ export function DashboardScreen() {
             </View>
           );
         })}
-        <Text style={{ color: t.textMuted, fontSize: 11 }}>
+        <Text style={{ color: theme.textMuted, fontSize: 11 }}>
           El hierro vegetal (no hemo) se absorbe peor: considera acompañarlo de vitamina C.
         </Text>
       </Card>
@@ -208,8 +212,8 @@ export function DashboardScreen() {
             flexDirection: 'row',
             alignItems: 'center',
             gap: spacing.md,
-            backgroundColor: t.primarySoft,
-            borderColor: t.primary,
+            backgroundColor: theme.primarySoft,
+            borderColor: theme.primary,
           }}
         >
           <View
@@ -217,23 +221,23 @@ export function DashboardScreen() {
               width: 40,
               height: 40,
               borderRadius: radii.md,
-              backgroundColor: t.card,
+              backgroundColor: theme.card,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Ionicons name={'trending-up' as never} size={20} color={t.primary} />
+            <Ionicons name={'trending-up' as never} size={20} color={theme.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Text style={{ fontWeight: '700', fontSize: 15, color: t.text }}>Tendencias de micros</Text>
+              <Text style={{ fontWeight: '700', fontSize: 15, color: theme.text }}>Tendencias de micros</Text>
               {!isPro ? <Pill text="PRO" color={semantic.warning} /> : null}
             </View>
-            <Text style={{ color: t.textSecondary, fontSize: 12, marginTop: 2 }}>
+            <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>
               Evolución de B12, hierro y omega-3 a 30 y 90 días
             </Text>
           </View>
-          <Ionicons name={'chevron-forward' as never} size={18} color={t.textMuted} />
+          <Ionicons name={'chevron-forward' as never} size={18} color={theme.textMuted} />
         </Card>
       </Pressable>
 
@@ -254,7 +258,7 @@ export function DashboardScreen() {
               <Polyline
                 points={`0,${120 - (profile.calorie_target / maxCal) * 110} 300,${120 - (profile.calorie_target / maxCal) * 110}`}
                 fill="none"
-                stroke={t.textMuted}
+                stroke={theme.textMuted}
                 strokeWidth={1}
                 strokeDasharray="6 4"
               />
@@ -263,7 +267,7 @@ export function DashboardScreen() {
         </View>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
           {weekData.map((d) => (
-            <Text key={d.date} style={{ color: t.textMuted, fontSize: 10 }}>
+            <Text key={d.date} style={{ color: theme.textMuted, fontSize: 10 }}>
               {d.date.slice(8)}
             </Text>
           ))}
