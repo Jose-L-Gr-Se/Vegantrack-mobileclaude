@@ -1,0 +1,17 @@
+{
+  "auth": {
+    "subtitle": "More vegetables on your plate, at your own pace",
+    "chip_plants": "Plant-based",
+    "chip_offline": "Offline-first",
+    "chip_private": "Private",
+    "email_label": "Email",
+    "email_placeholder": "you@email.com",
+    "password_label": "Password",
+    "password_placeholder": "••••••••",
+    "login": "Sign in",
+    "register": "Create account",
+    "divider": "or continue with",
+    "google": "Continue with Google",
+    "error_empty": "Please enter your email and password"
+  }
+}

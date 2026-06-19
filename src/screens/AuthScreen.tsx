@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Input } from '@/components/ui';
 import { Logo } from '@/components/Logo';
@@ -17,14 +18,9 @@ import { useAuthStore } from '@/stores/authStore';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const FEATURES = [
-  { icon: '📱', label: 'Offline-first' },
-  { icon: '🌱', label: 'Basado en plantas' },
-  { icon: '🔒', label: 'Privado' },
-];
-
 export function AuthScreen() {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { signIn, signUp, signInWithGoogle } = useAuthStore();
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -36,7 +32,7 @@ export function AuthScreen() {
 
   const submit = async () => {
     if (!email.trim() || !password) {
-      setError('Introduce email y contraseña');
+      setError(t('auth.error_empty'));
       return;
     }
     setLoading(true);
@@ -57,11 +53,17 @@ export function AuthScreen() {
     if (result.error) setError(result.error);
   };
 
-  const heroBg = t.dark ? brand[800] : brand[600];
+  const heroBg = theme.dark ? brand[800] : brand[600];
+
+  const FEATURES = [
+    { icon: '📱', label: t('auth.chip_offline') },
+    { icon: '🌱', label: t('auth.chip_plants') },
+    { icon: '🔒', label: t('auth.chip_private') },
+  ];
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: t.background }}
+      style={{ flex: 1, backgroundColor: theme.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
@@ -111,7 +113,7 @@ export function AuthScreen() {
               marginTop: spacing.xs, textAlign: 'center',
             }}
           >
-            Más vegetales en tu plato, a tu ritmo
+            {t('auth.subtitle')}
           </Text>
 
           {/* Feature chips */}
@@ -140,7 +142,7 @@ export function AuthScreen() {
             {/* Login / Register pill toggle */}
             <View
               style={{
-                flexDirection: 'row', backgroundColor: t.background,
+                flexDirection: 'row', backgroundColor: theme.background,
                 borderRadius: radii.pill, padding: 3,
               }}
             >
@@ -152,10 +154,10 @@ export function AuthScreen() {
                   style={{
                     flex: 1, alignItems: 'center', paddingVertical: 9,
                     borderRadius: radii.pill,
-                    backgroundColor: mode === m ? t.card : 'transparent',
+                    backgroundColor: mode === m ? theme.card : 'transparent',
                     shadowColor: '#000',
                     shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: mode === m && !t.dark ? 0.08 : 0,
+                    shadowOpacity: mode === m && !theme.dark ? 0.08 : 0,
                     shadowRadius: 2,
                     elevation: mode === m ? 1 : 0,
                   }}
@@ -163,61 +165,61 @@ export function AuthScreen() {
                   <Text
                     style={{
                       fontWeight: '700', fontSize: 14,
-                      color: mode === m ? t.primary : t.textMuted,
+                      color: mode === m ? theme.primary : theme.textMuted,
                     }}
                   >
-                    {m === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
+                    {m === 'login' ? t('auth.login') : t('auth.register')}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             <Input
-              label="Email"
+              label={t('auth.email_label')}
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
-              placeholder="tu@email.com"
+              placeholder={t('auth.email_placeholder')}
             />
             <Input
-              label="Contraseña"
+              label={t('auth.password_label')}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
-              placeholder="••••••••"
+              placeholder={t('auth.password_placeholder')}
             />
 
             {error ? (
               <View
                 style={{
-                  backgroundColor: t.dark ? 'rgba(239,68,68,0.12)' : '#fef2f2',
+                  backgroundColor: theme.dark ? 'rgba(239,68,68,0.12)' : '#fef2f2',
                   borderRadius: radii.md,
                   padding: spacing.md,
                   borderLeftWidth: 3,
                   borderLeftColor: '#ef4444',
                 }}
               >
-                <Text style={{ color: t.dark ? '#fca5a5' : '#dc2626', fontSize: 13 }}>
+                <Text style={{ color: theme.dark ? '#fca5a5' : '#dc2626', fontSize: 13 }}>
                   {error}
                 </Text>
               </View>
             ) : null}
 
             <Button
-              title={mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
+              title={mode === 'login' ? t('auth.login') : t('auth.register')}
               onPress={submit}
               loading={loading}
             />
 
             {/* Divider */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: t.separator }} />
-              <Text style={{ color: t.textMuted, fontSize: 12, fontWeight: '600' }}>
-                o continúa con
+              <View style={{ flex: 1, height: 1, backgroundColor: theme.separator }} />
+              <Text style={{ color: theme.textMuted, fontSize: 12, fontWeight: '600' }}>
+                {t('auth.divider')}
               </Text>
-              <View style={{ flex: 1, height: 1, backgroundColor: t.separator }} />
+              <View style={{ flex: 1, height: 1, backgroundColor: theme.separator }} />
             </View>
 
             {/* Google button */}
@@ -228,19 +230,19 @@ export function AuthScreen() {
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                 gap: spacing.sm, height: 50, borderRadius: radii.lg,
-                borderWidth: 1, borderColor: t.cardBorder, backgroundColor: t.inputBg,
+                borderWidth: 1, borderColor: theme.cardBorder, backgroundColor: theme.inputBg,
                 opacity: googleLoading ? 0.6 : 1,
               }}
             >
               {googleLoading ? (
-                <ActivityIndicator size="small" color={t.textMuted} />
+                <ActivityIndicator size="small" color={theme.textMuted} />
               ) : (
                 <Text style={{ fontSize: 17, fontWeight: '800', color: '#4285F4', lineHeight: 22 }}>
                   G
                 </Text>
               )}
-              <Text style={{ color: t.text, fontWeight: '600', fontSize: 15 }}>
-                Continuar con Google
+              <Text style={{ color: theme.text, fontWeight: '600', fontSize: 15 }}>
+                {t('auth.google')}
               </Text>
             </TouchableOpacity>
 

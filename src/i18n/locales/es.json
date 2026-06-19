@@ -1,0 +1,17 @@
+{
+  "auth": {
+    "subtitle": "Más vegetales en tu plato, a tu ritmo",
+    "chip_plants": "Basado en plantas",
+    "chip_offline": "Offline-first",
+    "chip_private": "Privado",
+    "email_label": "Email",
+    "email_placeholder": "tu@email.com",
+    "password_label": "Contraseña",
+    "password_placeholder": "••••••••",
+    "login": "Iniciar sesión",
+    "register": "Crear cuenta",
+    "divider": "o continúa con",
+    "google": "Continuar con Google",
+    "error_empty": "Introduce email y contraseña"
+  }
+}
