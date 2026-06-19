@@ -19,7 +19,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 const FEATURES = [
   { icon: '📱', label: 'Offline-first' },
-  { icon: '🌱', label: '100% vegano' },
+  { icon: '🌱', label: 'Basado en plantas' },
   { icon: '🔒', label: 'Privado' },
 ];
 
@@ -111,7 +111,7 @@ export function AuthScreen() {
               marginTop: spacing.xs, textAlign: 'center',
             }}
           >
-            Nutrición vegana consciente
+            Más vegetales en tu plato, a tu ritmo
           </Text>
 
           {/* Feature chips */}

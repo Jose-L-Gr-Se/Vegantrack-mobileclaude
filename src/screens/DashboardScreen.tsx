@@ -137,7 +137,7 @@ export function DashboardScreen() {
         </ProgressRing>
         <View style={{ flex: 1, gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontWeight: '800', fontSize: 16, color: t.text }}>VeganScore</Text>
+            <Text style={{ fontWeight: '800', fontSize: 16, color: t.text }}>VegeScore</Text>
             <Text style={{ fontWeight: '700', color: scoreColor, fontSize: 14 }}>{getScoreLabel(score.total)}</Text>
           </View>
           {breakdownRows.map(({ label, part }) => (
