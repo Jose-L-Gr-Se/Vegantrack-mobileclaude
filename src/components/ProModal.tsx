@@ -6,6 +6,7 @@
 import React from 'react';
 import { Linking, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
@@ -25,60 +26,10 @@ interface Plan {
   checkout: 'monthly' | 'annual' | null;
 }
 
-const PLANS: Plan[] = [
-  {
-    id: 'free',
-    name: 'Free',
-    price: '0€',
-    cadence: 'para siempre',
-    desc: 'Lo esencial para registrar y seguir tu día.',
-    features: [
-      '3 análisis de platos con IA al día',
-      'Registro ilimitado de comidas',
-      'Macros + 6 micros clave',
-      '14 días de historial',
-      'Escáner de código de barras',
-      '3 recetas y 3 suplementos',
-    ],
-    checkout: null,
-  },
-  {
-    id: 'monthly',
-    name: 'Pro',
-    price: '4,99€',
-    cadence: 'al mes',
-    desc: 'Sin límites y con estadísticas profundas.',
-    features: [
-      'Foto-logueo avanzado (más análisis de platos al día)',
-      'Historial ilimitado',
-      'Tendencias de micros (30 / 90 días)',
-      'Recetas y suplementos ilimitados',
-      'Exportar el diario a CSV',
-      'Soporte prioritario',
-    ],
-    badge: 'Popular',
-    featured: true,
-    checkout: 'monthly',
-  },
-  {
-    id: 'annual',
-    name: 'Pro anual',
-    price: '39€',
-    cadence: 'al año',
-    desc: 'El mismo Pro pagando un año. Ahorra un 35%.',
-    features: [
-      'Todo lo de Pro',
-      '35% de descuento (2 meses gratis)',
-      'Acceso anticipado a novedades',
-    ],
-    badge: 'Ahorra 35%',
-    checkout: 'annual',
-  },
-];
-
 function PlanCard({ plan, isCurrent }: { plan: Plan; isCurrent: boolean }) {
-  const t = useTheme();
-  const border = plan.featured ? t.primary : t.cardBorder;
+  const { t } = useTranslation();
+  const theme = useTheme();
+  const border = plan.featured ? theme.primary : theme.cardBorder;
 
   const onChoose = () => {
     if (!plan.checkout) return;
@@ -93,16 +44,16 @@ function PlanCard({ plan, isCurrent }: { plan: Plan; isCurrent: boolean }) {
         borderColor: border,
         borderRadius: radii.lg,
         padding: spacing.lg,
-        backgroundColor: plan.featured ? t.primarySoft : t.card,
+        backgroundColor: plan.featured ? theme.primarySoft : theme.card,
         gap: spacing.md,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', color: t.textMuted }}>
+        <Text style={{ fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', color: theme.textMuted }}>
           {plan.name}
         </Text>
         {plan.badge ? (
-          <View style={{ backgroundColor: t.primary, borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 3 }}>
+          <View style={{ backgroundColor: theme.primary, borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 3 }}>
             <Text style={{ color: semantic.cream, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 }}>
               {plan.badge.toUpperCase()}
             </Text>
@@ -111,56 +62,90 @@ function PlanCard({ plan, isCurrent }: { plan: Plan; isCurrent: boolean }) {
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-        <Text style={{ fontSize: 38, fontWeight: '800', color: t.text }}>
+        <Text style={{ fontSize: 38, fontWeight: '800', color: theme.text }}>
           {plan.price}
         </Text>
-        <Text style={{ color: t.textMuted, fontSize: 14 }}>{plan.cadence}</Text>
+        <Text style={{ color: theme.textMuted, fontSize: 14 }}>{plan.cadence}</Text>
       </View>
 
-      <Text style={{ color: t.textSecondary, fontSize: 13 }}>{plan.desc}</Text>
+      <Text style={{ color: theme.textSecondary, fontSize: 13 }}>{plan.desc}</Text>
 
       <View style={{ gap: spacing.sm, marginTop: 2 }}>
         {plan.features.map((f) => (
           <View key={f} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
-            <Ionicons name={'checkmark-circle' as never} size={16} color={t.primary} style={{ marginTop: 1 }} />
-            <Text style={{ flex: 1, color: t.text, fontSize: 13 }}>{f}</Text>
+            <Ionicons name={'checkmark-circle' as never} size={16} color={theme.primary} style={{ marginTop: 1 }} />
+            <Text style={{ flex: 1, color: theme.text, fontSize: 13 }}>{f}</Text>
           </View>
         ))}
       </View>
 
       {isCurrent ? (
-        <View style={{ alignItems: 'center', paddingVertical: 12, borderRadius: radii.pill, backgroundColor: t.separator }}>
-          <Text style={{ color: t.textMuted, fontWeight: '700', fontSize: 14 }}>Tu plan actual</Text>
+        <View style={{ alignItems: 'center', paddingVertical: 12, borderRadius: radii.pill, backgroundColor: theme.separator }}>
+          <Text style={{ color: theme.textMuted, fontWeight: '700', fontSize: 14 }}>{t('pro.currentPlan')}</Text>
         </View>
       ) : plan.checkout ? (
-        <Button title={`Elegir ${plan.name}`} onPress={onChoose} />
+        <Button title={t('pro.choosePlan', { name: plan.name })} onPress={onChoose} />
       ) : null}
     </View>
   );
 }
 
 export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => void }) {
-  const t = useTheme();
+  const { t } = useTranslation();
+  const theme = useTheme();
+
+  const plans: Plan[] = [
+    {
+      id: 'free',
+      name: t('pro.free.name'),
+      price: t('pro.free.price'),
+      cadence: t('pro.free.cadence'),
+      desc: t('pro.free.desc'),
+      features: [t('pro.free.f0'), t('pro.free.f1'), t('pro.free.f2'), t('pro.free.f3'), t('pro.free.f4'), t('pro.free.f5')],
+      checkout: null,
+    },
+    {
+      id: 'monthly',
+      name: t('pro.monthly.name'),
+      price: t('pro.monthly.price'),
+      cadence: t('pro.monthly.cadence'),
+      desc: t('pro.monthly.desc'),
+      features: [t('pro.monthly.f0'), t('pro.monthly.f1'), t('pro.monthly.f2'), t('pro.monthly.f3'), t('pro.monthly.f4'), t('pro.monthly.f5')],
+      badge: t('pro.monthly.badge'),
+      featured: true,
+      checkout: 'monthly',
+    },
+    {
+      id: 'annual',
+      name: t('pro.annual.name'),
+      price: t('pro.annual.price'),
+      cadence: t('pro.annual.cadence'),
+      desc: t('pro.annual.desc'),
+      features: [t('pro.annual.f0'), t('pro.annual.f1'), t('pro.annual.f2')],
+      badge: t('pro.annual.badge'),
+      checkout: 'annual',
+    },
+  ];
 
   return (
     <BottomSheet visible onClose={onClose}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
         <View style={{ alignItems: 'center', gap: 4, marginBottom: spacing.sm }}>
           <Text style={{ fontSize: 30 }}>👑</Text>
-          <Text style={{ fontSize: 28, fontWeight: '700', color: t.text }}>
-            Hazte Pro
+          <Text style={{ fontSize: 28, fontWeight: '700', color: theme.text }}>
+            {t('pro.title')}
           </Text>
-          <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>
-            Foto-logueo avanzado, historial sin límites y tendencias de micros. Cancela cuando quieras.
+          <Text style={{ color: theme.textSecondary, fontSize: 14, textAlign: 'center' }}>
+            {t('pro.subtitle')}
           </Text>
         </View>
 
-        {PLANS.map((plan) => (
+        {plans.map((plan) => (
           <PlanCard key={plan.id} plan={plan} isCurrent={isPro ? plan.id !== 'free' : plan.id === 'free'} />
         ))}
 
-        <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', marginTop: spacing.xs }}>
-          El pago se gestiona de forma segura en la web (Stripe). Tu cuenta es la misma en la app y en la PWA.
+        <Text style={{ color: theme.textMuted, fontSize: 11, textAlign: 'center', marginTop: spacing.xs }}>
+          {t('pro.footer')}
         </Text>
       </View>
     </BottomSheet>

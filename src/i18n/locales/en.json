@@ -68,7 +68,8 @@
     "cancel": "Cancel",
     "back": "Back",
     "error": "Error",
-    "delete": "Delete"
+    "delete": "Delete",
+    "save": "Save"
   },
   "diary": {
     "eaten": "Eaten",
@@ -271,5 +272,180 @@
     "de": "Deutsch",
     "fr": "Français",
     "pt": "Português"
+  },
+  "pro": {
+    "title": "Go Pro",
+    "subtitle": "Advanced photo logging, unlimited history and micro trends. Cancel anytime.",
+    "footer": "Payment handled securely on the web (Stripe). Your account is shared between the app and the PWA.",
+    "currentPlan": "Your current plan",
+    "choosePlan": "Choose {{name}}",
+    "free": {
+      "name": "Free",
+      "price": "€0",
+      "cadence": "no card required",
+      "desc": "The essentials to log and track your day.",
+      "f0": "3 AI dish analyses per day",
+      "f1": "Unlimited meal logging",
+      "f2": "Macros + 6 key micros",
+      "f3": "14 days of history",
+      "f4": "Barcode scanner",
+      "f5": "3 recipes and 3 supplements"
+    },
+    "monthly": {
+      "name": "Pro",
+      "price": "€4.99",
+      "cadence": "per month",
+      "desc": "No limits and deep statistics.",
+      "badge": "Popular",
+      "f0": "Advanced photo logging (more dish analyses per day)",
+      "f1": "Unlimited history",
+      "f2": "Micro trends (30 / 90 days)",
+      "f3": "Unlimited recipes and supplements",
+      "f4": "Export diary to CSV",
+      "f5": "Priority support"
+    },
+    "annual": {
+      "name": "Pro annual",
+      "price": "€39",
+      "cadence": "per year",
+      "desc": "Same Pro, paid yearly. Save 35%.",
+      "badge": "Save 35%",
+      "f0": "Everything in Pro",
+      "f1": "2 months free",
+      "f2": "Early access to new features"
+    }
+  },
+  "scoreInfo": {
+    "scaleHeader": "The scale, simply",
+    "tipHeader": "Keep in mind",
+    "nutri": {
+      "title": "Nutri-Score",
+      "intro": "Summarises the overall nutritional quality of a product with a letter from A to E. It weighs calories, sugars, saturated fat and salt negatively; fibre, protein, fruit and vegetables positively.",
+      "a": "best nutritional profile",
+      "b": "good",
+      "c": "average",
+      "d": "below average",
+      "e": "worst profile in its category",
+      "tip": "Compare products within the same category (e.g. yoghurts with yoghurts). An E rating doesn't make something \"bad\" — it helps you choose the best option among several."
+    },
+    "eco": {
+      "title": "Eco-Score",
+      "intro": "Estimates the environmental impact of a product across its lifecycle: how ingredients are grown, transport, packaging and origin. The closer to A, the lower the estimated footprint.",
+      "a": "very low environmental footprint",
+      "b": "low",
+      "c": "medium",
+      "d": "high",
+      "e": "very high",
+      "tip": "Plant-based diets generally score better on eco than animal-based options. It's a guide, not a verdict."
+    },
+    "nova": {
+      "title": "NOVA · processing level",
+      "intro": "Classifies foods by how much industrial processing they have undergone, not by calories. A high NOVA group doesn't mean \"toxic\" — just that the product has gone through more transformations and additives.",
+      "1": "unprocessed (fruit, dried legumes…)",
+      "2": "minimally processed (oil, salt…)",
+      "3": "processed (canned goods, bread…)",
+      "4": "ultra-processed (with additives and formulations)",
+      "tip": "A mindful diet tends to use 1s and 2s as the base, without demonising the occasional 3 or 4 that fits your day."
+    }
+  },
+  "scoreBadges": {
+    "ecoCaption": "environmental impact",
+    "nova_1": "unprocessed",
+    "nova_2": "minimally processed",
+    "nova_3": "processed",
+    "nova_4": "ultra-processed"
+  },
+  "supplementEditor": {
+    "defaultTitle": "Supplement",
+    "nameLabel": "Name",
+    "iconLabel": "Icon",
+    "contributesTo": "Contributes to",
+    "doseLabel": "Dose per serving",
+    "doseHint": "Amount taken in one go. If you take it twice a day, add it as two supplements.",
+    "errorNoName": "Give it a name.",
+    "errorBadAmount": "Enter a valid amount.",
+    "deleteLabel": "Delete supplement",
+    "nutrient": {
+      "none": "No tracked micro",
+      "b12": "Vitamin B12",
+      "d": "Vitamin D",
+      "omega3": "Omega-3 (DHA/EPA)",
+      "iron": "Iron",
+      "zinc": "Zinc",
+      "calcium": "Calcium",
+      "iodine": "Iodine"
+    }
+  },
+  "progress": {
+    "title": "Progress",
+    "invalidWeight": "Invalid weight",
+    "invalidWeightMsg": "Enter a valid weight in kg.",
+    "lastRecorded": "Last logged: {{weight}} kg",
+    "save": "Save →",
+    "stats": "Statistics",
+    "statCurrent": "CURRENT",
+    "statStart": "START",
+    "statMin": "MIN",
+    "statMax": "MAX",
+    "totalChange": "Total change",
+    "chartEmpty": "Log your weight at least two days to see the chart.",
+    "legendDaily": "Daily",
+    "legend7d": "7d avg",
+    "records": "Records",
+    "deleteConfirm": "Delete log from {{date}}?"
+  },
+  "recipes": {
+    "close": "Close",
+    "emptyText": "Create recipes with ingredients and log them to your diary in one tap.",
+    "servingInfo": "{{servings}} servings · {{kcal}} kcal · {{prot}}g prot",
+    "newTitle": "New recipe",
+    "nameLabel": "Name",
+    "descriptionLabel": "Description (optional)",
+    "servingsLabel": "Servings",
+    "create": "Create",
+    "deleteTitle": "Delete recipe",
+    "totalInfo": "{{servings}} servings · {{g}} g total",
+    "perServing": "per serving",
+    "addToDiary": "🍽️ Add to diary",
+    "ingredientsCount": "Ingredients ({{count}})",
+    "ingredientsEmpty": "Search below to add ingredients.",
+    "removeTitle": "Remove",
+    "removeConfirm": "Remove \"{{name}}\"?",
+    "remove": "Remove",
+    "addIngredientTitle": "Add ingredient",
+    "ingredientPlaceholder": "Search food…",
+    "search": "Search",
+    "quantityLabel": "Amount (g)",
+    "addIngredient": "Add to recipe",
+    "logTitle": "Log \"{{name}}\"",
+    "mealLabel": "Meal",
+    "logged": "{{name}} added to {{meal}}",
+    "limitMsg": "The free plan allows {{count}} recipes. Go Pro for unlimited recipes.",
+    "save": "Save"
+  },
+  "supplements": {
+    "preset": {
+      "b12": "Vitamin B12",
+      "d3": "Vegan Vitamin D3",
+      "omega3": "Omega-3 (DHA+EPA from algae)",
+      "iodine": "Iodine",
+      "iron": "Iron",
+      "zinc": "Zinc",
+      "calcium": "Calcium",
+      "magnesium": "Magnesium",
+      "selenium": "Selenium",
+      "creatine": "Creatine",
+      "multivitamin": "Multivitamin",
+      "probiotic": "Probiotic"
+    }
+  },
+  "reminders": {
+    "channelName": "Reminders",
+    "notifTitle": "Vegetrack 🌱",
+    "notifBody": "Have you logged your meals today? Keep your streak alive."
+  },
+  "exportCsv": {
+    "freeSuffix": "# Exported with Vegetrack Free (last {{days}} days)",
+    "shareError": "Could not share the file"
   }
 }

@@ -11,6 +11,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '@/theme';
 import type { ScoreKind } from '@/components/ScoreInfoSheet';
 
@@ -31,13 +32,6 @@ const NOVA_COLORS: Record<1 | 2 | 3 | 4, string> = {
   4: '#c0473e',
 };
 
-const NOVA_DESCRIPTIONS: Record<1 | 2 | 3 | 4, string> = {
-  1: 'sin procesar',
-  2: 'mínimamente procesado',
-  3: 'procesado',
-  4: 'ultraprocesado',
-};
-
 interface ScaleBadgeProps {
   label: string;
   value: Grade | 1 | 2 | 3 | 4;
@@ -47,7 +41,7 @@ interface ScaleBadgeProps {
 }
 
 function ScaleBadge({ label, value, scale, caption, onInfo }: ScaleBadgeProps) {
-  const t = useTheme();
+  const theme = useTheme();
   const Wrap: any = onInfo ? Pressable : View;
   return (
     <Wrap
@@ -61,7 +55,7 @@ function ScaleBadge({ label, value, scale, caption, onInfo }: ScaleBadgeProps) {
             fontSize: 10,
             fontWeight: '700',
             letterSpacing: 0.6,
-            color: t.textMuted,
+            color: theme.textMuted,
             textTransform: 'uppercase',
             flexShrink: 1,
           }}
@@ -73,7 +67,7 @@ function ScaleBadge({ label, value, scale, caption, onInfo }: ScaleBadgeProps) {
           <Ionicons
             name={'information-circle-outline' as never}
             size={12}
-            color={t.textMuted}
+            color={theme.textMuted}
           />
         ) : null}
       </View>
@@ -105,7 +99,7 @@ function ScaleBadge({ label, value, scale, caption, onInfo }: ScaleBadgeProps) {
         })}
       </View>
       {caption ? (
-        <Text style={{ fontSize: 10, color: t.textMuted }} numberOfLines={1}>
+        <Text style={{ fontSize: 10, color: theme.textMuted }} numberOfLines={1}>
           {caption}
         </Text>
       ) : null}
@@ -118,24 +112,26 @@ export function NutriScoreBadge({ grade, onInfo }: { grade: Grade; onInfo?: (k: 
 }
 
 export function EcoScoreBadge({ grade, onInfo }: { grade: Grade; onInfo?: (k: ScoreKind) => void }) {
+  const { t } = useTranslation();
   return (
     <ScaleBadge
       label="Eco-Score"
       value={grade}
       scale={['a', 'b', 'c', 'd', 'e']}
-      caption="impacto ambiental"
+      caption={t('scoreBadges.ecoCaption')}
       onInfo={onInfo ? () => onInfo('eco') : undefined}
     />
   );
 }
 
 export function NovaBadge({ group, onInfo }: { group: 1 | 2 | 3 | 4; onInfo?: (k: ScoreKind) => void }) {
+  const { t } = useTranslation();
   return (
     <ScaleBadge
-      label="NOVA · procesamiento"
+      label="NOVA · processing"
       value={group}
       scale={[1, 2, 3, 4]}
-      caption={NOVA_DESCRIPTIONS[group]}
+      caption={t(`scoreBadges.nova_${group}` as any)}
       onInfo={onInfo ? () => onInfo('nova') : undefined}
     />
   );

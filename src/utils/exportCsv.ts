@@ -1,6 +1,7 @@
 /** Exportación CSV del diario (compartida vía hoja nativa de Android/iOS). */
 import { Share } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import i18n from '@/i18n';
 import { addDays, todayISO } from '@/utils/dates';
 import { FREE_HISTORY_DAYS } from '@/hooks/usePro';
 import type { FoodLogEntry } from '@/types';
@@ -38,7 +39,7 @@ export async function exportDiaryCsv(userId: string, isPro: boolean): Promise<{ 
   for (const e of rows) {
     lines.push(HEADERS.map((h) => escapeCsv(e[h as keyof FoodLogEntry])).join(','));
   }
-  if (!isPro) lines.push(`# Exportado con Vegetrack Free (últimos ${FREE_HISTORY_DAYS} días)`);
+  if (!isPro) lines.push(i18n.t('exportCsv.freeSuffix', { days: FREE_HISTORY_DAYS }));
 
   try {
     await Share.share({
@@ -47,6 +48,6 @@ export async function exportDiaryCsv(userId: string, isPro: boolean): Promise<{ 
     });
     return { error: null };
   } catch {
-    return { error: 'No se pudo compartir el archivo' };
+    return { error: i18n.t('exportCsv.shareError') };
   }
 }

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Button, Card, EmptyState } from '@/components/ui';
 import { brand, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
@@ -18,18 +19,14 @@ const PERIODS = [
   { label: '6M', days: 180 },
 ];
 
-const DAY_ABBR = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const MONTH_ABBR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-
-function formatDateNice(dateStr: string): string {
+function formatDateNice(dateStr: string, locale: string): string {
   const d = new Date(dateStr + 'T00:00:00');
-  const dayName = DAY_ABBR[d.getDay()];
-  const month = MONTH_ABBR[d.getMonth()];
-  return `${dayName} ${d.getDate()} ${month}`;
+  return d.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 export function ProgressScreen() {
-  const t = useTheme();
+  const { t, i18n } = useTranslation();
+  const theme = useTheme();
   const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const weight = useWeightStore();
@@ -47,7 +44,7 @@ export function ProgressScreen() {
   const save = async () => {
     const kg = parseFloat(input.replace(',', '.'));
     if (!Number.isFinite(kg) || kg <= 0 || kg >= 500) {
-      Alert.alert('Peso inválido', 'Introduce un peso válido en kg.');
+      Alert.alert(t('progress.invalidWeight'), t('progress.invalidWeightMsg'));
       return;
     }
     if (!user) return;
@@ -70,12 +67,18 @@ export function ProgressScreen() {
   const toY = (w: number) => CHART_H - ((w - minW) / range) * (CHART_H - 10);
   const toX = (i: number) => (i / Math.max(chart.length - 1, 1)) * CHART_W;
 
-  // Dashed grid lines at 25%, 50%, 75%
   const gridYs = [0.25, 0.5, 0.75].map((pct) => pct * CHART_H);
+
+  const statRows = stats ? [
+    { label: t('progress.statCurrent'), value: `${stats.current} kg` },
+    { label: t('progress.statStart'), value: `${stats.start} kg` },
+    { label: t('progress.statMin'), value: `${stats.min} kg` },
+    { label: t('progress.statMax'), value: `${stats.max} kg` },
+  ] : [];
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: t.background }}
+      style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={{
         paddingHorizontal: spacing.lg,
         paddingTop: insets.top + spacing.md,
@@ -84,7 +87,7 @@ export function ProgressScreen() {
       }}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={{ fontSize: 30, fontWeight: '700', color: t.text }}>Progreso</Text>
+      <Text style={{ fontSize: 30, fontWeight: '700', color: theme.text }}>{t('progress.title')}</Text>
 
       {/* Weight input hero */}
       <Card style={{ gap: spacing.md }}>
@@ -96,24 +99,24 @@ export function ProgressScreen() {
               onChangeText={setInput}
               keyboardType="numeric"
               placeholder="0.0"
-              placeholderTextColor={t.textMuted}
+              placeholderTextColor={theme.textMuted}
               style={{
                 fontSize: 54,
                 fontWeight: '800',
-                color: t.text,
+                color: theme.text,
                 textAlign: 'center',
                 minWidth: 120,
               }}
             />
-            <Text style={{ fontSize: 20, fontWeight: '600', color: t.textMuted }}>kg</Text>
+            <Text style={{ fontSize: 20, fontWeight: '600', color: theme.textMuted }}>kg</Text>
           </View>
           {stats?.current ? (
-            <Text style={{ fontSize: 13, color: t.textMuted }}>
-              Último registrado: {stats.current} kg
+            <Text style={{ fontSize: 13, color: theme.textMuted }}>
+              {t('progress.lastRecorded', { weight: stats.current })}
             </Text>
           ) : null}
         </View>
-        <Button title="Guardar →" onPress={save} loading={saving} />
+        <Button title={t('progress.save')} onPress={save} loading={saving} />
       </Card>
 
       {/* Stats grid */}
@@ -124,29 +127,24 @@ export function ProgressScreen() {
               fontSize: 11,
               fontWeight: '700',
               letterSpacing: 0.8,
-              color: t.textMuted,
+              color: theme.textMuted,
               textTransform: 'uppercase',
               marginBottom: spacing.sm,
             }}
           >
-            Estadísticas
+            {t('progress.stats')}
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-            {[
-              { label: 'ACTUAL', value: `${stats.current} kg` },
-              { label: 'INICIO', value: `${stats.start} kg` },
-              { label: 'MÍNIMO', value: `${stats.min} kg` },
-              { label: 'MÁXIMO', value: `${stats.max} kg` },
-            ].map(({ label, value }) => (
+            {statRows.map(({ label, value }) => (
               <View
                 key={label}
                 style={{
                   flex: 1,
                   minWidth: '47%',
-                  backgroundColor: t.card,
+                  backgroundColor: theme.card,
                   borderRadius: 20,
                   borderWidth: 1,
-                  borderColor: t.cardBorder,
+                  borderColor: theme.cardBorder,
                   padding: spacing.md,
                   gap: 3,
                 }}
@@ -156,13 +154,13 @@ export function ProgressScreen() {
                     fontSize: 10,
                     fontWeight: '700',
                     letterSpacing: 0.8,
-                    color: t.textMuted,
+                    color: theme.textMuted,
                     textTransform: 'uppercase',
                   }}
                 >
                   {label}
                 </Text>
-                <Text style={{ fontSize: 18, fontWeight: '800', color: t.text }}>{value}</Text>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>{value}</Text>
               </View>
             ))}
           </View>
@@ -175,15 +173,15 @@ export function ProgressScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               gap: spacing.sm,
-              backgroundColor: stats.change <= 0 ? '#f0fdf4' : t.card,
+              backgroundColor: stats.change <= 0 ? '#f0fdf4' : theme.card,
               borderWidth: 1,
-              borderColor: stats.change <= 0 ? semantic.success : t.cardBorder,
+              borderColor: stats.change <= 0 ? semantic.success : theme.cardBorder,
             }}
           >
             <Ionicons
               name={(stats.change <= 0 ? 'trending-down' : 'trending-up') as any}
               size={18}
-              color={stats.change <= 0 ? semantic.success : t.textMuted}
+              color={stats.change <= 0 ? semantic.success : theme.textMuted}
             />
             <View>
               <Text
@@ -191,17 +189,17 @@ export function ProgressScreen() {
                   fontSize: 10,
                   fontWeight: '700',
                   letterSpacing: 0.8,
-                  color: t.textMuted,
+                  color: theme.textMuted,
                   textTransform: 'uppercase',
                 }}
               >
-                Cambio total
+                {t('progress.totalChange')}
               </Text>
               <Text
                 style={{
                   fontSize: 18,
                   fontWeight: '800',
-                  color: stats.change <= 0 ? semantic.success : t.textMuted,
+                  color: stats.change <= 0 ? semantic.success : theme.textMuted,
                 }}
               >
                 {stats.change > 0 ? '+' : ''}
@@ -219,7 +217,7 @@ export function ProgressScreen() {
           style={{
             flexDirection: 'row',
             gap: spacing.xs,
-            backgroundColor: t.separator,
+            backgroundColor: theme.separator,
             borderRadius: 999,
             padding: 3,
             marginBottom: spacing.md,
@@ -234,14 +232,14 @@ export function ProgressScreen() {
                 paddingVertical: 6,
                 borderRadius: 999,
                 alignItems: 'center',
-                backgroundColor: period === p.days ? t.card : 'transparent',
+                backgroundColor: period === p.days ? theme.card : 'transparent',
               }}
             >
               <Text
                 style={{
                   fontWeight: '700',
                   fontSize: 13,
-                  color: period === p.days ? t.primary : t.textMuted,
+                  color: period === p.days ? theme.primary : theme.textMuted,
                 }}
               >
                 {p.label}
@@ -254,7 +252,7 @@ export function ProgressScreen() {
           {chart.length < 2 ? (
             <EmptyState
               emoji="📈"
-              text="Registra tu peso al menos dos días para ver el gráfico."
+              text={t('progress.chartEmpty')}
             />
           ) : (
             <>
@@ -273,7 +271,7 @@ export function ProgressScreen() {
                       y1={y}
                       x2={CHART_W}
                       y2={y}
-                      stroke={t.separator}
+                      stroke={theme.separator}
                       strokeWidth="1"
                       strokeDasharray="4 4"
                     />
@@ -302,7 +300,7 @@ export function ProgressScreen() {
                     x={CHART_W - 2}
                     y={toY(maxW) + 10}
                     fontSize="9"
-                    fill={t.textMuted}
+                    fill={theme.textMuted}
                     textAnchor="end"
                   >
                     {maxW.toFixed(1)}
@@ -311,7 +309,7 @@ export function ProgressScreen() {
                     x={CHART_W - 2}
                     y={toY(minW) - 3}
                     fontSize="9"
-                    fill={t.textMuted}
+                    fill={theme.textMuted}
                     textAnchor="end"
                   >
                     {minW.toFixed(1)}
@@ -325,13 +323,13 @@ export function ProgressScreen() {
                   <View
                     style={{ width: 12, height: 3, borderRadius: 2, backgroundColor: brand[300] }}
                   />
-                  <Text style={{ color: t.textMuted, fontSize: 11 }}>Diario</Text>
+                  <Text style={{ color: theme.textMuted, fontSize: 11 }}>{t('progress.legendDaily')}</Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
                   <View
                     style={{ width: 12, height: 3, borderRadius: 2, backgroundColor: semantic.success }}
                   />
-                  <Text style={{ color: t.textMuted, fontSize: 11 }}>Media 7d</Text>
+                  <Text style={{ color: theme.textMuted, fontSize: 11 }}>{t('progress.legend7d')}</Text>
                 </View>
               </View>
             </>
@@ -347,12 +345,12 @@ export function ProgressScreen() {
               fontSize: 11,
               fontWeight: '700',
               letterSpacing: 0.8,
-              color: t.textMuted,
+              color: theme.textMuted,
               textTransform: 'uppercase',
               marginBottom: spacing.sm,
             }}
           >
-            Registros
+            {t('progress.records')}
           </Text>
           <Card style={{ gap: 0, padding: 0, paddingHorizontal: spacing.lg }}>
             {[...weight.logs]
@@ -366,12 +364,12 @@ export function ProgressScreen() {
                     key={log.id}
                     onLongPress={() =>
                       Alert.alert(
-                        'Eliminar',
-                        `¿Eliminar el registro del ${log.date}?`,
+                        t('common.delete'),
+                        t('progress.deleteConfirm', { date: log.date }),
                         [
-                          { text: 'Cancelar', style: 'cancel' },
+                          { text: t('common.cancel'), style: 'cancel' },
                           {
-                            text: 'Eliminar',
+                            text: t('common.delete'),
                             style: 'destructive',
                             onPress: () => void weight.deleteLog(log.id),
                           },
@@ -384,13 +382,13 @@ export function ProgressScreen() {
                       alignItems: 'center',
                       gap: spacing.md,
                       borderBottomWidth: idx < arr.length - 1 ? 1 : 0,
-                      borderBottomColor: t.separator,
+                      borderBottomColor: theme.separator,
                     }}
                   >
-                    <Text style={{ flex: 1, color: t.textSecondary, fontSize: 14 }}>
-                      {formatDateNice(log.date)}
+                    <Text style={{ flex: 1, color: theme.textSecondary, fontSize: 14 }}>
+                      {formatDateNice(log.date, i18n.language)}
                     </Text>
-                    <Text style={{ color: t.text, fontWeight: '800', fontSize: 15 }}>
+                    <Text style={{ color: theme.text, fontWeight: '800', fontSize: 15 }}>
                       {log.weight_kg} kg
                     </Text>
                     {diff !== null ? (
@@ -406,13 +404,13 @@ export function ProgressScreen() {
                         <Ionicons
                           name={(diff > 0 ? 'arrow-up' : 'arrow-down') as any}
                           size={12}
-                          color={diff > 0 ? t.textMuted : semantic.success}
+                          color={diff > 0 ? theme.textMuted : semantic.success}
                         />
                         <Text
                           style={{
                             fontSize: 12,
                             fontWeight: '700',
-                            color: diff > 0 ? t.textMuted : semantic.success,
+                            color: diff > 0 ? theme.textMuted : semantic.success,
                           }}
                         >
                           {Math.abs(diff).toFixed(1)}

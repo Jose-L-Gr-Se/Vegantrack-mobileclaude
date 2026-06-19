@@ -7,6 +7,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { kvGet, kvSet } from '@/db/database';
+import i18n from '@/i18n';
 
 const REMINDER_ID = 'daily-log-reminder';
 const KV_KEY = 'reminder_hour';
@@ -24,7 +25,7 @@ Notifications.setNotificationHandler({
 export async function requestNotificationPermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('reminders', {
-      name: 'Recordatorios',
+      name: i18n.t('reminders.channelName'),
       importance: Notifications.AndroidImportance.DEFAULT,
       lightColor: '#2f5d41',
     });
@@ -43,8 +44,8 @@ export async function scheduleDailyReminder(hour: number): Promise<boolean> {
   await Notifications.scheduleNotificationAsync({
     identifier: REMINDER_ID,
     content: {
-      title: 'Vegetrack 🌱',
-      body: '¿Has registrado tus comidas de hoy? Mantén tu racha viva.',
+      title: i18n.t('reminders.notifTitle'),
+      body: i18n.t('reminders.notifBody'),
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,

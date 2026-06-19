@@ -10,6 +10,7 @@ import { todayISO } from '@/utils/dates';
 import type { Supplement, SupplementNutrientKey } from '@/types';
 
 export interface SupplementPreset {
+  id: string;
   name: string;
   nutrient_key: SupplementNutrientKey | null;
   dose_amount: number;
@@ -19,18 +20,18 @@ export interface SupplementPreset {
 
 /** Presets habituales en dietas veganas (mismos que la PWA, ampliados). */
 export const SUPPLEMENT_PRESETS: SupplementPreset[] = [
-  { name: 'Vitamina B12', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'mcg', emoji: '💊' },
-  { name: 'Vitamina D3 vegana', nutrient_key: 'vitamin_d_mcg', dose_amount: 25, dose_unit: 'mcg', emoji: '☀️' },
-  { name: 'Omega-3 (DHA+EPA de algas)', nutrient_key: 'omega3_g', dose_amount: 0.5, dose_unit: 'g', emoji: '🌊' },
-  { name: 'Yodo', nutrient_key: 'iodine_mcg', dose_amount: 150, dose_unit: 'mcg', emoji: '🧂' },
-  { name: 'Hierro', nutrient_key: 'iron_mg', dose_amount: 14, dose_unit: 'mg', emoji: '🩸' },
-  { name: 'Zinc', nutrient_key: 'zinc_mg', dose_amount: 10, dose_unit: 'mg', emoji: '⚡' },
-  { name: 'Calcio', nutrient_key: 'calcium_mg', dose_amount: 500, dose_unit: 'mg', emoji: '🦴' },
-  { name: 'Magnesio', nutrient_key: null, dose_amount: 300, dose_unit: 'mg', emoji: '🌙' },
-  { name: 'Selenio', nutrient_key: null, dose_amount: 55, dose_unit: 'mcg', emoji: '🛡️' },
-  { name: 'Creatina', nutrient_key: null, dose_amount: 5, dose_unit: 'g', emoji: '💪' },
-  { name: 'Multivitamínico', nutrient_key: null, dose_amount: 1, dose_unit: 'cápsula', emoji: '🌈' },
-  { name: 'Probiótico', nutrient_key: null, dose_amount: 1, dose_unit: 'cápsula', emoji: '🦠' },
+  { id: 'b12', name: 'Vitamina B12', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'mcg', emoji: '💊' },
+  { id: 'd3', name: 'Vitamina D3 vegana', nutrient_key: 'vitamin_d_mcg', dose_amount: 25, dose_unit: 'mcg', emoji: '☀️' },
+  { id: 'omega3', name: 'Omega-3 (DHA+EPA de algas)', nutrient_key: 'omega3_g', dose_amount: 0.5, dose_unit: 'g', emoji: '🌊' },
+  { id: 'iodine', name: 'Yodo', nutrient_key: 'iodine_mcg', dose_amount: 150, dose_unit: 'mcg', emoji: '🧂' },
+  { id: 'iron', name: 'Hierro', nutrient_key: 'iron_mg', dose_amount: 14, dose_unit: 'mg', emoji: '🩸' },
+  { id: 'zinc', name: 'Zinc', nutrient_key: 'zinc_mg', dose_amount: 10, dose_unit: 'mg', emoji: '⚡' },
+  { id: 'calcium', name: 'Calcio', nutrient_key: 'calcium_mg', dose_amount: 500, dose_unit: 'mg', emoji: '🦴' },
+  { id: 'magnesium', name: 'Magnesio', nutrient_key: null, dose_amount: 300, dose_unit: 'mg', emoji: '🌙' },
+  { id: 'selenium', name: 'Selenio', nutrient_key: null, dose_amount: 55, dose_unit: 'mcg', emoji: '🛡️' },
+  { id: 'creatine', name: 'Creatina', nutrient_key: null, dose_amount: 5, dose_unit: 'g', emoji: '💪' },
+  { id: 'multivitamin', name: 'Multivitamínico', nutrient_key: null, dose_amount: 1, dose_unit: 'cápsula', emoji: '🌈' },
+  { id: 'probiotic', name: 'Probiótico', nutrient_key: null, dose_amount: 1, dose_unit: 'cápsula', emoji: '🦠' },
 ];
 
 interface SupplementState {

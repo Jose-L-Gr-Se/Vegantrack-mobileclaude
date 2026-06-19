@@ -48,10 +48,7 @@ export function RecipesScreen() {
   const create = async () => {
     if (!user || !name.trim()) return;
     if (!isPro && store.recipes.length >= FREE_RECIPE_LIMIT) {
-      Alert.alert(
-        'Límite alcanzado',
-        `El plan free permite ${FREE_RECIPE_LIMIT} recetas. Hazte Pro para recetas ilimitadas.`
-      );
+      Alert.alert(t('diary.limitTitle'), t('recipes.limitMsg', { count: FREE_RECIPE_LIMIT }));
       return;
     }
     const n = Math.max(1, parseFloat(servings.replace(',', '.')) || 1);
@@ -87,7 +84,7 @@ export function RecipesScreen() {
     >
       {/* Header row */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 30, fontWeight: '700', color: theme.text }}>Recetas</Text>
+        <Text style={{ fontSize: 30, fontWeight: '700', color: theme.text }}>{t('recipes.title' as any)}</Text>
         <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
           <Pressable
             onPress={() => setShowCreate(true)}
@@ -104,7 +101,7 @@ export function RecipesScreen() {
             <Ionicons name={'add' as any} size={22} color="#fff" />
           </Pressable>
           <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
-            <Text style={{ color: theme.primary, fontWeight: '700' }}>Cerrar</Text>
+            <Text style={{ color: theme.primary, fontWeight: '700' }}>{t('recipes.close')}</Text>
           </Pressable>
         </View>
       </View>
@@ -112,7 +109,7 @@ export function RecipesScreen() {
       {store.recipes.length === 0 ? (
         <EmptyState
           emoji="🍲"
-          text="Crea recetas con sus ingredientes y loguéalas al diario en un toque."
+          text={t('recipes.emptyText')}
         />
       ) : (
         store.recipes.map((r) => {
@@ -126,8 +123,7 @@ export function RecipesScreen() {
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={{ color: theme.text, fontWeight: '700', fontSize: 16 }}>{r.name}</Text>
                   <Text style={{ color: theme.textMuted, fontSize: 12 }}>
-                    {r.total_servings} raciones · {Math.round(perServing)} kcal ·{' '}
-                    {Math.round(protPerServing)}g prot
+                    {t('recipes.servingInfo', { servings: r.total_servings, kcal: Math.round(perServing), prot: Math.round(protPerServing) })}
                   </Text>
                 </View>
                 <Ionicons name={'chevron-forward' as any} size={16} color={theme.textMuted} />
@@ -153,27 +149,27 @@ export function RecipesScreen() {
           }}
         >
           <Card style={{ gap: spacing.md }}>
-            <Text style={{ fontSize: 20, fontWeight: '800', color: theme.text }}>Nueva receta</Text>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: theme.text }}>{t('recipes.newTitle')}</Text>
             <Input
-              label="Nombre"
+              label={t('recipes.nameLabel')}
               value={name}
               onChangeText={setName}
               placeholder="Curry de garbanzos"
             />
             <Input
-              label="Descripción (opcional)"
+              label={t('recipes.descriptionLabel')}
               value={description}
               onChangeText={setDescription}
             />
             <Input
-              label="Raciones"
+              label={t('recipes.servingsLabel')}
               value={servings}
               onChangeText={setServings}
               keyboardType="numeric"
             />
-            <Button title="Crear" onPress={create} />
+            <Button title={t('recipes.create')} onPress={create} />
             <Button
-              title="Cancelar"
+              title={t('common.cancel')}
               variant="secondary"
               onPress={() => setShowCreate(false)}
             />
@@ -244,7 +240,7 @@ function RecipeDetail({
     if (error) Alert.alert('Error', error);
     else {
       setShowLog(false);
-      Alert.alert('✓', `${recipe.name} añadida a ${t(`meals.${logMeal}` as any)}`);
+      Alert.alert('✓', t('recipes.logged', { name: recipe.name, meal: t(`meals.${logMeal}` as any) }));
     }
   };
 
@@ -254,7 +250,7 @@ function RecipeDetail({
     { label: 'KCAL', value: Math.round(perServing), color: semantic.success },
     { label: 'PROT', value: `${Math.round(protPerServing)}g`, color: semantic.protein },
     { label: 'CARBS', value: `${Math.round(carbsPerServing)}g`, color: semantic.carbs },
-    { label: 'GRASA', value: `${Math.round(fatPerServing)}g`, color: '#a855f7' },
+    { label: 'FAT', value: `${Math.round(fatPerServing)}g`, color: '#a855f7' },
   ];
 
   return (
@@ -276,14 +272,14 @@ function RecipeDetail({
           style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}
         >
           <Ionicons name={'arrow-back' as any} size={20} color={theme.primary} />
-          <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 15 }}>Recetas</Text>
+          <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 15 }}>{t('recipes.title' as any)}</Text>
         </Pressable>
         <Pressable
           onPress={() =>
-            Alert.alert('Eliminar receta', `¿Eliminar "${recipe.name}"?`, [
-              { text: 'Cancelar', style: 'cancel' },
+            Alert.alert(t('recipes.deleteTitle'), t('recipes.deleteConfirm' as any, { name: recipe.name }), [
+              { text: t('common.cancel'), style: 'cancel' },
               {
-                text: 'Eliminar',
+                text: t('common.delete'),
                 style: 'destructive',
                 onPress: () => {
                   void store.deleteRecipe(recipe.id);
@@ -294,7 +290,7 @@ function RecipeDetail({
           }
           hitSlop={8}
         >
-          <Text style={{ color: '#ef4444', fontWeight: '700' }}>Eliminar</Text>
+          <Text style={{ color: '#ef4444', fontWeight: '700' }}>{t('common.delete')}</Text>
         </Pressable>
       </View>
 
@@ -302,27 +298,27 @@ function RecipeDetail({
       <Card style={{ gap: spacing.md }}>
         {editingHeader ? (
           <View style={{ gap: spacing.md }}>
-            <Input label="Nombre" value={editName} onChangeText={setEditName} />
-            <Input label="Descripción (opcional)" value={editDescription} onChangeText={setEditDescription} />
-            <Input label="Raciones" value={editServings} onChangeText={setEditServings} keyboardType="numeric" />
+            <Input label={t('recipes.nameLabel')} value={editName} onChangeText={setEditName} />
+            <Input label={t('recipes.descriptionLabel')} value={editDescription} onChangeText={setEditDescription} />
+            <Input label={t('recipes.servingsLabel')} value={editServings} onChangeText={setEditServings} keyboardType="numeric" />
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
               <View style={{ flex: 1 }}>
                 <Button
-                  title="Guardar"
+                  title={t('recipes.save')}
                   onPress={async () => {
                     const { error } = await store.updateRecipe(recipe.id, {
                       name: editName.trim(),
                       description: editDescription.trim() || null,
                       total_servings: parseFloat(editServings) || 1,
                     });
-                    if (error) Alert.alert('Error', error);
+                    if (error) Alert.alert(t('common.error'), error);
                     else setEditingHeader(false);
                   }}
                 />
               </View>
               <View style={{ flex: 1 }}>
                 <Button
-                  title="Cancelar"
+                  title={t('common.cancel')}
                   variant="secondary"
                   onPress={() => {
                     setEditName(recipe.name);
@@ -346,7 +342,7 @@ function RecipeDetail({
               <Text style={{ color: theme.textMuted, fontSize: 14 }}>{recipe.description}</Text>
             ) : null}
             <Text style={{ color: theme.textSecondary, fontSize: 13, marginTop: 2 }}>
-              {recipe.total_servings} raciones · {Math.round(totals.total_g)} g total
+              {t('recipes.totalInfo', { servings: recipe.total_servings, g: Math.round(totals.total_g) })}
             </Text>
           </View>
         )}
@@ -385,12 +381,12 @@ function RecipeDetail({
           ))}
         </View>
         <Text style={{ fontSize: 11, color: theme.textMuted, textAlign: 'center' }}>
-          por ración
+          {t('recipes.perServing')}
         </Text>
       </Card>
 
       {/* Log to diary button */}
-      <Button title="🍽️ Añadir al diario" onPress={() => setShowLog(true)} />
+      <Button title={t('recipes.addToDiary')} onPress={() => setShowLog(true)} />
 
       {/* Ingredients list */}
       <View>
@@ -404,7 +400,7 @@ function RecipeDetail({
             marginBottom: spacing.sm,
           }}
         >
-          Ingredientes ({recipe.ingredients.length})
+          {t('recipes.ingredientsCount', { count: recipe.ingredients.length })}
         </Text>
         <Card style={{ gap: 0, padding: 0, paddingHorizontal: spacing.lg }}>
           {recipe.ingredients.length === 0 ? (
@@ -415,7 +411,7 @@ function RecipeDetail({
                 paddingVertical: spacing.md,
               }}
             >
-              Busca abajo para añadir ingredientes.
+              {t('recipes.ingredientsEmpty')}
             </Text>
           ) : (
             recipe.ingredients.map((ing, idx) => {
@@ -449,9 +445,9 @@ function RecipeDetail({
                     </Text>
                     <Pressable
                       onPress={() =>
-                        Alert.alert('Quitar', `¿Quitar "${ing.food_name}"?`, [
-                          { text: 'Cancelar', style: 'cancel' },
-                          { text: 'Quitar', style: 'destructive', onPress: () => void store.removeIngredient(recipe.id, ing.id) },
+                        Alert.alert(t('recipes.removeTitle'), t('recipes.removeConfirm', { name: ing.food_name }), [
+                          { text: t('common.cancel'), style: 'cancel' },
+                          { text: t('recipes.remove'), style: 'destructive', onPress: () => void store.removeIngredient(recipe.id, ing.id) },
                         ])
                       }
                       hitSlop={8}
@@ -469,17 +465,17 @@ function RecipeDetail({
 
       {/* Add ingredient search */}
       <Card style={{ gap: spacing.md }}>
-        <SectionHeader title="Añadir ingrediente" />
+        <SectionHeader title={t('recipes.addIngredientTitle')} />
         <View style={{ flexDirection: 'row', gap: spacing.md }}>
           <View style={{ flex: 1 }}>
             <Input
               value={query}
               onChangeText={setQuery}
-              placeholder="Buscar alimento…"
+              placeholder={t('recipes.ingredientPlaceholder')}
               onSubmitEditing={search}
             />
           </View>
-          <Button title="Buscar" variant="secondary" onPress={search} />
+          <Button title={t('recipes.search')} variant="secondary" onPress={search} />
         </View>
 
         {freshMatches.slice(0, 4).map((item) => (
@@ -527,12 +523,12 @@ function RecipeDetail({
               {pendingFood.food_name}
             </Text>
             <Input
-              label="Cantidad (g)"
+              label={t('recipes.quantityLabel')}
               value={grams}
               onChangeText={setGrams}
               keyboardType="numeric"
             />
-            <Button title="Añadir a la receta" onPress={addIngredient} />
+            <Button title={t('recipes.addIngredient')} onPress={addIngredient} />
           </View>
         )}
       </Card>
@@ -554,7 +550,7 @@ function RecipeDetail({
         >
           <Card style={{ gap: spacing.md }}>
             <Text style={{ fontSize: 18, fontWeight: '800', color: theme.text }}>
-              Loguear "{recipe.name}"
+              {t('recipes.logTitle', { name: recipe.name })}
             </Text>
 
             {/* Meal selector pills */}
@@ -568,7 +564,7 @@ function RecipeDetail({
                   textTransform: 'uppercase',
                 }}
               >
-                Comida
+                {t('recipes.mealLabel')}
               </Text>
               <View style={{ flexDirection: 'row', gap: spacing.xs }}>
                 {MEAL_KEYS.map((m) => (
@@ -600,14 +596,14 @@ function RecipeDetail({
             </View>
 
             <Input
-              label="Raciones"
+              label={t('recipes.servingsLabel')}
               value={logServings}
               onChangeText={setLogServings}
               keyboardType="numeric"
             />
-            <Button title="Añadir al diario" onPress={logToDiary} />
+            <Button title={t('recipes.addToDiary')} onPress={logToDiary} />
             <Button
-              title="Cancelar"
+              title={t('common.cancel')}
               variant="secondary"
               onPress={() => setShowLog(false)}
             />

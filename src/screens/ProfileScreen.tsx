@@ -663,7 +663,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
         visible
         title={t('diary.addSupplement')}
         initial={{
-          name: p.name,
+          name: t(`supplements.preset.${p.id}` as any),
           emoji: p.emoji,
           nutrient_key: p.nutrient_key,
           dose_amount: p.dose_amount,
@@ -820,7 +820,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
           </Text>
           {SUPPLEMENT_PRESETS.map((p, i) => (
             <Pressable
-              key={p.name}
+              key={p.id}
               onPress={() => tryAdd(() => setEditing({ preset: i }))}
               style={({ pressed }) => ({
                 flexDirection: 'row',
@@ -845,7 +845,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                 <Text style={{ fontSize: 18 }}>{p.emoji}</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: theme.text, fontWeight: '600', fontSize: 14 }}>{p.name}</Text>
+                <Text style={{ color: theme.text, fontWeight: '600', fontSize: 14 }}>{t(`supplements.preset.${p.id}` as any)}</Text>
                 <Text style={{ color: theme.textMuted, fontSize: 11 }}>
                   {t('diary.supplementSuggested', { amount: p.dose_amount, unit: p.dose_unit })}
                 </Text>

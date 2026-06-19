@@ -528,7 +528,7 @@ export function DiaryScreen() {
           visible
           title={t('diary.addSupplement')}
           initial={{
-            name: SUPPLEMENT_PRESETS[suppEditor.preset].name,
+            name: t(`supplements.preset.${SUPPLEMENT_PRESETS[suppEditor.preset].id}` as any),
             emoji: SUPPLEMENT_PRESETS[suppEditor.preset].emoji,
             nutrient_key: SUPPLEMENT_PRESETS[suppEditor.preset].nutrient_key,
             dose_amount: SUPPLEMENT_PRESETS[suppEditor.preset].dose_amount,
@@ -666,7 +666,7 @@ function SupplementPickerSheet({
               <Text style={{ fontSize: 20 }}>{p.emoji}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}>{p.name}</Text>
+              <Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}>{t(`supplements.preset.${p.id}` as any)}</Text>
               <Text style={{ color: theme.textMuted, fontSize: 11 }}>
                 {t('diary.supplementSuggested', { amount: p.dose_amount, unit: p.dose_unit })}
               </Text>
