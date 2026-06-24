@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   Text,
@@ -14,6 +15,7 @@ import { Button, Card, Input } from '@/components/ui';
 import { Logo } from '@/components/Logo';
 import { brand, fonts, radii, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
+import { WEB_BASE_URL } from '@/lib/supabase';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -210,6 +212,19 @@ export function AuthScreen() {
               onPress={submit}
               loading={loading}
             />
+
+            {mode === 'register' && (
+              <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
+                Al crear una cuenta aceptas nuestra{' '}
+                <Text
+                  style={{ color: t.primary, textDecorationLine: 'underline' }}
+                  onPress={() => void Linking.openURL(`${WEB_BASE_URL}/privacy`)}
+                >
+                  Política de privacidad
+                </Text>
+                .
+              </Text>
+            )}
 
             {/* Divider */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>

@@ -20,6 +20,7 @@ interface AuthState {
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<{ error: string | null }>;
   fetchProfile: () => Promise<void>;
   updateProfile: (patch: Partial<Profile>) => Promise<{ error: string | null }>;
 }
@@ -112,6 +113,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     await supabase.auth.signOut();
     set({ user: null, session: null, profile: null });
+  },
+
+  deleteAccount: async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) return { error: 'No hay sesión activa' };
+    try {
+      const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' });
+      if (error) return { error: error.message };
+      await supabase.auth.signOut();
+      set({ user: null, session: null, profile: null });
+      return { error: null };
+    } catch (e: any) {
+      return { error: e?.message ?? 'Error de red' };
+    }
   },
 
   fetchProfile: async () => {

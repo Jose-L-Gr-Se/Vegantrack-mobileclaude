@@ -3,7 +3,7 @@
  * recordatorio diario, exportación CSV, Pro y logout.
  */
 import React, { useEffect, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input, Pill, SectionHeader } from '@/components/ui';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
+import { WEB_BASE_URL } from '@/lib/supabase';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
@@ -126,7 +127,7 @@ export function ProfileScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { user, profile, updateProfile, signOut } = useAuthStore();
+  const { user, profile, updateProfile, signOut, deleteAccount } = useAuthStore();
   const supplementStore = useSupplementStore();
   const customFoods = useCustomFoodStore();
   const { isPro } = usePro();
@@ -446,9 +447,59 @@ export function ProfileScreen() {
           )}
           {isPro && <View style={{ height: 1, backgroundColor: t.separator }} />}
           <MenuRow
+            iconName="document-text-outline"
+            label="Política de privacidad"
+            onPress={() => void Linking.openURL(`${WEB_BASE_URL}/privacy`)}
+            iconBg="#e0f2fe"
+            iconColor="#0284c7"
+          />
+          <View style={{ height: 1, backgroundColor: t.separator }} />
+          <MenuRow
             iconName="log-out-outline"
             label="Cerrar sesión"
             onPress={() => void signOut()}
+            iconBg="#fee2e2"
+            iconColor={semantic.danger}
+            danger
+          />
+        </Card>
+
+        <Card style={{ gap: 0 }}>
+          <MenuRow
+            iconName="trash-outline"
+            label="Eliminar cuenta"
+            onPress={() => {
+              Alert.alert(
+                'Eliminar cuenta',
+                'Esta acción es permanente e irreversible. Se borrarán todos tus datos: diario, recetas, peso y suplementos.',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Eliminar definitivamente',
+                    style: 'destructive',
+                    onPress: () => {
+                      Alert.alert(
+                        '¿Seguro que quieres eliminar tu cuenta?',
+                        'No podremos recuperar tus datos.',
+                        [
+                          { text: 'No, conservar cuenta', style: 'cancel' },
+                          {
+                            text: 'Sí, eliminar',
+                            style: 'destructive',
+                            onPress: async () => {
+                              const { error } = await deleteAccount();
+                              if (error) {
+                                Alert.alert('Error', `No se pudo eliminar la cuenta: ${error}`);
+                              }
+                            },
+                          },
+                        ]
+                      );
+                    },
+                  },
+                ]
+              );
+            }}
             iconBg="#fee2e2"
             iconColor={semantic.danger}
             danger
