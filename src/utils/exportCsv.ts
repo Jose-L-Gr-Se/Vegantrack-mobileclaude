@@ -38,7 +38,7 @@ export async function exportDiaryCsv(userId: string, isPro: boolean): Promise<{ 
   for (const e of rows) {
     lines.push(HEADERS.map((h) => escapeCsv(e[h as keyof FoodLogEntry])).join(','));
   }
-  if (!isPro) lines.push(`# Exportado con VeganTrack Free (últimos ${FREE_HISTORY_DAYS} días)`);
+  if (!isPro) lines.push(`# Exportado con VegeTrack Free (últimos ${FREE_HISTORY_DAYS} días)`);
 
   try {
     await Share.share({

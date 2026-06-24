@@ -43,7 +43,7 @@ export async function scheduleDailyReminder(hour: number): Promise<boolean> {
   await Notifications.scheduleNotificationAsync({
     identifier: REMINDER_ID,
     content: {
-      title: 'VeganTrack 🌱',
+      title: 'VegeTrack 🌱',
       body: '¿Has registrado tus comidas de hoy? Mantén tu racha viva.',
     },
     trigger: {

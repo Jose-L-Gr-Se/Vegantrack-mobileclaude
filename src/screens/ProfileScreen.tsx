@@ -155,7 +155,7 @@ export function ProfileScreen() {
       else
         Alert.alert(
           'Permiso denegado',
-          'Activa las notificaciones de VeganTrack en Ajustes de Android.'
+          'Activa las notificaciones de VegeTrack en Ajustes de Android.'
         );
     } else {
       await cancelDailyReminder();
