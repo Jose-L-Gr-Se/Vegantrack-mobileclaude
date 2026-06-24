@@ -449,7 +449,7 @@ export function ProfileScreen() {
           <MenuRow
             iconName="document-text-outline"
             label="Política de privacidad"
-            onPress={() => void Linking.openURL(`${WEB_BASE_URL}/privacy`)}
+            onPress={() => void Linking.openURL(`${WEB_BASE_URL}/privacidad`)}
             iconBg="#e0f2fe"
             iconColor="#0284c7"
           />

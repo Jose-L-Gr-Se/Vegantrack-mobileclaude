@@ -218,7 +218,7 @@ export function AuthScreen() {
                 Al crear una cuenta aceptas nuestra{' '}
                 <Text
                   style={{ color: t.primary, textDecorationLine: 'underline' }}
-                  onPress={() => void Linking.openURL(`${WEB_BASE_URL}/privacy`)}
+                  onPress={() => void Linking.openURL(`${WEB_BASE_URL}/privacidad`)}
                 >
                   Política de privacidad
                 </Text>
