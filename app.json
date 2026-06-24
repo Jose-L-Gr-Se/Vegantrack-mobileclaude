@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "VeganTrack",
+    "name": "VegeTrack",
     "slug": "vegantrack",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -44,14 +44,14 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "VeganTrack usa la cámara para escanear códigos de barras de alimentos."
+          "cameraPermission": "VegeTrack usa la cámara para escanear códigos de barras de alimentos."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "VeganTrack usa tus fotos para analizar platos y calcular sus nutrientes.",
-          "cameraPermission": "VeganTrack usa la cámara para fotografiar tus platos y analizarlos con IA."
+          "photosPermission": "VegeTrack usa tus fotos para analizar platos y calcular sus nutrientes.",
+          "cameraPermission": "VegeTrack usa la cámara para fotografiar tus platos y analizarlos con IA."
         }
       ]
     ]

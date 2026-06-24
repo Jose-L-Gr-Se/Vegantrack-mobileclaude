@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -13,7 +12,6 @@ import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Input } from '@/components/ui';
 import { Logo } from '@/components/Logo';
-import { ForgotPasswordSheet } from '@/components/ForgotPasswordSheet';
 import { brand, fonts, radii, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -32,8 +30,6 @@ export function AuthScreen() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -41,10 +37,6 @@ export function AuthScreen() {
   const submit = async () => {
     if (!email.trim() || !password) {
       setError('Introduce email y contraseña');
-      return;
-    }
-    if (mode === 'register' && password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres');
       return;
     }
     setLoading(true);
@@ -77,7 +69,7 @@ export function AuthScreen() {
         keyboardShouldPersistTaps="handled"
         bounces={false}
       >
-        {/* ── Hero ──────────────────────────────── */}
+        {/* ── Hero ──────────────────────────────────────────────── */}
         <View
           style={{
             backgroundColor: heroBg,
@@ -88,6 +80,7 @@ export function AuthScreen() {
             overflow: 'hidden',
           }}
         >
+          {/* Decorative background circles */}
           <View
             style={{
               position: 'absolute', top: -50, right: -50,
@@ -110,7 +103,7 @@ export function AuthScreen() {
               letterSpacing: -0.5, marginTop: spacing.sm,
             }}
           >
-            VeganTrack
+            VegeTrack
           </Text>
           <Text
             style={{
@@ -121,6 +114,7 @@ export function AuthScreen() {
             Nutrición vegana consciente
           </Text>
 
+          {/* Feature chips */}
           <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg }}>
             {FEATURES.map(({ icon, label }) => (
               <View
@@ -139,7 +133,7 @@ export function AuthScreen() {
           </View>
         </View>
 
-        {/* ── Form card (overlaps hero slightly) ─── */}
+        {/* ── Form card (overlaps hero slightly) ───── */}
         <View style={{ marginTop: -20, paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl }}>
           <Card style={{ gap: spacing.lg }}>
 
@@ -187,31 +181,13 @@ export function AuthScreen() {
               autoComplete="email"
               placeholder="tu@email.com"
             />
-            <View style={{ gap: 8 }}>
-              <Input
-                label="Contraseña"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                placeholder="••••••••"
-              />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Pressable onPress={() => setShowPassword((v) => !v)} hitSlop={6}>
-                  <Text style={{ color: t.textMuted, fontSize: 12, fontWeight: '600' }}>
-                    {showPassword ? 'Ocultar' : 'Mostrar'} contraseña
-                  </Text>
-                </Pressable>
-                {mode === 'login' ? (
-                  <Pressable onPress={() => setShowForgot(true)} hitSlop={6}>
-                    <Text style={{ color: t.primary, fontSize: 12, fontWeight: '700' }}>
-                      ¿Has olvidado tu contraseña?
-                    </Text>
-                  </Pressable>
-                ) : (
-                  <Text style={{ color: t.textMuted, fontSize: 11 }}>Mínimo 6 caracteres</Text>
-                )}
-              </View>
-            </View>
+            <Input
+              label="Contraseña"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              placeholder="••••••••"
+            />
 
             {error ? (
               <View
@@ -271,13 +247,6 @@ export function AuthScreen() {
           </Card>
         </View>
       </ScrollView>
-
-      {showForgot ? (
-        <ForgotPasswordSheet
-          initialEmail={email}
-          onClose={() => setShowForgot(false)}
-        />
-      ) : null}
     </KeyboardAvoidingView>
   );
 }
