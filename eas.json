@@ -5,17 +5,32 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://hsxqwhsyqtdaenjxlhzo.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzeHF3aHN5cXRkYWVuanhsaHpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NjU3NTEsImV4cCI6MjA4OTM0MTc1MX0.Gz6_QG7ehy4db6j4Lf6WI5C_OE61qGgIyrAF1UAl7vo",
+        "EXPO_PUBLIC_WEB_BASE_URL": "https://vegantrack.app"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://hsxqwhsyqtdaenjxlhzo.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzeHF3aHN5cXRkYWVuanhsaHpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NjU3NTEsImV4cCI6MjA4OTM0MTc1MX0.Gz6_QG7ehy4db6j4Lf6WI5C_OE61qGgIyrAF1UAl7vo",
+        "EXPO_PUBLIC_WEB_BASE_URL": "https://vegantrack.app"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://hsxqwhsyqtdaenjxlhzo.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzeHF3aHN5cXRkYWVuanhsaHpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NjU3NTEsImV4cCI6MjA4OTM0MTc1MX0.Gz6_QG7ehy4db6j4Lf6WI5C_OE61qGgIyrAF1UAl7vo",
+        "EXPO_PUBLIC_WEB_BASE_URL": "https://vegantrack.app"
       }
     }
   },
