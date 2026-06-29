@@ -71,7 +71,7 @@ export function AuthScreen() {
         keyboardShouldPersistTaps="handled"
         bounces={false}
       >
-        {/* ── Hero ─────────────────────────────────────── */}
+        {/* ── Hero ──────────────────────────────────────────────── */}
         <View
           style={{
             backgroundColor: heroBg,
@@ -135,7 +135,7 @@ export function AuthScreen() {
           </View>
         </View>
 
-        {/* ── Form card (overlaps hero slightly) ─────── */}
+        {/* ── Form card (overlaps hero slightly) ───── */}
         <View style={{ marginTop: -20, paddingHorizontal: spacing.lg, paddingBottom: spacing.xxl }}>
           <Card style={{ gap: spacing.lg }}>
 

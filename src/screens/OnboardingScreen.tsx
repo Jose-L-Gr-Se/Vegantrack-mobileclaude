@@ -1,13 +1,14 @@
 /** Wizard de 3 pasos: datos básicos → actividad → objetivo. Calcula objetivos con Mifflin-St Jeor. */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input } from '@/components/ui';
 import { Logo } from '@/components/Logo';
-import { fonts, radii, spacing, useTheme } from '@/theme';
+import { DateField } from '@/components/DateField';
+import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
-import { calculateTargets } from '@/utils/nutrition';
+import { calculateTargets, formatNumber } from '@/utils/nutrition';
 import type { ActivityLevel, Goal, Sex } from '@/types';
 
 const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; desc: string; icon: string }[] = [
@@ -103,6 +104,20 @@ export function OnboardingScreen() {
     weight.trim() !== '' &&
     /^\d{4}-\d{2}-\d{2}$/.test(birthDate) &&
     sex !== null;
+
+  // Vista previa en vivo de los objetivos (se actualiza al cambiar actividad/objetivo).
+  const preview = useMemo(
+    () =>
+      calculateTargets({
+        height_cm: parseFloat(height) || null,
+        weight_kg: parseFloat(weight) || null,
+        birth_date: birthDate || null,
+        sex,
+        activity_level: activity,
+        goal,
+      }),
+    [height, weight, birthDate, sex, activity, goal]
+  );
 
   const finish = async () => {
     setSaving(true);
@@ -205,25 +220,30 @@ export function OnboardingScreen() {
               onChangeText={setName}
               placeholder="¿Cómo te llamas?"
             />
-            <Input
-              label="Altura (cm)"
-              value={height}
-              onChangeText={setHeight}
-              keyboardType="numeric"
-              placeholder="170"
-            />
-            <Input
-              label="Peso (kg)"
-              value={weight}
-              onChangeText={setWeight}
-              keyboardType="numeric"
-              placeholder="65"
-            />
-            <Input
-              label="Fecha de nacimiento (AAAA-MM-DD)"
+            <View style={{ flexDirection: 'row', gap: spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <Input
+                  label="Altura (cm)"
+                  value={height}
+                  onChangeText={setHeight}
+                  keyboardType="numeric"
+                  placeholder="170"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input
+                  label="Peso (kg)"
+                  value={weight}
+                  onChangeText={setWeight}
+                  keyboardType="numeric"
+                  placeholder="65"
+                />
+              </View>
+            </View>
+            <DateField
+              label="Fecha de nacimiento"
               value={birthDate}
-              onChangeText={setBirthDate}
-              placeholder="1992-12-05"
+              onChange={setBirthDate}
             />
             <View style={{ gap: spacing.sm }}>
               <Text
@@ -237,20 +257,29 @@ export function OnboardingScreen() {
               >
                 Sexo biológico
               </Text>
-              <OptionRow
-                selected={sex === 'male'}
-                label="Hombre"
-                desc=""
-                icon="👨"
-                onPress={() => setSex('male')}
-              />
-              <OptionRow
-                selected={sex === 'female'}
-                label="Mujer"
-                desc=""
-                icon="👩"
-                onPress={() => setSex('female')}
-              />
+              <Text style={{ color: t.textMuted, fontSize: 12, marginTop: -2 }}>
+                Se usa solo para calcular tu metabolismo y la dosis de hierro recomendada.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <OptionRow
+                    selected={sex === 'male'}
+                    label="Hombre"
+                    desc=""
+                    icon="👨"
+                    onPress={() => setSex('male')}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <OptionRow
+                    selected={sex === 'female'}
+                    label="Mujer"
+                    desc=""
+                    icon="👩"
+                    onPress={() => setSex('female')}
+                  />
+                </View>
+              </View>
             </View>
           </Card>
         )}
@@ -273,21 +302,72 @@ export function OnboardingScreen() {
 
         {/* Step 3: objetivo */}
         {step === 3 && (
-          <Card style={{ gap: spacing.md }}>
-            {GOAL_OPTIONS.map((o) => (
-              <OptionRow
-                key={o.value}
-                selected={goal === o.value}
-                label={o.label}
-                desc={o.desc}
-                icon={o.icon}
-                onPress={() => setGoal(o.value)}
-              />
-            ))}
+          <>
+            <Card style={{ gap: spacing.md }}>
+              {GOAL_OPTIONS.map((o) => (
+                <OptionRow
+                  key={o.value}
+                  selected={goal === o.value}
+                  label={o.label}
+                  desc={o.desc}
+                  icon={o.icon}
+                  onPress={() => setGoal(o.value)}
+                />
+              ))}
+            </Card>
+
+            {/* Vista previa de objetivos */}
+            {preview ? (
+              <View
+                style={{
+                  borderRadius: radii.xl,
+                  borderWidth: 1.5,
+                  borderColor: t.primary,
+                  backgroundColor: t.primarySoft,
+                  padding: spacing.lg,
+                  gap: spacing.md,
+                }}
+              >
+                <Text style={{ fontWeight: '800', fontSize: 14, color: t.primary }}>
+                  Tus objetivos diarios
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+                  <Text style={{ fontSize: 38, fontWeight: '800', color: t.text }}>
+                    {formatNumber(preview.calories)}
+                  </Text>
+                  <Text style={{ color: t.textMuted, fontSize: 14, fontWeight: '700' }}>kcal / día</Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  {[
+                    { label: 'Proteína', value: `${preview.protein_g}g`, color: semantic.protein },
+                    { label: 'Carbos', value: `${preview.carbs_g}g`, color: semantic.carbs },
+                    { label: 'Grasa', value: `${preview.fat_g}g`, color: semantic.fat },
+                  ].map((m) => (
+                    <View
+                      key={m.label}
+                      style={{
+                        flex: 1,
+                        backgroundColor: t.card,
+                        borderRadius: radii.lg,
+                        borderLeftWidth: 3,
+                        borderLeftColor: m.color,
+                        padding: spacing.sm,
+                      }}
+                    >
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: t.text }}>{m.value}</Text>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase' }}>
+                        {m.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
             {error ? (
               <Text style={{ color: '#ef4444', fontSize: 13 }}>{error}</Text>
             ) : null}
-          </Card>
+          </>
         )}
 
         {/* Navigation buttons (outside the card) */}
@@ -308,7 +388,7 @@ export function OnboardingScreen() {
           {step === 3 && (
             <>
               <Button
-                title="Calcular objetivos ✓"
+                title="Empezar ✓"
                 onPress={finish}
                 loading={saving}
               />

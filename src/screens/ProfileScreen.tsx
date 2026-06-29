@@ -702,21 +702,19 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
   const store = useSupplementStore();
   const { isPro } = usePro();
 
-  // Estado del editor: null = cerrado · 'new' o un Supplement = abierto.
   const [editing, setEditing] = React.useState<Supplement | 'new' | { preset: number } | null>(null);
 
   const tryAdd = (open: () => void) => {
     if (!isPro && store.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
       Alert.alert(
         'Límite alcanzado',
-        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`
+        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Házte Pro para añadir más.`
       );
       return;
     }
     open();
   };
 
-  // ── Editor: nuevo desde preset ────────────────────────────────────────
   if (editing && typeof editing === 'object' && 'preset' in editing) {
     const p = SUPPLEMENT_PRESETS[editing.preset];
     return (
@@ -739,7 +737,6 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
     );
   }
 
-  // ── Editor: nuevo en blanco ───────────────────────────────────────────
   if (editing === 'new') {
     return (
       <SupplementEditor
@@ -755,7 +752,6 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
     );
   }
 
-  // ── Editor: edición de uno existente ──────────────────────────────────
   if (editing && typeof editing === 'object' && 'id' in editing) {
     const s = editing;
     return (
@@ -790,7 +786,6 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
           ) : null}
         </View>
 
-        {/* ── Mis suplementos ──────────────────────────────────────── */}
         {store.supplements.length > 0 ? (
           <View style={{ gap: spacing.sm }}>
             <Text
@@ -846,7 +841,6 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
           </View>
         ) : null}
 
-        {/* ── Acción: crear personalizado ──────────────────────────── */}
         <Pressable
           onPress={() => tryAdd(() => setEditing('new'))}
           style={({ pressed }) => ({
@@ -868,7 +862,6 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
           </Text>
         </Pressable>
 
-        {/* ── Presets sugeridos ────────────────────────────────────── */}
         <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
           <Text
             style={{

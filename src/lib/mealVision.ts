@@ -1,8 +1,7 @@
 /**
- * Cliente de "VeganLens": envía la foto de un plato a la función servidor
- * `/api/analyze-meal` (que llama a Claude con visión) y normaliza la respuesta
- * al formato común `FoodPer100g` para reutilizar la ficha de producto y el alta
- * en el diario. La API key de IA vive en el servidor, nunca en el cliente.
+ * Cliente de "VeganLens": envía la foto de un plato a la Edge Function
+ * de Supabase (`analyze-meal`) y normaliza la respuesta al formato común
+ * `FoodPer100g`. La API key de Gemini vive en el servidor, nunca en el cliente.
  */
 import { supabase } from '@/lib/supabase';
 import type { FoodPer100g, VeganConfidence } from '@/types';
@@ -30,8 +29,10 @@ export interface MealAnalysis {
 }
 
 export type AnalyzeResult =
-  | { ok: true; analysis: MealAnalysis; remaining: number | null; limit: number }
-  | { ok: false; reason: 'quota'; limit: number }
+  | { ok: true; analysis: MealAnalysis; remaining: number; limit: number; isPro: boolean }
+  | { ok: false; reason: 'quota'; limit: number; isPro: boolean }
+  | { ok: false; reason: 'rate_limit' }
+  | { ok: false; reason: 'global_block' }
   | { ok: false; reason: 'no_food' }
   | { ok: false; reason: 'error'; message: string };
 
@@ -41,7 +42,6 @@ export async function analyzeMealPhoto(base64: string, mime: string): Promise<An
   if (!token) return { ok: false, reason: 'error', message: 'Sesión no válida' };
 
   try {
-    // Edge Function de Supabase: {SUPABASE_URL}/functions/v1/analyze-meal
     const res = await fetch(`${SUPABASE_URL}/functions/v1/analyze-meal`, {
       method: 'POST',
       headers: {
@@ -54,18 +54,24 @@ export async function analyzeMealPhoto(base64: string, mime: string): Promise<An
 
     if (res.status === 402) {
       const j = await res.json().catch(() => ({}));
-      return { ok: false, reason: 'quota', limit: j.limit ?? 3 };
+      return { ok: false, reason: 'quota', limit: j.limit ?? 1, isPro: !!j.is_pro };
     }
-    if (res.status === 422) {
-      return { ok: false, reason: 'no_food' };
-    }
+    if (res.status === 429) return { ok: false, reason: 'rate_limit' };
+    if (res.status === 503) return { ok: false, reason: 'global_block' };
+    if (res.status === 422) return { ok: false, reason: 'no_food' };
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       return { ok: false, reason: 'error', message: j.error ?? `Error ${res.status}` };
     }
 
     const j = await res.json();
-    return { ok: true, analysis: j.result as MealAnalysis, remaining: j.remaining ?? null, limit: j.limit ?? 3 };
+    return {
+      ok: true,
+      analysis: j.result as MealAnalysis,
+      remaining: j.remaining ?? 0,
+      limit: j.limit ?? 1,
+      isPro: !!j.is_pro,
+    };
   } catch (e: any) {
     return { ok: false, reason: 'error', message: e?.message ?? 'Error de red' };
   }

@@ -4,6 +4,10 @@
  * La sesión (tokens) se guarda en el almacenamiento seguro del sistema
  * (Android Keystore vía expo-secure-store). SecureStore limita cada valor a
  * ~2 KB, así que troceamos los valores grandes en chunks.
+ *
+ * flowType 'pkce': flujo recomendado para apps nativas. El login con Google
+ * devuelve un `?code=` que intercambiamos por sesión (exchangeCodeForSession),
+ * mucho más fiable en móvil que el antiguo flujo implicit (#access_token).
  */
 import 'react-native-url-polyfill/auto';
 import { AppState } from 'react-native';
@@ -68,6 +72,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    flowType: 'pkce',
   },
 });
 

@@ -35,7 +35,7 @@ const PLANS: Plan[] = [
     cadence: 'para siempre',
     desc: 'Lo esencial para registrar y seguir tu día.',
     features: [
-      '3 análisis de platos con IA al día',
+      '1 análisis de plato con IA al día',
       'Registro ilimitado de comidas',
       'Macros + 6 micros clave',
       '14 días de historial',
@@ -51,7 +51,7 @@ const PLANS: Plan[] = [
     cadence: 'al mes',
     desc: 'Sin límites y con estadísticas profundas.',
     features: [
-      'Análisis de platos avanzado (sin límite diario)',
+      'Análisis de platos con IA sin límite',
       'Historial ilimitado',
       'Tendencias de micros (30 / 90 días)',
       'Recetas y suplementos ilimitados',
@@ -247,7 +247,7 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
           <Text style={{ fontSize: 30 }}>👑</Text>
           <Text style={{ fontSize: 28, fontWeight: '700', color: t.text }}>Hazte Pro</Text>
           <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>
-            Análisis IA avanzado, historial sin límites y tendencias de micros. Cancela cuando quieras.
+            Análisis de platos con IA sin límite, historial completo y tendencias de micros. Cancela cuando quieras.
           </Text>
         </View>
 

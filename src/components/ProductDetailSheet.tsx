@@ -7,13 +7,13 @@
  *   · resultado de escaneo de código de barras,
  *   · selección desde "Recientes",
  *   · edición de una entrada ya registrada en el Diario (`editEntry`).
+ *   · análisis IA de un plato (source `ai_photo`): nombre editable y opción
+ *     de guardar como alimento habitual para no volver a gastar tokens.
  *
  * Auto-enriquecido: si el alimento tiene código de barras pero le faltan los
  * indicadores ricos (Nutri/Eco/NOVA, ingredientes, imagen grande) —caso
  * típico de recientes y entradas guardadas— los recupera de OpenFoodFacts
  * (caché local, instantáneo) y los fusiona. Así la ficha es consistente.
- *
- * Sobre `BottomSheet`, que gestiona teclado, safe area y cierre por gesto.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, Text, TextInput, View } from 'react-native';
@@ -26,6 +26,7 @@ import { radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
+import { useCustomFoodStore } from '@/stores/customFoodStore';
 import {
   canSuggestVeganAlternative,
   getProductByBarcode,
@@ -134,9 +135,7 @@ export function ProductDetailSheet({
   notice,
   profile,
 }: {
-  /** Alimento a mostrar (modo añadir). En modo edición se ignora si hay editEntry. */
   food?: FoodPer100g | null;
-  /** Si se pasa, la ficha entra en modo edición de esa entrada del diario. */
   editEntry?: FoodLogEntry | null;
   lockedMealType?: MealType | null;
   initialGrams?: number;
@@ -147,7 +146,6 @@ export function ProductDetailSheet({
   onDelete?: () => void;
   onShowAlternatives?: (product: OpenFoodFactsProduct) => void;
   veganConfidence?: VeganConfidence;
-  /** Aviso opcional sobre la ficha (p. ej. ingredientes no veganos detectados por IA). */
   notice?: { tone: 'warn' | 'info'; text: string } | null;
   profile?: {
     calorie_target: number;
@@ -159,6 +157,7 @@ export function ProductDetailSheet({
   const t = useTheme();
   const user = useAuthStore((s) => s.user);
   const { addEntry, deleteEntry, selectedDate } = useDiaryStore();
+  const createCustomFood = useCustomFoodStore((s) => s.createCustomFood);
 
   const isEdit = !!editEntry;
   const baseFood = useMemo<FoodPer100g | null>(
@@ -166,7 +165,6 @@ export function ProductDetailSheet({
     [editEntry, foodProp]
   );
 
-  // Estado enriquecido (scores/ingredientes/imagen) y producto OFF para alts.
   const [food, setFood] = useState<FoodPer100g | null>(baseFood);
   const [offProduct, setOffProduct] = useState<OpenFoodFactsProduct | null>(offProductProp ?? null);
   const [confidence, setConfidence] = useState<VeganConfidence | undefined>(veganConfidence);
@@ -180,9 +178,17 @@ export function ProductDetailSheet({
   const [imageBroken, setImageBroken] = useState(false);
   const [infoKind, setInfoKind] = useState<ScoreKind | null>(null);
 
-  // Auto-enriquecido por código de barras (recientes / entradas guardadas).
+  // — Edición del nombre y opción "guardar como habitual" —
+  // Sólo activo cuando el alimento viene de la IA por foto: así el usuario
+  // puede corregir un fallo de etiquetado ("carne" → "seitán con verduras") y
+  // persistirlo para no volver a gastar tokens la próxima vez.
+  const isAiPhoto = baseFood?.source === 'ai_photo' && !isEdit;
+  const [editedName, setEditedName] = useState(baseFood?.food_name ?? '');
+  const [saveAsCustom, setSaveAsCustom] = useState(false);
+
   useEffect(() => {
     setFood(baseFood);
+    setEditedName(baseFood?.food_name ?? '');
     if (!baseFood) return;
     const needsRich =
       !baseFood.nutriscore_grade && !baseFood.ecoscore_grade && !baseFood.nova_group && !baseFood.ingredients_text;
@@ -245,25 +251,56 @@ export function ProductDetailSheet({
       return;
     }
     if (!user) return;
+
+    // En modo foto-IA, sustituimos el nombre por el corregido por el usuario.
+    const finalName = isAiPhoto ? editedName.trim() || food.food_name : food.food_name;
+    const finalFood: FoodPer100g = { ...food, food_name: finalName };
+
     setBusy(true);
 
     if (isEdit && editEntry) {
-      // Edición = borrar la entrada actual + insertar la reescalada.
       await deleteEntry(editEntry.id);
-      const next = buildEntry(food, parsed, target, editEntry.date, user.id);
+      const next = buildEntry(finalFood, parsed, target, editEntry.date, user.id);
       const { error: err } = await addEntry(next);
       setBusy(false);
       if (err) setError(err);
       else onSaved?.();
-    } else {
-      const entry = buildEntry(food, parsed, target, selectedDate, user.id);
-      const { error: err } = await addEntry(entry);
-      setBusy(false);
-      if (err) setError(err);
-      else {
-        onAdded?.(`${food.food_name} añadido a ${MEAL_LABELS[target]}`);
-        onClose();
-      }
+      return;
+    }
+
+    // Guardar como alimento habitual (sólo en foto-IA y si el usuario lo marcó).
+    // Lo hacemos antes del entry y NO bloqueamos si falla: el alta en diario
+    // es lo importante; el favorito es opcional.
+    if (isAiPhoto && saveAsCustom && finalName.length >= 2) {
+      void createCustomFood(user.id, {
+        name: finalName,
+        brand: finalFood.brand ?? null,
+        image_url: null,
+        is_vegan: finalFood.is_vegan,
+        calories_per_100g: finalFood.calories,
+        protein_per_100g: finalFood.protein_g,
+        carbs_per_100g: finalFood.carbs_g,
+        fat_per_100g: finalFood.fat_g,
+        fiber_per_100g: finalFood.fiber_g,
+        sugar_per_100g: finalFood.sugar_g,
+        saturated_fat_per_100g: finalFood.saturated_fat_g,
+        sodium_mg_per_100g: finalFood.sodium_mg,
+        vitamin_b12_mcg_per_100g: finalFood.vitamin_b12_mcg,
+        iron_mg_per_100g: finalFood.iron_mg,
+        zinc_mg_per_100g: finalFood.zinc_mg,
+        calcium_mg_per_100g: finalFood.calcium_mg,
+        omega3_g_per_100g: finalFood.omega3_g,
+        vitamin_d_mcg_per_100g: finalFood.vitamin_d_mcg,
+      } as any);
+    }
+
+    const entry = buildEntry(finalFood, parsed, target, selectedDate, user.id);
+    const { error: err } = await addEntry(entry);
+    setBusy(false);
+    if (err) setError(err);
+    else {
+      onAdded?.(`${finalName} añadido a ${MEAL_LABELS[target]}`);
+      onClose();
     }
   };
 
@@ -300,7 +337,6 @@ export function ProductDetailSheet({
       }
     >
       <View style={{ gap: spacing.lg, paddingTop: spacing.sm }}>
-        {/* ── Aviso (p. ej. ingredientes no veganos detectados por IA) ── */}
         {notice ? (
           <View
             style={{
@@ -323,7 +359,7 @@ export function ProductDetailSheet({
           </View>
         ) : null}
 
-        {/* ── Hero ────────────────────────────────────────────────── */}
+        {/* ── Hero ─────────────────────────────────────────── */}
         <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' }}>
           {heroImage && !imageBroken ? (
             <Image
@@ -347,12 +383,35 @@ export function ProductDetailSheet({
             </View>
           )}
           <View style={{ flex: 1, gap: 4, paddingTop: 2 }}>
-            <Text
-              style={{ fontSize: 22, fontWeight: '700', color: t.text, lineHeight: 26 }}
-              numberOfLines={3}
-            >
-              {food.food_name}
-            </Text>
+            {isAiPhoto ? (
+              <TextInput
+                value={editedName}
+                onChangeText={setEditedName}
+                multiline
+                placeholder="Nombre del plato"
+                placeholderTextColor={t.textMuted}
+                style={{
+                  fontSize: 20,
+                  fontWeight: '700',
+                  color: t.text,
+                  lineHeight: 24,
+                  borderWidth: 1,
+                  borderColor: t.inputBorder,
+                  borderRadius: radii.md,
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: 6,
+                  backgroundColor: t.inputBg,
+                  minHeight: 44,
+                }}
+              />
+            ) : (
+              <Text
+                style={{ fontSize: 22, fontWeight: '700', color: t.text, lineHeight: 26 }}
+                numberOfLines={3}
+              >
+                {food.food_name}
+              </Text>
+            )}
             {food.brand ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
             <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 4 }}>
               {food.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
@@ -364,10 +423,15 @@ export function ProductDetailSheet({
                 <Pill text="Sin datos vegano" color={t.textMuted} />
               ) : null}
             </View>
+            {isAiPhoto ? (
+              <Text style={{ color: t.textMuted, fontSize: 11, marginTop: 2 }}>
+                Toca para corregir el nombre si la IA se ha confundido.
+              </Text>
+            ) : null}
           </View>
         </View>
 
-        {/* ── Scores (Nutri / Eco / NOVA) ─────────────────────────── */}
+        {/* ── Scores (Nutri / Eco / NOVA) ─────────────────────── */}
         {hasAnyScore ? (
           <View style={{ gap: spacing.xs }}>
             <View
@@ -405,7 +469,7 @@ export function ProductDetailSheet({
           <MacroRingChip label="Grasa" value={fat} target={fatTarget} unit="g" color={semantic.fat} />
         </View>
 
-        {/* ── Cantidad ────────────────────────────────────────────── */}
+        {/* ── Cantidad ─────────────────────────────────────── */}
         <View style={{ gap: spacing.sm }}>
           <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>Cantidad (g)</Text>
           <View style={{ flexDirection: 'row', gap: spacing.xs }}>
@@ -455,7 +519,7 @@ export function ProductDetailSheet({
           />
         </View>
 
-        {/* ── Selector de comida ──────────────────────────────────── */}
+        {/* ── Selector de comida ────────────────────────────── */}
         {lockedMealType ? (
           <View
             style={{
@@ -518,7 +582,39 @@ export function ProductDetailSheet({
           </View>
         )}
 
-        {/* ── Detalle nutricional adicional ───────────────────────── */}
+        {/* ── Guardar como alimento habitual (sólo en foto-IA) ───────── */}
+        {isAiPhoto ? (
+          <Pressable
+            onPress={() => setSaveAsCustom((v) => !v)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: spacing.sm,
+              padding: spacing.md,
+              borderRadius: radii.lg,
+              borderWidth: 1.5,
+              borderColor: saveAsCustom ? t.primary : t.cardBorder,
+              backgroundColor: saveAsCustom ? t.primarySoft : 'transparent',
+            }}
+          >
+            <Ionicons
+              name={(saveAsCustom ? 'checkbox' : 'square-outline') as never}
+              size={22}
+              color={saveAsCustom ? t.primary : t.textMuted}
+              style={{ marginTop: 1 }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }}>
+                Guardar como mi alimento habitual
+              </Text>
+              <Text style={{ color: t.textSecondary, fontSize: 12, marginTop: 2, lineHeight: 16 }}>
+                Lo encontrarás en "Mis alimentos" para reutilizarlo sin gastar análisis IA.
+              </Text>
+            </View>
+          </Pressable>
+        ) : null}
+
+        {/* ── Detalle nutricional adicional ────────────────────── */}
         <View
           style={{
             backgroundColor: t.background,
@@ -564,7 +660,7 @@ export function ProductDetailSheet({
           />
         </View>
 
-        {/* ── Ingredientes ───────────────────────────────────────── */}
+        {/* ── Ingredientes ─────────────────────────────────── */}
         {food.ingredients_text ? (
           <View
             style={{
