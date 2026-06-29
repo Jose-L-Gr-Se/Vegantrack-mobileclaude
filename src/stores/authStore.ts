@@ -8,6 +8,7 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { kvGet, kvSet } from '@/db/database';
+import { usePurchasesStore } from '@/stores/purchasesStore';
 import type { Profile } from '@/types';
 
 interface AuthState {
@@ -44,6 +45,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
 
     if (session?.user) {
+      usePurchasesStore.getState().init(session.user.id);
       // Perfil cacheado primero (arranque instantáneo offline), luego red.
       const cached = await kvGet<Profile>(profileKvKey(session.user.id));
       if (cached) set({ profile: cached });
@@ -53,16 +55,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signIn: async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
     await get().fetchProfile();
+    if (data.user) usePurchasesStore.getState().init(data.user.id);
     return { error: null };
   },
 
   signUp: async (email, password) => {
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return { error: error.message };
     await get().fetchProfile();
+    if (data.user) usePurchasesStore.getState().init(data.user.id);
     return { error: null };
   },
 
@@ -112,6 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signOut: async () => {
     await supabase.auth.signOut();
+    await usePurchasesStore.getState().reset();
     set({ user: null, session: null, profile: null });
   },
 
