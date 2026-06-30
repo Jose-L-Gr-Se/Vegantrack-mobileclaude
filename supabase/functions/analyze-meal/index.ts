@@ -11,8 +11,8 @@
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const PRIMARY_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.0-flash';
-const FALLBACK_MODEL = 'gemini-2.0-flash';
+const PRIMARY_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash-lite';
+const FALLBACK_MODEL = 'gemini-2.0-flash-lite'; // free-tier safe (30 RPM, 1M TPD)
 const FREE_DAILY_SCANS = Number(Deno.env.get('FREE_DAILY_SCANS') ?? '1');
 const PRO_DAILY_SCANS = Number(Deno.env.get('PRO_DAILY_SCANS') ?? '100');
 const RATE_LIMIT_PER_MIN = Number(Deno.env.get('RATE_LIMIT_PER_MIN') ?? '5');
