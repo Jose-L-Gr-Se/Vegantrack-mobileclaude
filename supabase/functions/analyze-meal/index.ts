@@ -20,7 +20,7 @@
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash-lite';
+const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.0-flash';
 const FREE_DAILY_SCANS = Number(Deno.env.get('FREE_DAILY_SCANS') ?? '1');
 const PRO_DAILY_SCANS = Number(Deno.env.get('PRO_DAILY_SCANS') ?? '100');
 const RATE_LIMIT_PER_MIN = Number(Deno.env.get('RATE_LIMIT_PER_MIN') ?? '5');
@@ -207,13 +207,25 @@ Deno.serve(async (req: Request) => {
     if (!aiRes.ok) {
       const detail = await aiRes.text().catch(() => '');
       console.error('Gemini error:', aiRes.status, detail);
+      if (aiRes.status === 429) return json({ error: 'rate_limited', retry_after_seconds: 60 }, 429);
       return json({ error: 'No se pudo analizar la imagen' }, 502);
     }
 
     const aiJson = await aiRes.json();
-    const text = aiJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    const candidate = aiJson?.candidates?.[0];
+    const finishReason = candidate?.finishReason;
+
+    // Some Gemini models return content inside inlineData or text depending on config
+    const text: string =
+      candidate?.content?.parts?.[0]?.text ??
+      candidate?.content?.parts?.find((p: any) => typeof p.text === 'string')?.text ??
+      '';
+
     if (!text) {
-      console.error('Gemini sin texto, finishReason:', aiJson?.candidates?.[0]?.finishReason);
+      console.error('Gemini sin texto — finishReason:', finishReason, 'candidate:', JSON.stringify(candidate));
+      if (finishReason === 'SAFETY') {
+        return json({ error: 'La imagen no pudo ser procesada por filtros de seguridad. Prueba con otra foto.' }, 422);
+      }
       return json({ error: 'La IA no devolvió un resultado. Prueba con otra foto.' }, 502);
     }
 

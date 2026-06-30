@@ -1,16 +1,14 @@
-/**
- * useMealPhoto — orquesta el flujo de "VeganLens":
- *   1. pide permiso y abre cámara o galería,
- *   2. comprime la foto y la manda a analizar,
- *   3. expone el resultado como `FoodPer100g` listo para la ficha de producto,
- *   4. señala si la cuota gratuita se agotó (para abrir el paywall).
- */
 import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { analyzeMealPhoto, analysisToFood, type MealAnalysis } from '@/lib/mealVision';
 import { track } from '@/lib/analytics';
 import type { FoodPer100g, VeganConfidence } from '@/types';
+
+export interface MealPhotoError {
+  title: string;
+  body: string;
+}
 
 interface MealPhotoState {
   analyzing: boolean;
@@ -21,6 +19,7 @@ interface MealPhotoState {
   remaining: number | null;
   limit: number;
   quotaBlocked: boolean;
+  error: MealPhotoError | null;
 }
 
 const INITIAL: MealPhotoState = {
@@ -32,6 +31,7 @@ const INITIAL: MealPhotoState = {
   remaining: null,
   limit: 1,
   quotaBlocked: false,
+  error: null,
 };
 
 export function useMealPhoto() {
@@ -39,18 +39,21 @@ export function useMealPhoto() {
 
   const reset = useCallback(() => setState(INITIAL), []);
   const clearQuota = useCallback(() => setState((s) => ({ ...s, quotaBlocked: false })), []);
+  const clearError = useCallback(() => setState((s) => ({ ...s, error: null })), []);
 
   const capture = useCallback(async (source: 'camera' | 'library') => {
     const perm =
       source === 'camera'
         ? await ImagePicker.requestCameraPermissionsAsync()
         : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
     if (!perm.granted) {
       Alert.alert(
         'Permiso necesario',
         source === 'camera'
-          ? 'Activa el permiso de cámara para fotografiar tu plato.'
-          : 'Activa el permiso de fotos para elegir una imagen.'
+          ? 'Activa el permiso de cámara en Ajustes para fotografiar tu plato.'
+          : 'Activa el permiso de fotos en Ajustes para elegir una imagen.',
+        [{ text: 'Entendido' }]
       );
       return;
     }
@@ -58,7 +61,7 @@ export function useMealPhoto() {
     const options: ImagePicker.ImagePickerOptions = {
       mediaTypes: 'images',
       base64: true,
-      quality: 0.4,
+      quality: 0.65,
       allowsEditing: true,
     };
     const result =
@@ -70,7 +73,7 @@ export function useMealPhoto() {
     const asset = result.assets[0];
 
     track('photo_scan_started', { source });
-    setState((s) => ({ ...s, analyzing: true }));
+    setState((s) => ({ ...s, analyzing: true, error: null }));
 
     const res = await analyzeMealPhoto(asset.base64!, asset.mimeType ?? 'image/jpeg');
 
@@ -89,44 +92,41 @@ export function useMealPhoto() {
         remaining: res.remaining,
         limit: res.limit,
         quotaBlocked: false,
+        error: null,
       });
       return;
     }
 
     if (res.reason === 'quota') {
       track('photo_scan_quota_blocked', { limit: res.limit });
-      setState((s) => ({ ...s, analyzing: false, quotaBlocked: true, remaining: 0, limit: res.limit }));
+      setState((s) => ({ ...s, analyzing: false, quotaBlocked: true, remaining: 0, limit: res.limit, error: null }));
       return;
     }
 
-    if (res.reason === 'rate_limit') {
-      setState((s) => ({ ...s, analyzing: false }));
-      Alert.alert(
-        'Demasiado rápido',
-        'Has hecho varios análisis muy seguidos. Espera un minuto y vuelve a intentarlo.'
-      );
-      return;
-    }
+    track('photo_scan_error', { reason: res.reason, message: (res as any).message });
 
-    if (res.reason === 'global_block') {
-      setState((s) => ({ ...s, analyzing: false }));
-      Alert.alert(
-        'Análisis no disponible',
-        'El análisis con IA está temporalmente saturado. Prueba mañana o añade el alimento manualmente.'
-      );
-      return;
-    }
+    const errorMap: Record<string, MealPhotoError> = {
+      rate_limit: {
+        title: 'Demasiado rápido',
+        body: 'Has hecho varios análisis seguidos. Espera un minuto y vuelve a intentarlo.',
+      },
+      global_block: {
+        title: 'Análisis no disponible',
+        body: 'El análisis con IA está temporalmente saturado. Prueba en unos minutos o añade el alimento manualmente.',
+      },
+      no_food: {
+        title: 'No hemos visto comida',
+        body: 'Asegúrate de que el plato se ve con claridad y sin objetos que lo tapen.',
+      },
+    };
 
-    if (res.reason === 'no_food') {
-      setState((s) => ({ ...s, analyzing: false }));
-      Alert.alert('No es comida', 'No hemos reconocido un plato en la foto. Prueba con otra imagen.');
-      return;
-    }
+    const err: MealPhotoError = errorMap[res.reason] ?? {
+      title: 'No se pudo analizar',
+      body: (res as any).message ?? 'Algo salió mal. Prueba con otra foto o con mejor iluminación.',
+    };
 
-    track('photo_scan_error', { message: res.message });
-    setState((s) => ({ ...s, analyzing: false }));
-    Alert.alert('No se pudo analizar', res.message);
+    setState((s) => ({ ...s, analyzing: false, error: err }));
   }, []);
 
-  return { ...state, capture, reset, clearQuota };
+  return { ...state, capture, reset, clearQuota, clearError };
 }
