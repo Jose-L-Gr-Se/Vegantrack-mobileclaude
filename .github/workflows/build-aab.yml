@@ -26,35 +26,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate native Android project
-        run: npm run prebuild:android
+      - name: Build signed AAB (EAS local — uses keystore from EAS credentials)
+        run: npx eas-cli build --platform android --profile production --local --non-interactive --output ./vegantrack-release.aab
         env:
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
-          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa
-          EXPO_PUBLIC_WEB_BASE_URL: https://vegantrack.app
-
-      - name: Setup release keystore
-        run: |
-          # Decode keystore to project root
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > vegantrack-release.jks
-          # credentials.json is picked up automatically by Expo's generated build.gradle
-          cat > credentials.json << EOF
-          {
-            "android": {
-              "keystore": {
-                "keystorePath": "vegantrack-release.jks",
-                "keystorePassword": "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}",
-                "keyAlias": "${{ secrets.ANDROID_KEY_ALIAS }}",
-                "keyPassword": "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-              }
-            }
-          }
-          EOF
-
-      - name: Build signed AAB
-        run: npm run build:aab
-        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa
@@ -64,5 +39,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vegantrack-release-aab
-          path: android/app/build/outputs/bundle/release/*.aab
+          path: ./vegantrack-release.aab
           retention-days: 30
