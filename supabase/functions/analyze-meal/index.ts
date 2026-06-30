@@ -11,15 +11,19 @@
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const PRIMARY_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.0-flash';
-const FALLBACK_MODEL = 'gemini-2.0-flash';
+const PRIMARY_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash-lite';
+// Fallback chain: gemini-2.5-flash-lite → gemini-1.5-flash → gemini-1.5-flash-8b
+// gemini-1.5-flash and gemini-1.5-flash-8b are the stable, reliably-available
+// free-tier vision models (15 RPM, 1M TPD). gemini-2.0-flash-lite has limit=0
+// on some API keys so it is intentionally NOT in this chain.
+const FALLBACK_MODELS = ['gemini-1.5-flash', 'gemini-1.5-flash-8b'];
 const FREE_DAILY_SCANS = Number(Deno.env.get('FREE_DAILY_SCANS') ?? '1');
 const PRO_DAILY_SCANS = Number(Deno.env.get('PRO_DAILY_SCANS') ?? '100');
 const RATE_LIMIT_PER_MIN = Number(Deno.env.get('RATE_LIMIT_PER_MIN') ?? '5');
 const GLOBAL_DAILY_LIMIT = Number(Deno.env.get('GLOBAL_DAILY_LIMIT') ?? '2000');
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic']);
-const GEMINI_TIMEOUT_MS = 28_000;
+const GEMINI_TIMEOUT_MS = 15_000; // 15 s per call; with 3 models worst-case ~45 s total
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -226,15 +230,18 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) return respond({ error: 'IA no configurada' }, 500);
 
-    // Call primary model; fall back to gemini-2.0-flash if it fails
-    let gemini = await callGemini(PRIMARY_MODEL, image_base64, mime, apiKey);
-    if (!gemini.ok && PRIMARY_MODEL !== FALLBACK_MODEL) {
-      console.warn(`[Gemini] primary model ${PRIMARY_MODEL} failed, retrying with ${FALLBACK_MODEL}`);
-      gemini = await callGemini(FALLBACK_MODEL, image_base64, mime, apiKey);
+    // Try primary model, then each fallback in sequence until one succeeds.
+    // On 503 (overloaded) or 429 (quota exhausted) we move to the next model.
+    const modelsToTry = [PRIMARY_MODEL, ...FALLBACK_MODELS.filter(m => m !== PRIMARY_MODEL)];
+    let gemini = await callGemini(modelsToTry[0], image_base64, mime, apiKey);
+    for (let i = 1; i < modelsToTry.length && !gemini.ok; i++) {
+      console.warn(`[Gemini] ${modelsToTry[i - 1]} failed (status=${gemini.status}), trying ${modelsToTry[i]}`);
+      gemini = await callGemini(modelsToTry[i], image_base64, mime, apiKey);
     }
 
     if (!gemini.ok) {
-      if (gemini.status === 429) return respond({ error: 'rate_limited', retry_after_seconds: 60 }, 429);
+      // Distinguish user-side rate limit (our DB check above) from API-side quota issues
+      if (gemini.status === 429) return respond({ error: 'ai_quota_exceeded', retry_after_seconds: 60 }, 503);
       if (gemini.finishReason === 'SAFETY') {
         return respond({ error: 'La imagen no pudo ser procesada. Prueba con otra foto.' }, 422);
       }

@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   useFonts,
@@ -8,35 +9,23 @@ import {
   InstrumentSerif_400Regular_Italic,
 } from '@expo-google-fonts/instrument-serif';
 import { RootNavigator } from '@/navigation';
-import { Logo } from '@/components/Logo';
 import { useTheme } from '@/theme';
 import { useThemeStore } from '@/stores/themeStore';
 
-function SplashGate() {
-  const t = useTheme();
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background }}>
-      <Logo size={88} />
-    </View>
-  );
-}
+// Keep the native splash visible until the app is ready to render.
+SplashScreen.preventAutoHideAsync();
 
 function ThemedStatusBar() {
-  // Sigue al tema efectivo (incluido el override manual del usuario) para que
-  // los iconos de batería/hora contrasten siempre con el fondo.
   const t = useTheme();
   return <StatusBar style={t.dark ? 'light' : 'dark'} />;
 }
 
 export default function App() {
-  // La tipografía serif (Instrument Serif) define la voz editorial de los
-  // títulos. Mostramos la marca mientras carga para evitar un salto de fuente.
   const [fontsLoaded] = useFonts({
     InstrumentSerif_400Regular,
     InstrumentSerif_400Regular_Italic,
   });
 
-  // Rehidrata la preferencia de tema (claro/oscuro/sistema) desde SQLite.
   const hydrateTheme = useThemeStore((s) => s.hydrate);
   const themeHydrated = useThemeStore((s) => s.hydrated);
   useEffect(() => {
@@ -45,10 +34,19 @@ export default function App() {
 
   const ready = fontsLoaded && themeHydrated;
 
+  // Hide the native splash as soon as fonts + theme are ready.
+  const onLayoutRootView = useCallback(async () => {
+    if (ready) {
+      await SplashScreen.hideAsync();
+    }
+  }, [ready]);
+
+  if (!ready) return null;
+
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider onLayout={onLayoutRootView}>
       <ThemedStatusBar />
-      {ready ? <RootNavigator /> : <SplashGate />}
+      <RootNavigator />
     </SafeAreaProvider>
   );
 }

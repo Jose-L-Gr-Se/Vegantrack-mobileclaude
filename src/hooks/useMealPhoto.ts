@@ -110,6 +110,10 @@ export function useMealPhoto() {
         title: 'Demasiado rápido',
         body: 'Has hecho varios análisis seguidos. Espera un minuto y vuelve a intentarlo.',
       },
+      ai_quota_exceeded: {
+        title: 'IA saturada momentáneamente',
+        body: 'Los servidores de Google están con alta demanda. Espera unos segundos e inténtalo de nuevo.',
+      },
       global_block: {
         title: 'Análisis no disponible',
         body: 'El análisis con IA está temporalmente saturado. Prueba en unos minutos o añade el alimento manualmente.',
