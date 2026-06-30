@@ -1,0 +1,65 @@
+name: Build AAB (Play Store)
+
+# Sólo manual: lo lanzas tú desde GitHub Actions cuando quieras subir a Play Store.
+on:
+  workflow_dispatch:
+
+jobs:
+  build-aab:
+    name: Build signed AAB for Google Play
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate native Android project
+        run: npm run prebuild:android
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa
+          EXPO_PUBLIC_WEB_BASE_URL: https://vegantrack.app
+
+      - name: Setup release keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/vegantrack-release.jks
+          node scripts/setup-signing.js
+        env:
+          ANDROID_KEYSTORE_PATH: vegantrack-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: vegantrack
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Build release AAB
+        run: npm run build:aab
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa
+          EXPO_PUBLIC_WEB_BASE_URL: https://vegantrack.app
+          ANDROID_KEYSTORE_PATH: vegantrack-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: vegantrack
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vegantrack-release-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          retention-days: 30
