@@ -12,6 +12,7 @@ import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from 
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { ProModal } from '@/components/ProModal';
+import { MealPhotoSheet, type MealSheetMode } from '@/components/MealPhotoSheet';
 import { SwipeableRow } from '@/components/SwipeableRow';
 import { SupplementEditor } from '@/components/SupplementEditor';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -39,18 +40,29 @@ export function DiaryScreen() {
   const photo = useMealPhoto();
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<FoodLogEntry | null>(null);
+  const [mealSheetMode, setMealSheetMode] = useState<MealSheetMode | null>(null);
 
   // Abre el paywall cuando se agota la cuota gratuita de fotos.
   useEffect(() => {
     if (photo.quotaBlocked) track('paywall_viewed', { source: 'photo_quota' });
   }, [photo.quotaBlocked]);
 
-  const startPhoto = () => {
-    Alert.alert('Análisis de plato con IA', '¿Cómo quieres añadir la foto?', [
-      { text: 'Hacer foto', onPress: () => void photo.capture('camera') },
-      { text: 'Elegir de galería', onPress: () => void photo.capture('library') },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
+  // Muestra el error sheet cuando el análisis falla.
+  useEffect(() => {
+    if (photo.error) setMealSheetMode('error');
+  }, [photo.error]);
+
+  const startPhoto = () => setMealSheetMode('picker');
+
+  const handlePhotoSource = (source: 'camera' | 'library') => {
+    setMealSheetMode(null);
+    // Small delay so the sheet closes before the system picker opens.
+    setTimeout(() => void photo.capture(source), 350);
+  };
+
+  const handleMealSheetClose = () => {
+    photo.clearError();
+    setMealSheetMode(null);
   };
 
   const sheetProfile =
@@ -509,6 +521,16 @@ export function DiaryScreen() {
 
       {/* Paywall al agotar la cuota gratuita de fotos */}
       {photo.quotaBlocked ? <ProModal isPro={isPro} onClose={photo.clearQuota} /> : null}
+
+      {/* Sheet premium: selector de fuente de foto + errores de análisis */}
+      <MealPhotoSheet
+        mode={mealSheetMode}
+        error={photo.error}
+        onCamera={() => handlePhotoSource('camera')}
+        onGallery={() => handlePhotoSource('library')}
+        onRetry={() => { photo.clearError(); setMealSheetMode('picker'); }}
+        onClose={handleMealSheetClose}
+      />
 
       {/* Picker de suplementos (presets + crear personalizado) */}
       <SupplementPickerSheet
