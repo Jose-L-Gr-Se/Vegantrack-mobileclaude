@@ -7,6 +7,7 @@ import { Button, Card, Input } from '@/components/ui';
 import { Logo } from '@/components/Logo';
 import { DateField } from '@/components/DateField';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
+import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 import { calculateTargets, formatNumber } from '@/utils/nutrition';
@@ -150,6 +151,18 @@ export function OnboardingScreen() {
       setError(err);
       return;
     }
+    // Fire-and-forget: welcome email with personalized targets
+    void supabase.functions.invoke('send-email', {
+      method: 'POST',
+      body: {
+        type: 'welcome',
+        name: name.trim() || undefined,
+        calories: targets.calories,
+        protein_g: targets.protein_g,
+        carbs_g: targets.carbs_g,
+        fat_g: targets.fat_g,
+      },
+    });
     // Onboarding completado: activamos la bienvenida (se mostrará al entrar
     // al diario, ya que el perfil con calorie_target hace cambiar de stack).
     useUiStore.getState().setJustOnboarded(true);
