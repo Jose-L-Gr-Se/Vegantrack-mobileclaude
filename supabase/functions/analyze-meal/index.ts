@@ -2,31 +2,24 @@
  * analyze-meal — Edge Function de Supabase (Deno).
  *
  * Analiza la foto de un plato con Google Gemini (visión) y devuelve macros
- * estimados. Análisis nutricional GENERAL para cualquier persona: no rechaza
- * platos con carne, pescado, huevo o lácteos; la info vegana es un dato
- * opcional. La API key de Gemini vive sólo aquí (secret), nunca en la APK.
+ * estimados. Análisis nutricional GENERAL para cualquier persona.
  *
- * Protecciones de coste (anti-abuso):
- *   - Cuota diaria por usuario (free / pro distintos).
- *   - Rate limit por usuario y minuto (anti-bot).
- *   - Tope global diario para TODA la app (kill-switch).
- *   - Validación de tamaño/MIME de la imagen.
- *
- * Secrets (supabase secrets set ...):
- *   GEMINI_API_KEY (obligatoria), GEMINI_MODEL (opcional)
- *   FREE_DAILY_SCANS (def. 1), PRO_DAILY_SCANS (def. 100, anti-bot invisible)
+ * Secrets:
+ *   GEMINI_API_KEY (obligatoria), GEMINI_MODEL (opcional, default gemini-2.0-flash)
+ *   FREE_DAILY_SCANS (def. 1), PRO_DAILY_SCANS (def. 100)
  *   RATE_LIMIT_PER_MIN (def. 5), GLOBAL_DAILY_LIMIT (def. 2000)
- * SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY los inyecta Supabase automáticamente.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.0-flash';
+const PRIMARY_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.0-flash';
+const FALLBACK_MODEL = 'gemini-2.0-flash';
 const FREE_DAILY_SCANS = Number(Deno.env.get('FREE_DAILY_SCANS') ?? '1');
 const PRO_DAILY_SCANS = Number(Deno.env.get('PRO_DAILY_SCANS') ?? '100');
 const RATE_LIMIT_PER_MIN = Number(Deno.env.get('RATE_LIMIT_PER_MIN') ?? '5');
 const GLOBAL_DAILY_LIMIT = Number(Deno.env.get('GLOBAL_DAILY_LIMIT') ?? '2000');
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic']);
+const GEMINI_TIMEOUT_MS = 28_000;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -38,9 +31,9 @@ const PROMPT = `Analiza la foto de comida para una app de nutrición general que
 Estima el plato más probable, los ingredientes visibles, los gramos aproximados del plato y los valores nutricionales POR 100 g (calorías, proteínas, carbohidratos, grasas, fibra, azúcares y grasas saturadas).
 No rechaces ni penalices platos por llevar carne, pescado, huevo, lácteos, miel u otros ingredientes de origen animal: simplemente analízalos.
 Indica si el plato es vegano (is_vegan) sólo como dato informativo. Si ves ingredientes posiblemente NO veganos, repórtalos en non_vegan_ingredients como información opcional, sin juzgar.
-Si no estás seguro de algo, indícalo (vegan_confidence más baja, o una nota breve); no inventes datos.
-Si la imagen no es comida, responde is_food=false.
-Devuelve ÚNICAMENTE el JSON con el contrato esperado.`;
+Si no estás seguro de algo, indícalo en notes; no inventes datos.
+Si la imagen no es comida, responde is_food=false y pon food_name="".
+Devuelve ÚNICAMENTE JSON válido con el contrato indicado.`;
 
 const RESPONSE_SCHEMA = {
   type: 'object',
@@ -69,6 +62,68 @@ const RESPONSE_SCHEMA = {
   required: ['is_food', 'food_name', 'estimated_grams', 'per_100g', 'is_vegan', 'vegan_confidence', 'non_vegan_ingredients'],
 };
 
+type GeminiResult =
+  | { ok: true; text: string; model: string }
+  | { ok: false; status: number; detail: string; finishReason?: string };
+
+async function callGemini(model: string, base64: string, mime: string, apiKey: string): Promise<GeminiResult> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { inline_data: { mime_type: mime, data: base64 } },
+            { text: PROMPT },
+          ],
+        }],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 1024,
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA,
+        },
+      }),
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      console.error(`[Gemini] ${model} HTTP ${res.status}:`, detail.slice(0, 500));
+      return { ok: false, status: res.status, detail };
+    }
+
+    const j = await res.json();
+    const candidate = j?.candidates?.[0];
+    const finishReason: string = candidate?.finishReason ?? '';
+
+    // Extract text from whichever part contains it
+    const text: string =
+      candidate?.content?.parts?.find((p: any) => typeof p.text === 'string')?.text ?? '';
+
+    if (!text) {
+      const detail = `finishReason=${finishReason} | promptFeedback=${JSON.stringify(j?.promptFeedback)}`;
+      console.error(`[Gemini] ${model} empty text —`, detail);
+      return { ok: false, status: 0, detail, finishReason };
+    }
+
+    console.log(`[Gemini] ${model} OK, finishReason=${finishReason}, chars=${text.length}`);
+    return { ok: true, text, model };
+  } catch (e: any) {
+    clearTimeout(timer);
+    const detail = e?.name === 'AbortError' ? 'timeout' : (e?.message ?? 'fetch error');
+    console.error(`[Gemini] ${model} fetch error:`, detail);
+    return { ok: false, status: 0, detail };
+  }
+}
+
 function parseJson(text: string): any {
   const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
   return JSON.parse(cleaned);
@@ -81,7 +136,7 @@ function isValidAnalysis(r: any): boolean {
   return (
     typeof r.food_name === 'string' &&
     typeof r.estimated_grams === 'number' &&
-    p &&
+    p != null &&
     typeof p.calories === 'number' &&
     typeof p.protein_g === 'number' &&
     typeof p.carbs_g === 'number' &&
@@ -96,18 +151,18 @@ function todayUTC(): string {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const json = (body: unknown, status = 200) =>
+  const respond = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  if (req.method !== 'POST') return respond({ error: 'Method not allowed' }, 405);
 
   try {
     const authHeader = req.headers.get('Authorization') ?? '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return json({ error: 'No autorizado' }, 401);
+    if (!token) return respond({ error: 'No autorizado' }, 401);
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -115,49 +170,43 @@ Deno.serve(async (req: Request) => {
     );
 
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
-    if (userErr || !userData.user) return json({ error: 'Sesión no válida' }, 401);
+    if (userErr || !userData.user) return respond({ error: 'Sesión no válida' }, 401);
     const userId = userData.user.id;
 
     const { image_base64, mime_type } = await req.json();
     if (!image_base64 || typeof image_base64 !== 'string') {
-      return json({ error: 'Falta la imagen' }, 400);
+      return respond({ error: 'Falta la imagen' }, 400);
     }
 
     const mime = (mime_type || 'image/jpeg').toLowerCase();
-    if (!ALLOWED_MIME.has(mime)) {
-      return json({ error: 'Formato no soportado' }, 400);
-    }
+    if (!ALLOWED_MIME.has(mime)) return respond({ error: 'Formato no soportado' }, 400);
+
     const approxBytes = Math.floor(image_base64.length * 0.75);
-    if (approxBytes > MAX_IMAGE_BYTES) {
-      return json({ error: 'Imagen demasiado grande' }, 413);
-    }
+    if (approxBytes > MAX_IMAGE_BYTES) return respond({ error: 'Imagen demasiado grande' }, 413);
 
     const today = todayUTC();
+
+    // Global kill-switch
     const { count: globalToday } = await supabase
-      .from('meal_scans')
-      .select('id', { count: 'exact', head: true })
-      .eq('date', today);
+      .from('meal_scans').select('id', { count: 'exact', head: true }).eq('date', today);
     if ((globalToday ?? 0) >= GLOBAL_DAILY_LIMIT) {
-      console.warn('GLOBAL DAILY LIMIT reached:', globalToday);
-      return json({ error: 'service_unavailable', retry_after: 'tomorrow' }, 503);
+      console.warn('[quota] global limit reached:', globalToday);
+      return respond({ error: 'service_unavailable', retry_after: 'tomorrow' }, 503);
     }
 
+    // Per-user rate limit (1 min)
     const oneMinAgo = new Date(Date.now() - 60_000).toISOString();
     const { count: lastMinute } = await supabase
-      .from('meal_scans')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', oneMinAgo);
+      .from('meal_scans').select('id', { count: 'exact', head: true })
+      .eq('user_id', userId).gte('created_at', oneMinAgo);
     if ((lastMinute ?? 0) >= RATE_LIMIT_PER_MIN) {
-      return json({ error: 'rate_limited', retry_after_seconds: 60 }, 429);
+      return respond({ error: 'rate_limited', retry_after_seconds: 60 }, 429);
     }
 
+    // Pro check
     const { data: profile } = await supabase
-      .from('profiles')
-      .select('subscription_tier, subscription_expires_at')
-      .eq('id', userId)
-      .single();
-
+      .from('profiles').select('subscription_tier, subscription_expires_at')
+      .eq('id', userId).single();
     const isPro =
       profile?.subscription_tier === 'pro' &&
       (!profile.subscription_expires_at ||
@@ -165,104 +214,65 @@ Deno.serve(async (req: Request) => {
 
     const dailyLimit = isPro ? PRO_DAILY_SCANS : FREE_DAILY_SCANS;
 
+    // Per-user daily quota
     const { count: usedTodayCount } = await supabase
-      .from('meal_scans')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('date', today);
+      .from('meal_scans').select('id', { count: 'exact', head: true })
+      .eq('user_id', userId).eq('date', today);
     const usedToday = usedTodayCount ?? 0;
     if (usedToday >= dailyLimit) {
-      return json(
-        { error: 'quota_exceeded', remaining: 0, limit: dailyLimit, is_pro: isPro },
-        402
-      );
+      return respond({ error: 'quota_exceeded', remaining: 0, limit: dailyLimit, is_pro: isPro }, 402);
     }
 
     const apiKey = Deno.env.get('GEMINI_API_KEY');
-    if (!apiKey) return json({ error: 'IA no configurada' }, 500);
+    if (!apiKey) return respond({ error: 'IA no configurada' }, 500);
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
-    const aiRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { inline_data: { mime_type: mime, data: image_base64 } },
-              { text: PROMPT },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 800,
-          responseMimeType: 'application/json',
-          responseSchema: RESPONSE_SCHEMA,
-        },
-      }),
-    });
-
-    if (!aiRes.ok) {
-      const detail = await aiRes.text().catch(() => '');
-      console.error('Gemini error:', aiRes.status, detail);
-      if (aiRes.status === 429) return json({ error: 'rate_limited', retry_after_seconds: 60 }, 429);
-      return json({ error: 'No se pudo analizar la imagen' }, 502);
+    // Call primary model; fall back to gemini-2.0-flash if it fails
+    let gemini = await callGemini(PRIMARY_MODEL, image_base64, mime, apiKey);
+    if (!gemini.ok && PRIMARY_MODEL !== FALLBACK_MODEL) {
+      console.warn(`[Gemini] primary model ${PRIMARY_MODEL} failed, retrying with ${FALLBACK_MODEL}`);
+      gemini = await callGemini(FALLBACK_MODEL, image_base64, mime, apiKey);
     }
 
-    const aiJson = await aiRes.json();
-    const candidate = aiJson?.candidates?.[0];
-    const finishReason = candidate?.finishReason;
-
-    // Some Gemini models return content inside inlineData or text depending on config
-    const text: string =
-      candidate?.content?.parts?.[0]?.text ??
-      candidate?.content?.parts?.find((p: any) => typeof p.text === 'string')?.text ??
-      '';
-
-    if (!text) {
-      console.error('Gemini sin texto — finishReason:', finishReason, 'candidate:', JSON.stringify(candidate));
-      if (finishReason === 'SAFETY') {
-        return json({ error: 'La imagen no pudo ser procesada por filtros de seguridad. Prueba con otra foto.' }, 422);
+    if (!gemini.ok) {
+      if (gemini.status === 429) return respond({ error: 'rate_limited', retry_after_seconds: 60 }, 429);
+      if (gemini.finishReason === 'SAFETY') {
+        return respond({ error: 'La imagen no pudo ser procesada. Prueba con otra foto.' }, 422);
       }
-      return json({ error: 'La IA no devolvió un resultado. Prueba con otra foto.' }, 502);
+      return respond({ error: 'No se pudo analizar la imagen' }, 502);
     }
 
     let result: any;
     try {
-      result = parseJson(text);
+      result = parseJson(gemini.text);
     } catch {
-      console.error('Parse error, raw:', text);
-      return json({ error: 'Respuesta de IA no interpretable' }, 502);
+      console.error('[parse] raw text:', gemini.text.slice(0, 300));
+      return respond({ error: 'Respuesta de IA no interpretable' }, 502);
     }
 
     if (!isValidAnalysis(result)) {
-      console.error('Contrato inválido:', JSON.stringify(result));
-      return json({ error: 'La IA no devolvió un análisis válido. Prueba con otra foto.' }, 502);
+      console.error('[validate] contrato inválido:', JSON.stringify(result).slice(0, 300));
+      return respond({ error: 'La IA no devolvió un análisis válido. Prueba con otra foto.' }, 502);
     }
 
     if (!result.is_food) {
-      return json({ error: 'no_food', message: 'No parece un plato de comida.' }, 422);
+      return respond({ error: 'no_food', message: 'No parece un plato de comida.' }, 422);
     }
 
     if (!Array.isArray(result.non_vegan_ingredients)) result.non_vegan_ingredients = [];
     if (typeof result.vegan_confidence !== 'string') result.vegan_confidence = 'unknown';
 
     await supabase.from('meal_scans').insert({ user_id: userId, date: today });
-    void supabase
-      .from('analytics_events')
-      .insert({
-        user_id: userId,
-        event: 'meal_analyzed',
-        props: { model: MODEL, is_vegan: result.is_vegan, vegan_confidence: result.vegan_confidence, is_pro: isPro },
-      })
-      .then(() => undefined, () => undefined);
+    void supabase.from('analytics_events').insert({
+      user_id: userId,
+      event: 'meal_analyzed',
+      props: { model: gemini.model, is_vegan: result.is_vegan, vegan_confidence: result.vegan_confidence, is_pro: isPro },
+    }).then(() => undefined, () => undefined);
 
     const remaining = Math.max(0, dailyLimit - (usedToday + 1));
-    return json({ result, remaining, limit: dailyLimit, is_pro: isPro });
+    return respond({ result, remaining, limit: dailyLimit, is_pro: isPro });
+
   } catch (err: any) {
-    console.error('analyze-meal error:', err);
-    return json({ error: err?.message ?? 'Error interno' }, 500);
+    console.error('[analyze-meal] unhandled error:', err?.message ?? err);
+    return respond({ error: err?.message ?? 'Error interno' }, 500);
   }
 });
