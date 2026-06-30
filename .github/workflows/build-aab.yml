@@ -1,17 +1,11 @@
 name: Build AAB (Play Store)
 
-# Sólo manual: lo lanzas desde Actions cuando quieras subir una versión a Play Store.
 on:
   workflow_dispatch:
-    inputs:
-      version_name:
-        description: 'Versión visible (ej. 1.0.1). Deja vacío para usar la de package.json.'
-        required: false
-        default: ''
 
 jobs:
   build-aab:
-    name: Build signed AAB for Google Play
+    name: Build signed AAB
     runs-on: ubuntu-latest
 
     steps:
@@ -32,27 +26,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # versionCode = run_number (único, siempre creciente, nunca hay que tocarlo a mano)
-      # versionName = lo que pases en el input, o la versión de package.json
-      - name: Bump versionCode in app.json
-        run: |
-          VERSION_CODE=${{ github.run_number }}
-          VERSION_NAME="${{ github.event.inputs.version_name }}"
-          if [ -z "$VERSION_NAME" ]; then
-            VERSION_NAME=$(node -p "require('./package.json').version")
-          fi
-          node -e "
-            const fs = require('fs');
-            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
-            app.expo.android.versionCode = ${VERSION_CODE};
-            app.expo.version = '${VERSION_NAME}';
-            fs.writeFileSync('app.json', JSON.stringify(app, null, 2));
-            console.log('versionCode=' + ${VERSION_CODE} + '  versionName=${VERSION_NAME}');
-          "
-          echo "### Build info" >> $GITHUB_STEP_SUMMARY
-          echo "- **versionCode**: ${VERSION_CODE}" >> $GITHUB_STEP_SUMMARY
-          echo "- **versionName**: ${VERSION_NAME}" >> $GITHUB_STEP_SUMMARY
-
       - name: Generate native Android project
         run: npm run prebuild:android
         env:
@@ -63,29 +36,33 @@ jobs:
 
       - name: Setup release keystore
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/vegantrack-release.jks
-          node scripts/setup-signing.js
-        env:
-          ANDROID_KEYSTORE_PATH: vegantrack-release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: vegantrack
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # Decode keystore to project root
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > vegantrack-release.jks
+          # credentials.json is picked up automatically by Expo's generated build.gradle
+          cat > credentials.json << EOF
+          {
+            "android": {
+              "keystore": {
+                "keystorePath": "vegantrack-release.jks",
+                "keystorePassword": "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}",
+                "keyAlias": "${{ secrets.ANDROID_KEY_ALIAS }}",
+                "keyPassword": "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+              }
+            }
+          }
+          EOF
 
-      - name: Build release AAB
+      - name: Build signed AAB
         run: npm run build:aab
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
           EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa
           EXPO_PUBLIC_WEB_BASE_URL: https://vegantrack.app
-          ANDROID_KEYSTORE_PATH: vegantrack-release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: vegantrack
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vegantrack-release-aab-v${{ github.run_number }}
+          name: vegantrack-release-aab
           path: android/app/build/outputs/bundle/release/*.aab
-          retention-days: 90
+          retention-days: 30

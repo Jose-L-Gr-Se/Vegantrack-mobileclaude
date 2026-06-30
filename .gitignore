@@ -43,3 +43,6 @@ yarn-error.*
 
 # Claude Code agent worktrees (temporary, not source)
 .claude/worktrees/
+credentials.json
+*.jks
+*.keystore
