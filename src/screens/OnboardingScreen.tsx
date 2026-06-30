@@ -8,6 +8,7 @@ import { Logo } from '@/components/Logo';
 import { DateField } from '@/components/DateField';
 import { fonts, radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
+import { useUiStore } from '@/stores/uiStore';
 import { calculateTargets, formatNumber } from '@/utils/nutrition';
 import type { ActivityLevel, Goal, Sex } from '@/types';
 
@@ -145,7 +146,13 @@ export function OnboardingScreen() {
       fat_target_g: targets.fat_g,
     });
     setSaving(false);
-    if (err) setError(err);
+    if (err) {
+      setError(err);
+      return;
+    }
+    // Onboarding completado: activamos la bienvenida (se mostrará al entrar
+    // al diario, ya que el perfil con calorie_target hace cambiar de stack).
+    useUiStore.getState().setJustOnboarded(true);
   };
 
   const meta = STEP_META[step - 1];

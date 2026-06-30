@@ -35,12 +35,17 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          # Clave pública de RevenueCat (goog_...): se incrusta en el cliente, no es secreta.
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa
+          EXPO_PUBLIC_WEB_BASE_URL: https://vegantrack.app
 
       - name: Build release APK
         run: npm run build:apk
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_REVENUECAT_ANDROID_KEY: goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa
+          EXPO_PUBLIC_WEB_BASE_URL: https://vegantrack.app
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

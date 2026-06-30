@@ -15,7 +15,7 @@ export function usePro(): { isPro: boolean } {
   const customerInfo = usePurchasesStore((s) => s.customerInfo);
 
   // RevenueCat / Google Play Billing
-  const rcPro = customerInfo?.entitlements.active[ENTITLEMENT_PRO] !== undefined ?? false;
+  const rcPro = customerInfo?.entitlements.active[ENTITLEMENT_PRO] !== undefined;
 
   // Supabase: suscriptores web (Stripe) que no compraron desde la app
   const supabasePro =

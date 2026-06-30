@@ -16,6 +16,9 @@ interface AuthState {
   session: Session | null;
   profile: Profile | null;
   initialized: boolean;
+  // true cuando ya hemos intentado cargar el perfil del usuario actual.
+  // Evita el "flash" del diario mientras el perfil aún viaja por la red.
+  profileResolved: boolean;
   initialize: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -62,6 +65,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   profile: null,
   initialized: false,
+  profileResolved: false,
 
   initialize: async () => {
     const { data } = await supabase.auth.getSession();
@@ -70,7 +74,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     supabase.auth.onAuthStateChange((_event, newSession) => {
       set({ session: newSession, user: newSession?.user ?? null });
-      if (!newSession) set({ profile: null });
+      // Al cerrar sesión limpiamos el perfil y reseteamos el gate, para que
+      // un futuro login vuelva a esperar a que su perfil cargue.
+      if (!newSession) set({ profile: null, profileResolved: false });
     });
 
     if (session?.user) {
@@ -178,7 +184,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     await supabase.auth.signOut();
     await usePurchasesStore.getState().reset();
-    set({ user: null, session: null, profile: null });
+    set({ user: null, session: null, profile: null, profileResolved: false });
   },
 
   deleteAccount: async () => {
@@ -198,15 +204,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   fetchProfile: async () => {
     const user = get().user;
     if (!user) return;
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-    if (!error && data) {
-      const profile = data as Profile;
-      set({ profile });
-      void kvSet(profileKvKey(user.id), profile);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      if (!error && data) {
+        const profile = data as Profile;
+        set({ profile });
+        void kvSet(profileKvKey(user.id), profile);
+      }
+    } finally {
+      // Pase lo que pase (éxito, error o falta de red) consideramos resuelto
+      // el intento, para no dejar la app atascada en el spinner inicial.
+      set({ profileResolved: true });
     }
   },
 

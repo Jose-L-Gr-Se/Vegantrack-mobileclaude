@@ -24,6 +24,7 @@ import { ProfileScreen } from '@/screens/ProfileScreen';
 import { ScannerScreen } from '@/screens/ScannerScreen';
 import { RecipesScreen } from '@/screens/RecipesScreen';
 import { MicroTrendsScreen } from '@/screens/MicroTrendsScreen';
+import { PostOnboardingWelcome } from '@/components/PostOnboardingWelcome';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 import type { LinkingOptions } from '@react-navigation/native';
 
@@ -78,6 +79,16 @@ function MainTabs() {
   );
 }
 
+/** Tabs + overlay de bienvenida post-onboarding (se auto-muestra una vez). */
+function MainWithWelcome() {
+  return (
+    <View style={{ flex: 1 }}>
+      <MainTabs />
+      <PostOnboardingWelcome />
+    </View>
+  );
+}
+
 const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [Linking.createURL('/'), 'https://vegantrack.app'],
   config: {
@@ -98,7 +109,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 export function RootNavigator() {
   const t = useTheme();
-  const { user, profile, initialized, initialize } = useAuthStore();
+  const { user, profile, initialized, profileResolved, initialize } = useAuthStore();
 
   useEffect(() => {
     void initialize();
@@ -112,7 +123,10 @@ export function RootNavigator() {
     }
   }, [user]);
 
-  if (!initialized) {
+  // Mostramos el spinner mientras arranca la app O mientras, habiendo sesión,
+  // el perfil todavía no se ha resuelto. Así evitamos el "flash" en el que se
+  // ve el diario un instante antes de saltar al onboarding.
+  if (!initialized || (user && !profileResolved)) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background }}>
         <ActivityIndicator size="large" color={t.primary} />
@@ -135,7 +149,7 @@ export function RootNavigator() {
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         ) : (
           <>
-            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen name="Main" component={MainWithWelcome} />
             <Stack.Screen name="Scanner" component={ScannerScreen} options={{ presentation: 'fullScreenModal' }} />
             <Stack.Screen name="Recipes" component={RecipesScreen} options={{ presentation: 'modal' }} />
             <Stack.Screen name="MicroTrends" component={MicroTrendsScreen} options={{ presentation: 'modal' }} />
