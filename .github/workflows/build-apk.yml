@@ -30,6 +30,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Bump versionCode
+        run: |
+          node -e "
+            const fs = require('fs');
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            app.expo.android.versionCode = ${{ github.run_number }};
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2));
+            console.log('versionCode=${{ github.run_number }}');
+          "
+
       - name: Generate native Android project
         run: npm run prebuild:android
         env:

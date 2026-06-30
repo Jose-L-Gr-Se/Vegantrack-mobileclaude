@@ -1,8 +1,13 @@
 name: Build AAB (Play Store)
 
-# Sólo manual: lo lanzas tú desde GitHub Actions cuando quieras subir a Play Store.
+# Sólo manual: lo lanzas desde Actions cuando quieras subir una versión a Play Store.
 on:
   workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Versión visible (ej. 1.0.1). Deja vacío para usar la de package.json.'
+        required: false
+        default: ''
 
 jobs:
   build-aab:
@@ -26,6 +31,27 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # versionCode = run_number (único, siempre creciente, nunca hay que tocarlo a mano)
+      # versionName = lo que pases en el input, o la versión de package.json
+      - name: Bump versionCode in app.json
+        run: |
+          VERSION_CODE=${{ github.run_number }}
+          VERSION_NAME="${{ github.event.inputs.version_name }}"
+          if [ -z "$VERSION_NAME" ]; then
+            VERSION_NAME=$(node -p "require('./package.json').version")
+          fi
+          node -e "
+            const fs = require('fs');
+            const app = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            app.expo.android.versionCode = ${VERSION_CODE};
+            app.expo.version = '${VERSION_NAME}';
+            fs.writeFileSync('app.json', JSON.stringify(app, null, 2));
+            console.log('versionCode=' + ${VERSION_CODE} + '  versionName=${VERSION_NAME}');
+          "
+          echo "### Build info" >> $GITHUB_STEP_SUMMARY
+          echo "- **versionCode**: ${VERSION_CODE}" >> $GITHUB_STEP_SUMMARY
+          echo "- **versionName**: ${VERSION_NAME}" >> $GITHUB_STEP_SUMMARY
 
       - name: Generate native Android project
         run: npm run prebuild:android
@@ -60,6 +86,6 @@ jobs:
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vegantrack-release-aab
+          name: vegantrack-release-aab-v${{ github.run_number }}
           path: android/app/build/outputs/bundle/release/*.aab
-          retention-days: 30
+          retention-days: 90
