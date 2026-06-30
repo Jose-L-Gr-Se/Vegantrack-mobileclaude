@@ -40,7 +40,6 @@
     "plugins": [
       "expo-secure-store",
       "expo-sqlite",
-      "react-native-purchases",
       [
         "expo-notifications",
         {
