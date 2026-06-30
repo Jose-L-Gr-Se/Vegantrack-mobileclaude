@@ -102,6 +102,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) return { error: error.message };
     await get().fetchProfile();
     if (data.user) usePurchasesStore.getState().init(data.user.id);
+    // Fire-and-forget: never blocks registration if email fails
+    void supabase.functions.invoke('send-email', {
+      method: 'POST',
+      body: { type: 'signup' },
+    });
     return { error: null };
   },
 

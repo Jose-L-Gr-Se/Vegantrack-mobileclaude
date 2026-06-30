@@ -3,6 +3,7 @@
  *
  * Elimina permanentemente la cuenta del usuario autenticado y todos sus datos
  * (ON DELETE CASCADE en profiles, food_log, weight_logs, etc.).
+ * Envía un email de despedida vía Resend antes de borrar.
  * Usa service_role para poder llamar a auth.admin.deleteUser; la service_role
  * key nunca sale de aquí.
  *
@@ -10,6 +11,7 @@
  * Google Play exige que exista esta opción in-app desde 2023.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { sendEmail, buildFarewellEmail } from '../_shared/email.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,7 +43,22 @@ Deno.serve(async (req: Request) => {
     const { data: userData, error: userErr } = await supabase.auth.getUser(token);
     if (userErr || !userData.user) return json({ error: 'Sesión no válida' }, 401);
 
-    const { error } = await supabase.auth.admin.deleteUser(userData.user.id);
+    const user = userData.user;
+
+    // Obtener nombre del perfil antes de borrar
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', user.id)
+      .single();
+
+    // Enviar email de despedida (best-effort: no bloqueamos el borrado si falla)
+    if (user.email) {
+      const { subject, html } = buildFarewellEmail(profile?.display_name ?? undefined);
+      void sendEmail({ to: user.email, subject, html });
+    }
+
+    const { error } = await supabase.auth.admin.deleteUser(user.id);
     if (error) return json({ error: error.message }, 500);
 
     return json({ ok: true });
