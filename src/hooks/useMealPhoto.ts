@@ -135,5 +135,15 @@ export function useMealPhoto() {
     setState((s) => ({ ...s, analyzing: false, error: err }));
   }, []);
 
-  return { ...state, capture, reset, clearQuota, clearError };
+  /** Sustituye el análisis por el recalculado tras una corrección Pro. */
+  const applyCorrection = useCallback((analysis: MealAnalysis) => {
+    setState((s) => ({
+      ...s,
+      analysis,
+      food: analysisToFood(analysis),
+      confidence: analysis.vegan_confidence,
+    }));
+  }, []);
+
+  return { ...state, capture, reset, clearQuota, clearError, applyCorrection };
 }

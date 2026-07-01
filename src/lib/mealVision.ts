@@ -80,6 +80,62 @@ export async function analyzeMealPhoto(base64: string, mime: string): Promise<An
   }
 }
 
+export type CorrectResult =
+  | { ok: true; analysis: MealAnalysis }
+  | { ok: false; reason: 'not_pro' }
+  | { ok: false; reason: 'error'; message: string };
+
+/**
+ * Corrige un análisis de foto ya hecho (p.ej. "es heura, no atún") y recalcula
+ * los macros por 100 g. Sólo texto, sin volver a analizar la imagen — no
+ * consume la cuota de escaneos. Sólo disponible para usuarios Pro (el server
+ * vuelve a comprobarlo).
+ */
+export async function correctMealAnalysis(
+  correctedFoodName: string,
+  previous: MealAnalysis
+): Promise<CorrectResult> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return { ok: false, reason: 'error', message: 'Sesión no válida' };
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/correct-meal`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ food_name: correctedFoodName }),
+    });
+
+    if (res.status === 403) return { ok: false, reason: 'not_pro' };
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      return { ok: false, reason: 'error', message: j.error ?? `Error ${res.status}` };
+    }
+
+    const j = await res.json();
+    const r = j.result;
+    return {
+      ok: true,
+      analysis: {
+        is_food: true,
+        food_name: r.food_name,
+        estimated_grams: previous.estimated_grams,
+        per_100g: r.per_100g,
+        is_vegan: r.is_vegan,
+        vegan_confidence: r.vegan_confidence,
+        non_vegan_ingredients: r.non_vegan_ingredients ?? [],
+        notes: r.notes,
+      },
+    };
+  } catch (e: any) {
+    return { ok: false, reason: 'error', message: e?.message ?? 'Error de red' };
+  }
+}
+
 /** Normaliza la estimación de la IA al formato común por-100g. */
 export function analysisToFood(a: MealAnalysis): FoodPer100g {
   const p = a.per_100g;

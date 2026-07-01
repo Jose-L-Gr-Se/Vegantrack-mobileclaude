@@ -32,6 +32,7 @@ import {
   getProductByBarcode,
   getVeganConfidence,
 } from '@/lib/openfoodfacts';
+import { analysisToFood, correctMealAnalysis, type MealAnalysis } from '@/lib/mealVision';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import type {
   FoodLogEntry,
@@ -134,6 +135,9 @@ export function ProductDetailSheet({
   veganConfidence,
   notice,
   profile,
+  isPro,
+  analysis,
+  onCorrected,
 }: {
   food?: FoodPer100g | null;
   editEntry?: FoodLogEntry | null;
@@ -153,6 +157,10 @@ export function ProductDetailSheet({
     carbs_target_g: number;
     fat_target_g: number;
   } | null;
+  /** Sólo para el flujo de foto-IA: permite recalcular macros si la IA se equivocó. */
+  isPro?: boolean;
+  analysis?: MealAnalysis | null;
+  onCorrected?: (analysis: MealAnalysis) => void;
 }) {
   const t = useTheme();
   const user = useAuthStore((s) => s.user);
@@ -185,6 +193,33 @@ export function ProductDetailSheet({
   const isAiPhoto = baseFood?.source === 'ai_photo' && !isEdit;
   const [editedName, setEditedName] = useState(baseFood?.food_name ?? '');
   const [saveAsCustom, setSaveAsCustom] = useState(false);
+
+  // — Corrección Pro: recalcula macros si la IA se equivocó de plato —
+  const [correcting, setCorrecting] = useState(false);
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
+  const canCorrect =
+    isAiPhoto && isPro && !!analysis && editedName.trim().length >= 2 &&
+    editedName.trim() !== (baseFood?.food_name ?? '').trim();
+
+  const handleCorrect = async () => {
+    if (!analysis || !canCorrect) return;
+    setCorrecting(true);
+    setCorrectionError(null);
+    const res = await correctMealAnalysis(editedName.trim(), analysis);
+    setCorrecting(false);
+    if (!res.ok) {
+      setCorrectionError(
+        res.reason === 'not_pro'
+          ? 'Esta función es sólo para usuarios Pro.'
+          : res.message ?? 'No se pudo recalcular. Inténtalo de nuevo.'
+      );
+      return;
+    }
+    onCorrected?.(res.analysis);
+    setFood((prev) => ({ ...analysisToFood(res.analysis), ...(prev?.image_url ? { image_url: prev.image_url } : {}) }));
+    setEditedName(res.analysis.food_name);
+    setConfidence(res.analysis.vegan_confidence);
+  };
 
   useEffect(() => {
     setFood(baseFood);
@@ -427,6 +462,26 @@ export function ProductDetailSheet({
               <Text style={{ color: t.textMuted, fontSize: 11, marginTop: 2 }}>
                 Toca para corregir el nombre si la IA se ha confundido.
               </Text>
+            ) : null}
+            {isAiPhoto && isPro ? (
+              <Pressable
+                onPress={handleCorrect}
+                disabled={!canCorrect || correcting}
+                hitSlop={6}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, opacity: !canCorrect || correcting ? 0.4 : 1 }}
+              >
+                <Ionicons name={(correcting ? 'sync' : 'sparkles') as never} size={14} color={t.primary} />
+                <Text style={{ color: t.primary, fontSize: 12, fontWeight: '700' }}>
+                  {correcting ? 'Recalculando macros…' : 'Recalcular macros con IA'}
+                </Text>
+              </Pressable>
+            ) : isAiPhoto ? (
+              <Text style={{ color: t.primary, fontSize: 11, marginTop: 4, fontWeight: '600' }}>
+                Con Pro, la IA recalcula los macros al corregir el plato ✨
+              </Text>
+            ) : null}
+            {correctionError ? (
+              <Text style={{ color: semantic.danger, fontSize: 11, marginTop: 2 }}>{correctionError}</Text>
             ) : null}
           </View>
         </View>

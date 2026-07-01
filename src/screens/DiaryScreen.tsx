@@ -510,6 +510,9 @@ export function DiaryScreen() {
           veganConfidence={photo.analysis?.is_vegan ? photo.confidence : undefined}
           notice={photoNotice}
           profile={sheetProfile}
+          isPro={isPro}
+          analysis={photo.analysis}
+          onCorrected={(analysis) => photo.applyCorrection(analysis)}
           onClose={photo.reset}
           onAdded={() => {
             track('photo_entry_saved', {});
