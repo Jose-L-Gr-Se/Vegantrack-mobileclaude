@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.vegantrack.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#2f5d41",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -30,8 +30,17 @@
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [{ "scheme": "https", "host": "vegantrack.app", "pathPrefix": "/" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "scheme": "https",
+              "host": "vegantrack.app",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
