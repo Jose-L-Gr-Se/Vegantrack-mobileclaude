@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { analyzeMealPhoto, analysisToFood, type MealAnalysis } from '@/lib/mealVision';
+import { analyzeMealPhoto, analysisToFood, type MealAnalysis, type ScanPeriod } from '@/lib/mealVision';
 import { track } from '@/lib/analytics';
 import type { FoodPer100g, VeganConfidence } from '@/types';
 
@@ -18,6 +18,7 @@ interface MealPhotoState {
   confidence: VeganConfidence | undefined;
   remaining: number | null;
   limit: number;
+  period: ScanPeriod;
   quotaBlocked: boolean;
   error: MealPhotoError | null;
 }
@@ -30,6 +31,7 @@ const INITIAL: MealPhotoState = {
   confidence: undefined,
   remaining: null,
   limit: 1,
+  period: 'week',
   quotaBlocked: false,
   error: null,
 };
@@ -91,6 +93,7 @@ export function useMealPhoto() {
         confidence: res.analysis.vegan_confidence,
         remaining: res.remaining,
         limit: res.limit,
+        period: res.period,
         quotaBlocked: false,
         error: null,
       });
@@ -99,7 +102,7 @@ export function useMealPhoto() {
 
     if (res.reason === 'quota') {
       track('photo_scan_quota_blocked', { limit: res.limit });
-      setState((s) => ({ ...s, analyzing: false, quotaBlocked: true, remaining: 0, limit: res.limit, error: null }));
+      setState((s) => ({ ...s, analyzing: false, quotaBlocked: true, remaining: 0, limit: res.limit, period: res.period, error: null }));
       return;
     }
 

@@ -28,9 +28,11 @@ export interface MealAnalysis {
   notes?: string;
 }
 
+export type ScanPeriod = 'day' | 'week';
+
 export type AnalyzeResult =
-  | { ok: true; analysis: MealAnalysis; remaining: number; limit: number; isPro: boolean }
-  | { ok: false; reason: 'quota'; limit: number; isPro: boolean }
+  | { ok: true; analysis: MealAnalysis; remaining: number; limit: number; period: ScanPeriod; isPro: boolean }
+  | { ok: false; reason: 'quota'; limit: number; period: ScanPeriod; isPro: boolean }
   | { ok: false; reason: 'rate_limit' }
   | { ok: false; reason: 'global_block' }
   | { ok: false; reason: 'no_food' }
@@ -54,7 +56,7 @@ export async function analyzeMealPhoto(base64: string, mime: string): Promise<An
 
     if (res.status === 402) {
       const j = await res.json().catch(() => ({}));
-      return { ok: false, reason: 'quota', limit: j.limit ?? 1, isPro: !!j.is_pro };
+      return { ok: false, reason: 'quota', limit: j.limit ?? 1, period: j.period ?? 'week', isPro: !!j.is_pro };
     }
     if (res.status === 429) return { ok: false, reason: 'rate_limit' };
     if (res.status === 503) return { ok: false, reason: 'global_block' };
@@ -70,6 +72,7 @@ export async function analyzeMealPhoto(base64: string, mime: string): Promise<An
       analysis: j.result as MealAnalysis,
       remaining: j.remaining ?? 0,
       limit: j.limit ?? 1,
+      period: j.period ?? 'week',
       isPro: !!j.is_pro,
     };
   } catch (e: any) {

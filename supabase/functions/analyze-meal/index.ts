@@ -6,7 +6,7 @@
  *
  * Secrets:
  *   GEMINI_API_KEY (obligatoria), GEMINI_MODEL (opcional, default gemini-2.0-flash)
- *   FREE_DAILY_SCANS (def. 1), PRO_DAILY_SCANS (def. 100)
+ *   FREE_WEEKLY_SCANS (def. 1), PRO_DAILY_SCANS (def. 100)
  *   RATE_LIMIT_PER_MIN (def. 5), GLOBAL_DAILY_LIMIT (def. 2000)
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
@@ -17,7 +17,7 @@ const PRIMARY_MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-2.5-flash-lite';
 // free-tier vision models (15 RPM, 1M TPD). gemini-2.0-flash-lite has limit=0
 // on some API keys so it is intentionally NOT in this chain.
 const FALLBACK_MODELS = ['gemini-1.5-flash', 'gemini-1.5-flash-8b'];
-const FREE_DAILY_SCANS = Number(Deno.env.get('FREE_DAILY_SCANS') ?? '1');
+const FREE_WEEKLY_SCANS = Number(Deno.env.get('FREE_WEEKLY_SCANS') ?? '1');
 const PRO_DAILY_SCANS = Number(Deno.env.get('PRO_DAILY_SCANS') ?? '100');
 const RATE_LIMIT_PER_MIN = Number(Deno.env.get('RATE_LIMIT_PER_MIN') ?? '5');
 const GLOBAL_DAILY_LIMIT = Number(Deno.env.get('GLOBAL_DAILY_LIMIT') ?? '2000');
@@ -37,6 +37,7 @@ No rechaces ni penalices platos por llevar carne, pescado, huevo, lácteos, miel
 Indica si el plato es vegano (is_vegan) sólo como dato informativo. Si ves ingredientes posiblemente NO veganos, repórtalos en non_vegan_ingredients como información opcional, sin juzgar.
 Si no estás seguro de algo, indícalo en notes; no inventes datos.
 Si la imagen no es comida, responde is_food=false y pon food_name="".
+IMPORTANTE: responde SIEMPRE en español (food_name, non_vegan_ingredients y notes), aunque el envase o etiqueta del producto esté en otro idioma.
 Devuelve ÚNICAMENTE JSON válido con el contrato indicado.`;
 
 const RESPONSE_SCHEMA = {
@@ -216,15 +217,21 @@ Deno.serve(async (req: Request) => {
       (!profile.subscription_expires_at ||
         new Date(profile.subscription_expires_at).getTime() > Date.now());
 
-    const dailyLimit = isPro ? PRO_DAILY_SCANS : FREE_DAILY_SCANS;
+    // Pro: cuota diaria. Free: cuota semanal (ventana móvil de 7 días).
+    const period: 'day' | 'week' = isPro ? 'day' : 'week';
+    const limit = isPro ? PRO_DAILY_SCANS : FREE_WEEKLY_SCANS;
 
-    // Per-user daily quota
-    const { count: usedTodayCount } = await supabase
-      .from('meal_scans').select('id', { count: 'exact', head: true })
-      .eq('user_id', userId).eq('date', today);
-    const usedToday = usedTodayCount ?? 0;
-    if (usedToday >= dailyLimit) {
-      return respond({ error: 'quota_exceeded', remaining: 0, limit: dailyLimit, is_pro: isPro }, 402);
+    const { count: usedCount } = isPro
+      ? await supabase
+          .from('meal_scans').select('id', { count: 'exact', head: true })
+          .eq('user_id', userId).eq('date', today)
+      : await supabase
+          .from('meal_scans').select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+    const used = usedCount ?? 0;
+    if (used >= limit) {
+      return respond({ error: 'quota_exceeded', remaining: 0, limit, period, is_pro: isPro }, 402);
     }
 
     const apiKey = Deno.env.get('GEMINI_API_KEY');
@@ -275,8 +282,8 @@ Deno.serve(async (req: Request) => {
       props: { model: gemini.model, is_vegan: result.is_vegan, vegan_confidence: result.vegan_confidence, is_pro: isPro },
     }).then(() => undefined, () => undefined);
 
-    const remaining = Math.max(0, dailyLimit - (usedToday + 1));
-    return respond({ result, remaining, limit: dailyLimit, is_pro: isPro });
+    const remaining = Math.max(0, limit - (used + 1));
+    return respond({ result, remaining, limit, period, is_pro: isPro });
 
   } catch (err: any) {
     console.error('[analyze-meal] unhandled error:', err?.message ?? err);

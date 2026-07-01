@@ -273,8 +273,8 @@ export function DiaryScreen() {
             {isPro
               ? 'Foto → calorías y macros al instante'
               : photo.remaining != null
-              ? `Te quedan ${photo.remaining} de ${photo.limit} análisis hoy`
-              : `${photo.limit} análisis gratis al día`}
+              ? `Te quedan ${photo.remaining} de ${photo.limit} análisis esta semana`
+              : `${photo.limit} análisis gratis a la semana`}
           </Text>
         </View>
         {!photo.analyzing ? <Ionicons name={'sparkles' as any} size={18} color="#fff" /> : null}

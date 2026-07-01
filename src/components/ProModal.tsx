@@ -35,7 +35,7 @@ const PLANS: Plan[] = [
     cadence: 'para siempre',
     desc: 'Lo esencial para registrar y seguir tu día.',
     features: [
-      '1 análisis de plato con IA al día',
+      '1 análisis de plato con IA a la semana',
       'Registro ilimitado de comidas',
       'Macros + 6 micros clave',
       '14 días de historial',
