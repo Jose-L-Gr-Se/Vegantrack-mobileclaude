@@ -65,15 +65,15 @@ const PLANS: Plan[] = [
   {
     id: 'annual',
     name: 'Pro anual',
-    fallbackPrice: '39€',
+    fallbackPrice: '47,99€',
     cadence: 'al año',
-    desc: 'El mismo Pro pagando un año. Ahorra un 35%.',
+    desc: 'El mismo Pro pagando un año. Ahorra un 20%.',
     features: [
       'Todo lo de Pro mensual',
-      '35% de descuento (2 meses gratis)',
+      '20% de descuento (más de 2 meses gratis)',
       'Acceso anticipado a novedades',
     ],
-    badge: 'Ahorra 35%',
+    badge: 'Ahorra 20%',
     packageType: PACKAGE_TYPE.ANNUAL,
   },
 ];
