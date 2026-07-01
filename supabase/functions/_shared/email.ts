@@ -6,6 +6,7 @@
 
 const RESEND_URL = 'https://api.resend.com/emails';
 const FROM = 'VegeTrack <hola@vegantrack.app>';
+export const OWNER_EMAIL = 'transicionveg@gmail.com';
 
 interface SendOptions {
   to: string;
@@ -199,6 +200,24 @@ export function buildWelcomeEmail(params: {
       </div>
     `),
   };
+}
+
+/** Aviso interno para el dueño de la app (no va al usuario). Sin la capa de marca. */
+export function buildOwnerAlertEmail(
+  title: string,
+  rows: Array<[string, string]>
+): { subject: string; html: string } {
+  const body = `
+    <h2 style="color:#1a2e22;font-size:20px;margin:0 0 16px 0;">${title}</h2>
+    <table cellpadding="0" cellspacing="0" width="100%">
+      ${rows.map(([label, value]) => `
+      <tr>
+        <td style="padding:6px 0;color:#8fa496;font-size:13px;width:140px;vertical-align:top;">${label}</td>
+        <td style="padding:6px 0;color:#1a2e22;font-size:13px;font-weight:600;">${value}</td>
+      </tr>`).join('')}
+    </table>
+  `;
+  return { subject: `VegeTrack — ${title}`, html: layout(body) };
 }
 
 export function buildFarewellEmail(name?: string): { subject: string; html: string } {

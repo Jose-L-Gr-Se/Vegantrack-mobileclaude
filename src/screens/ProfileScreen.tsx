@@ -447,6 +447,17 @@ export function ProfileScreen() {
           )}
           {isPro && <View style={{ height: 1, backgroundColor: t.separator }} />}
           <MenuRow
+            iconName="chatbubble-ellipses-outline"
+            label="Enviar sugerencia o comentario"
+            onPress={() => {
+              const body = encodeURIComponent(user?.email ? `\n\n—\nCuenta: ${user.email}` : '');
+              void Linking.openURL(`mailto:transicionveg@gmail.com?subject=${encodeURIComponent('Sugerencia VegeTrack')}&body=${body}`);
+            }}
+            iconBg="#fef3c7"
+            iconColor="#d97706"
+          />
+          <View style={{ height: 1, backgroundColor: t.separator }} />
+          <MenuRow
             iconName="document-text-outline"
             label="Política de privacidad"
             onPress={() => void Linking.openURL(`${WEB_BASE_URL}/privacidad`)}

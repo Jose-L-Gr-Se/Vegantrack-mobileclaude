@@ -16,6 +16,7 @@
  * SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY los inyecta Supabase.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { sendEmail, buildOwnerAlertEmail, OWNER_EMAIL } from '../_shared/email.ts';
 
 // Eventos que dan/renuevan acceso Pro.
 const PRO_EVENTS = new Set([
@@ -31,6 +32,16 @@ const PRO_EVENTS = new Set([
 const FREE_EVENTS = new Set(['EXPIRATION']);
 // CANCELLATION / BILLING_ISSUE NO bajan a free: el usuario sigue siendo Pro
 // hasta que llegue EXPIRATION al final del periodo ya pagado.
+
+// Eventos que avisamos por email al dueño de la app. Sólo los que indican un
+// cambio de negocio real (alta, baja, impago) — las renovaciones normales NO
+// avisan porque serían un email por mes por cada suscriptor activo.
+const NOTIFY_TITLES: Record<string, string> = {
+  INITIAL_PURCHASE: '💳 Nueva suscripción Pro',
+  CANCELLATION: '⚠️ Cancelación de suscripción (Pro hasta fin de periodo)',
+  EXPIRATION: '😢 Suscripción Pro expirada (usuario ha pasado a free)',
+  BILLING_ISSUE: '❗ Problema de cobro en una suscripción',
+};
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
@@ -77,6 +88,23 @@ Deno.serve(async (req: Request) => {
       .from('profiles')
       .update({ subscription_tier: 'free', subscription_expires_at: null, updated_at: now })
       .eq('id', userId);
+  }
+
+  // Aviso al dueño de la app por email (best-effort, no bloquea la respuesta).
+  const title = NOTIFY_TITLES[type];
+  if (title) {
+    void (async () => {
+      const { data } = await supabase.auth.admin.getUserById(userId);
+      const email = data.user?.email ?? userId;
+      const { subject, html } = buildOwnerAlertEmail(title, [
+        ['Usuario', email],
+        ['Evento', type],
+        ['Producto', event.product_id ?? '—'],
+        ['Precio', event.price != null ? `${event.price} ${event.currency ?? ''}` : '—'],
+        ['Fecha', now],
+      ]);
+      await sendEmail({ to: OWNER_EMAIL, subject, html });
+    })();
   }
 
   return new Response(JSON.stringify({ ok: true }), {

@@ -11,7 +11,7 @@
  * Google Play exige que exista esta opción in-app desde 2023.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { sendEmail, buildFarewellEmail } from '../_shared/email.ts';
+import { sendEmail, buildFarewellEmail, buildOwnerAlertEmail, OWNER_EMAIL } from '../_shared/email.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,6 +56,16 @@ Deno.serve(async (req: Request) => {
     if (user.email) {
       const { subject, html } = buildFarewellEmail(profile?.display_name ?? undefined);
       void sendEmail({ to: user.email, subject, html });
+    }
+
+    // Aviso al dueño de la app: alguien se ha dado de baja.
+    {
+      const { subject, html } = buildOwnerAlertEmail('🗑️ Cuenta eliminada', [
+        ['Usuario', user.email ?? user.id],
+        ['Nombre', profile?.display_name ?? '—'],
+        ['Fecha', new Date().toISOString()],
+      ]);
+      void sendEmail({ to: OWNER_EMAIL, subject, html });
     }
 
     const { error } = await supabase.auth.admin.deleteUser(user.id);
