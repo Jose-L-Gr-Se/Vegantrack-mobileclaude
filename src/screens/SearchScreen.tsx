@@ -355,6 +355,7 @@ export function SearchScreen() {
           onClose={closeSheet}
           onAdded={(msg) => {
             setToast(msg);
+            setQuery('');
             if (user) void fetchRecentFoods(user.id);
             navigation.navigate('Main', { screen: 'Diary' });
           }}
