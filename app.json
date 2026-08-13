@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.vegantrack.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#2f5d41",
         "foregroundImage": "./assets/android-icon-foreground.png",
