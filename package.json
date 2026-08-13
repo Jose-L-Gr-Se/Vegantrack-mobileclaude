@@ -47,7 +47,7 @@
     "expo-web-browser": "~56.0.0",
     "react": "19.2.3",
     "react-native": "0.85.3",
-    "react-native-purchases": "^8.1.0",
+    "react-native-purchases": "^10.7.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "^4.25.2",
     "react-native-svg": "^15.15.4",
