@@ -1,6 +1,7 @@
 /**
  * Estado Pro y límites del plan free.
- * - En Android: comprueba el entitlement de RevenueCat (Google Play Billing).
+ * - En la app: entitlement de RevenueCat (Google Play Billing en Android,
+ *   In-App Purchase de App Store en iOS).
  * - Fallback: perfil de Supabase para suscriptores de la web (Stripe).
  */
 import { useAuthStore } from '@/stores/authStore';
@@ -14,7 +15,7 @@ export function usePro(): { isPro: boolean } {
   const profile = useAuthStore((s) => s.profile);
   const customerInfo = usePurchasesStore((s) => s.customerInfo);
 
-  // RevenueCat / Google Play Billing
+  // RevenueCat (Google Play Billing / App Store IAP)
   const rcPro = customerInfo?.entitlements.active[ENTITLEMENT_PRO] !== undefined;
 
   // Supabase: suscriptores web (Stripe) que no compraron desde la app

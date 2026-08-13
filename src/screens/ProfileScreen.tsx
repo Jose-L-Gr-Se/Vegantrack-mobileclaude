@@ -3,7 +3,7 @@
  * recordatorio diario, exportación CSV, Pro y logout.
  */
 import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Alert, Linking, Modal, Platform, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -155,7 +155,9 @@ export function ProfileScreen() {
       else
         Alert.alert(
           'Permiso denegado',
-          'Activa las notificaciones de VegeTrack en Ajustes de Android.'
+          `Activa las notificaciones de VegeTrack en los Ajustes de ${
+            Platform.OS === 'ios' ? 'iOS' : 'Android'
+          }.`
         );
     } else {
       await cancelDailyReminder();

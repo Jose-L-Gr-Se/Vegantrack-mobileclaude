@@ -11,6 +11,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "prebuild:android": "expo prebuild --platform android --no-install",
+    "prebuild:ios": "expo prebuild --platform ios --no-install",
     "build:apk": "node ./scripts/build-apk.js",
     "build:aab": "node ./scripts/build-apk.js bundleRelease"
   },
@@ -35,6 +36,7 @@
     "@react-navigation/native-stack": "^7.17.3",
     "@supabase/supabase-js": "^2.108.1",
     "expo": "~56.0.11",
+    "expo-apple-authentication": "~56.0.4",
     "expo-camera": "~56.0.8",
     "expo-font": "^56.0.6",
     "expo-image-picker": "~56.0.7",

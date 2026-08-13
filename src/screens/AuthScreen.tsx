@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Card, Input } from '@/components/ui';
@@ -28,13 +29,22 @@ const FEATURES = [
 export function AuthScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const { signIn, signUp, signInWithGoogle } = useAuthStore();
+  const { signIn, signUp, signInWithGoogle, signInWithApple } = useAuthStore();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  // Sign in with Apple solo existe en iOS; Apple exige ofrecerlo si hay
+  // login de terceros (Google), y por convención va en primer lugar.
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+    }
+  }, []);
 
   const submit = async () => {
     if (!email.trim() || !password) {
@@ -56,6 +66,15 @@ export function AuthScreen() {
     setError(null);
     const result = await signInWithGoogle();
     setGoogleLoading(false);
+    if (result.error) setError(result.error);
+  };
+
+  const handleApple = async () => {
+    if (appleLoading || googleLoading || loading) return;
+    setAppleLoading(true);
+    setError(null);
+    const result = await signInWithApple();
+    setAppleLoading(false);
     if (result.error) setError(result.error);
   };
 
@@ -235,10 +254,27 @@ export function AuthScreen() {
               <View style={{ flex: 1, height: 1, backgroundColor: t.separator }} />
             </View>
 
+            {/* Botón nativo de Apple (el sistema lo traduce: "Continuar con Apple") */}
+            {appleAvailable && (
+              <View style={{ opacity: appleLoading ? 0.6 : 1 }} pointerEvents={appleLoading ? 'none' : 'auto'}>
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                  buttonStyle={
+                    t.dark
+                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                  }
+                  cornerRadius={radii.lg}
+                  style={{ height: 50 }}
+                  onPress={() => void handleApple()}
+                />
+              </View>
+            )}
+
             {/* Google button */}
             <TouchableOpacity
               onPress={handleGoogle}
-              disabled={googleLoading || loading}
+              disabled={googleLoading || loading || appleLoading}
               activeOpacity={0.75}
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center',

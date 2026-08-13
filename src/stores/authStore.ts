@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
@@ -23,6 +24,7 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
+  signInWithApple: () => Promise<{ error: string | null }>;
   sendPasswordReset: (email: string) => Promise<{ error: string | null }>;
   confirmPasswordReset: (
     email: string,
@@ -162,6 +164,47 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { error: 'No se recibieron credenciales de Google' };
     } catch (e) {
       return { error: (e as Error).message };
+    }
+  },
+
+  signInWithApple: async () => {
+    try {
+      // Hoja nativa de Sign in with Apple (solo iOS). El identityToken (JWT)
+      // se intercambia directamente con Supabase — sin navegador intermedio.
+      // En Supabase Dashboard → Auth → Providers → Apple debes añadir el
+      // bundle ID (com.vegantrack.app) en "Authorized Client IDs".
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        return { error: 'Apple no devolvió credenciales válidas' };
+      }
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      });
+      if (error) return { error: error.message };
+
+      await get().fetchProfile();
+      if (data.user) usePurchasesStore.getState().init(data.user.id);
+
+      // Apple solo entrega el nombre en el PRIMER inicio de sesión:
+      // si el perfil aún no tiene nombre, lo guardamos ahora.
+      const fullName = [credential.fullName?.givenName, credential.fullName?.familyName]
+        .filter(Boolean)
+        .join(' ');
+      if (fullName && !get().profile?.display_name) {
+        void get().updateProfile({ display_name: fullName });
+      }
+      return { error: null };
+    } catch (e: any) {
+      // El usuario cerró la hoja de Apple: no es un error.
+      if (e?.code === 'ERR_REQUEST_CANCELED') return { error: null };
+      return { error: e?.message ?? 'No se pudo iniciar sesión con Apple' };
     }
   },
 

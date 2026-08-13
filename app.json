@@ -14,7 +14,17 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.vegantrack.app"
+      "bundleIdentifier": "com.vegantrack.app",
+      "buildNumber": "1",
+      "usesAppleSignIn": true,
+      "associatedDomains": [
+        "applinks:vegantrack.app"
+      ],
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDevelopmentRegion": "es",
+        "CFBundleAllowMixedLocalizations": true
+      }
     },
     "android": {
       "package": "com.vegantrack.app",
@@ -62,7 +72,13 @@
           "backgroundColor": "#2f5d41"
         }
       ],
-      "expo-secure-store",
+      "expo-apple-authentication",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "VegeTrack usa Face ID únicamente para proteger el acceso seguro a tu sesión."
+        }
+      ],
       "expo-sqlite",
       [
         "expo-notifications",
@@ -73,14 +89,16 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "VegeTrack usa la cámara para escanear códigos de barras de alimentos."
+          "cameraPermission": "VegeTrack usa la cámara para escanear códigos de barras de alimentos.",
+          "microphonePermission": "VegeTrack no graba audio; este permiso lo requiere el componente de cámara de iOS."
         }
       ],
       [
         "expo-image-picker",
         {
           "photosPermission": "VegeTrack usa tus fotos para analizar platos y calcular sus nutrientes.",
-          "cameraPermission": "VegeTrack usa la cámara para fotografiar tus platos y analizarlos con IA."
+          "cameraPermission": "VegeTrack usa la cámara para fotografiar tus platos y analizarlos con IA.",
+          "microphonePermission": "VegeTrack no graba audio; este permiso lo requiere el componente de cámara de iOS."
         }
       ]
     ]

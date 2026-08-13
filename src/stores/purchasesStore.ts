@@ -1,5 +1,6 @@
 /**
- * Estado de RevenueCat: CustomerInfo (entitlements) y Offerings (productos de Play).
+ * Estado de RevenueCat: CustomerInfo (entitlements) y Offerings (productos
+ * de Play Store en Android / App Store en iOS).
  * Se inicializa cuando el usuario hace login y se destruye al cerrar sesión.
  */
 import { Platform } from 'react-native';
@@ -9,6 +10,16 @@ import type { CustomerInfo, PurchasesOfferings } from 'react-native-purchases';
 
 export const ENTITLEMENT_PRO = 'pro';
 
+/** Clave pública de RevenueCat de la plataforma actual (goog_… / appl_…). */
+function revenueCatApiKey(): string | undefined {
+  if (Platform.OS === 'android') return process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY;
+  if (Platform.OS === 'ios') return process.env.EXPO_PUBLIC_REVENUECAT_APPLE_KEY;
+  return undefined;
+}
+
+// true tras Purchases.configure(); evita llamar al SDK sin configurar.
+let configured = false;
+
 interface PurchasesState {
   customerInfo: CustomerInfo | null;
   offerings: PurchasesOfferings | null;
@@ -17,7 +28,7 @@ interface PurchasesState {
   init: (userId: string) => void;
   /** Cierra sesión en RC y limpia el estado. */
   reset: () => Promise<void>;
-  /** Carga el catálogo de productos (precios reales de Play Store). */
+  /** Carga el catálogo de productos (precios reales de la tienda). */
   loadOfferings: () => Promise<void>;
 }
 
@@ -27,12 +38,12 @@ export const usePurchasesStore = create<PurchasesState>((set) => ({
   offeringsLoading: false,
 
   init: (userId: string) => {
-    if (Platform.OS !== 'android') return;
-    const apiKey = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY;
+    const apiKey = revenueCatApiKey();
     if (!apiKey) return;
 
     if (__DEV__) Purchases.setLogLevel(LOG_LEVEL.DEBUG);
     Purchases.configure({ apiKey, appUserID: userId });
+    configured = true;
 
     // Carga inicial de customerInfo
     void Purchases.getCustomerInfo()
@@ -44,7 +55,7 @@ export const usePurchasesStore = create<PurchasesState>((set) => ({
   },
 
   reset: async () => {
-    if (Platform.OS !== 'android') return;
+    if (!configured) return;
     try {
       await Purchases.logOut();
     } catch {}
@@ -52,7 +63,7 @@ export const usePurchasesStore = create<PurchasesState>((set) => ({
   },
 
   loadOfferings: async () => {
-    if (Platform.OS !== 'android') return;
+    if (!configured) return;
     set({ offeringsLoading: true });
     try {
       const offerings = await Purchases.getOfferings();

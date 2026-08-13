@@ -31,7 +31,11 @@ export async function requestNotificationPermission(): Promise<boolean> {
   }
   const settings = await Notifications.getPermissionsAsync();
   if (settings.granted) return true;
-  const { granted } = await Notifications.requestPermissionsAsync();
+  const { granted } = await Notifications.requestPermissionsAsync({
+    // iOS pide el permiso con un diálogo del sistema la primera vez;
+    // pedimos solo lo que usamos (banner + sonido, sin badge).
+    ios: { allowAlert: true, allowSound: true, allowBadge: false },
+  });
   return granted;
 }
 

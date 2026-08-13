@@ -1,10 +1,11 @@
 /**
- * Modal de planes Pro con Google Play Billing vía RevenueCat.
- * Los precios se leen del catálogo de Play Store; si no hay red se muestran
+ * Modal de planes Pro con compras in-app vía RevenueCat
+ * (Google Play Billing en Android, StoreKit/App Store en iOS).
+ * Los precios se leen del catálogo de la tienda; si no hay red se muestran
  * los valores de fallback hardcodeados.
  */
 import React, { useEffect, useState } from 'react';
-import { Alert, ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ActivityIndicator, Linking, Platform, Text, TouchableOpacity, View } from 'react-native';
 import Purchases, { PACKAGE_TYPE, PURCHASES_ERROR_CODE } from 'react-native-purchases';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
@@ -12,6 +13,10 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { usePurchasesStore, ENTITLEMENT_PRO } from '@/stores/purchasesStore';
+import { WEB_BASE_URL } from '@/lib/supabase';
+
+// EULA estándar de Apple para apps con suscripciones auto-renovables.
+const APPLE_STANDARD_EULA = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
 // ── Definición de planes ─────────────────────────────────────────────────────
 
@@ -286,10 +291,30 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
           </TouchableOpacity>
         )}
 
-        {/* Nota legal Google Play */}
+        {/* Nota legal de la tienda (Google Play / App Store) */}
         <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
-          La suscripción se gestiona a través de Google Play. Puedes cancelarla en cualquier momento desde los ajustes de tu cuenta de Google Play.
+          {Platform.OS === 'ios'
+            ? 'La suscripción se gestiona a través del App Store y se renueva automáticamente salvo que la canceles al menos 24 h antes del fin del periodo. Puedes cancelarla en Ajustes → Apple ID → Suscripciones.'
+            : 'La suscripción se gestiona a través de Google Play. Puedes cancelarla en cualquier momento desde los ajustes de tu cuenta de Google Play.'}
         </Text>
+
+        {/* Enlaces legales (Apple exige privacidad + términos junto a la suscripción) */}
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: spacing.lg }}>
+          <Text
+            style={{ color: t.textMuted, fontSize: 11, textDecorationLine: 'underline' }}
+            onPress={() => void Linking.openURL(`${WEB_BASE_URL}/privacidad`)}
+          >
+            Política de privacidad
+          </Text>
+          {Platform.OS === 'ios' && (
+            <Text
+              style={{ color: t.textMuted, fontSize: 11, textDecorationLine: 'underline' }}
+              onPress={() => void Linking.openURL(APPLE_STANDARD_EULA)}
+            >
+              Términos de uso (EULA)
+            </Text>
+          )}
+        </View>
       </View>
     </BottomSheet>
   );
