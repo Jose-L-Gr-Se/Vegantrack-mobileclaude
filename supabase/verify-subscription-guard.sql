@@ -60,19 +60,32 @@ where table_schema   = 'public'
   and grantee in ('anon', 'authenticated');
 
 
--- A3. ¿Está instalado el trigger, y es SECURITY INVOKER?
--- Esperado: 1 fila, tgenabled = 'O', es_security_definer = false.
--- Si fuese true, `current_user` dentro de la función sería el propietario y el
--- guard no detectaría a ningún cliente.
+-- A3. TODOS los triggers de profiles, en su orden real de disparo (alfabético).
+-- Esperado como mínimo: trg_profiles_entitlement_guard, habilitado ('O') y con
+-- es_security_definer = false. Si fuese true, `current_user` dentro de la
+-- función sería el propietario y el guard no detectaría a ningún cliente.
+--
+-- IMPORTANTE: esta consulta NO filtra por nombre a propósito. Cualquier otro
+-- trigger BEFORE UPDATE sobre profiles cuyo nombre vaya después del nuestro
+-- alfabéticamente se ejecuta DESPUÉS y puede sobrescribir lo que dejamos pasar.
+-- Filtrar por nombre nos habría ocultado justo esa clase de conflicto.
 select
-  t.tgname,
-  t.tgenabled            as habilitado,
-  p.prosecdef            as es_security_definer,
-  pg_get_userbyid(p.proowner) as propietario
+  t.tgname                                            as trigger_name,
+  case t.tgenabled when 'O' then 'habilitado'
+                   when 'D' then 'DESHABILITADO'
+                   else t.tgenabled::text end         as estado,
+  case when (t.tgtype & 2) <> 0 then 'BEFORE' else 'AFTER' end as momento,
+  concat_ws(' ',
+    case when (t.tgtype & 4)  <> 0 then 'INSERT' end,
+    case when (t.tgtype & 8)  <> 0 then 'DELETE' end,
+    case when (t.tgtype & 16) <> 0 then 'UPDATE' end) as eventos,
+  p.proname                                           as funcion,
+  p.prosecdef                                         as es_security_definer
 from pg_trigger t
 join pg_proc p on p.oid = t.tgfoid
 where t.tgrelid = 'public.profiles'::regclass
-  and t.tgname  = 'trg_profiles_entitlement_guard';
+  and not t.tgisinternal
+order by t.tgname;
 
 
 -- A4. La RLS sigue exactamente como estaba (no la hemos tocado).
@@ -106,6 +119,9 @@ declare
   v_name_fin text;
   v_obs      text;
   v_ok       boolean;
+  v_paso1    text;
+  v_filas1   bigint;
+  v_filas2   bigint;
 begin
   if not exists (select 1 from public.profiles p where p.id = p_id) then
     raise exception 'No existe ningún perfil con id %. Usa: select id from public.profiles limit 1;', p_id;
@@ -214,19 +230,41 @@ begin
   return next;
 
   -- ── 4 ─ El webhook activa Pro ─────────────────────────────────────────────
+  --        Comprueba una TRANSICIÓN OBSERVADA (free → pro), no el estado final.
+  --        Una versión anterior de este script sólo miraba si el valor final
+  --        era 'pro': pasaba en vacío cuando el perfil YA era 'pro', aunque el
+  --        UPDATE no hubiera hecho nada. Un test que aprueba sin que ocurra
+  --        nada es un test roto.
   begin
     execute 'set local role service_role';
 
+    -- Paso 1: línea base en 'free'.
+    update public.profiles set subscription_tier = 'free' where id = p_id;
+    get diagnostics v_filas1 = row_count;
+    select p.subscription_tier into v_paso1 from public.profiles p where p.id = p_id;
+
+    -- Paso 2: activar Pro.
     update public.profiles
        set subscription_tier       = 'pro',
            subscription_expires_at = now() + interval '30 days',
            updated_at              = now()
      where id = p_id;
-
+    get diagnostics v_filas2 = row_count;
     select p.subscription_tier into v_tier_fin from public.profiles p where p.id = p_id;
+
     execute 'reset role';
-    v_ok  := (v_tier_fin = 'pro');
-    v_obs := format('subscription_tier quedó en %L', v_tier_fin);
+    v_ok  := (v_paso1 = 'free' and v_tier_fin = 'pro');
+    v_obs := format(
+      'filas afectadas %s y %s · valor: %L → (paso 1) %L → (paso 2) %L · %s',
+      v_filas1, v_filas2, v_tier_ini, v_paso1, v_tier_fin,
+      case
+        when v_filas1 = 0 or v_filas2 = 0
+          then '>>> 0 FILAS AFECTADAS: la RLS está filtrando la fila para service_role'
+        when v_paso1 is not distinct from v_tier_ini and v_tier_fin is not distinct from v_tier_ini
+          then '>>> ningún cambio se aplicó: un trigger BEFORE está revirtiendo las escrituras'
+        when v_ok then '>>> transición observada correctamente'
+        else '>>> transición incompleta'
+      end);
     raise exception using errcode = 'VT001', message = 'fin del escenario';
   exception
     when sqlstate 'VT001' then null;
@@ -236,27 +274,43 @@ begin
   end;
   n := 4;
   escenario := 'service_role activa Pro (evento INITIAL_PURCHASE / RENEWAL)';
-  esperado  := 'funciona: es la única ruta legítima';
+  esperado  := 'transición observada free → pro';
   observado := v_obs;
   veredicto := case when v_ok then 'PASA' else 'FALLA' end;
   return next;
 
   -- ── 5 ─ El webhook degrada a free ─────────────────────────────────────────
+  --        Misma disciplina: transición observada pro → free.
   begin
     execute 'set local role service_role';
 
-    -- Partimos de Pro para que la degradación sea un cambio real.
+    -- Paso 1: línea base en 'pro'.
     update public.profiles set subscription_tier = 'pro' where id = p_id;
+    get diagnostics v_filas1 = row_count;
+    select p.subscription_tier into v_paso1 from public.profiles p where p.id = p_id;
+
+    -- Paso 2: degradar (evento EXPIRATION).
     update public.profiles
        set subscription_tier       = 'free',
            subscription_expires_at = null,
            updated_at              = now()
      where id = p_id;
-
+    get diagnostics v_filas2 = row_count;
     select p.subscription_tier into v_tier_fin from public.profiles p where p.id = p_id;
+
     execute 'reset role';
-    v_ok  := (v_tier_fin = 'free');
-    v_obs := format('subscription_tier quedó en %L', v_tier_fin);
+    v_ok  := (v_paso1 = 'pro' and v_tier_fin = 'free');
+    v_obs := format(
+      'filas afectadas %s y %s · valor: %L → (paso 1) %L → (paso 2) %L · %s',
+      v_filas1, v_filas2, v_tier_ini, v_paso1, v_tier_fin,
+      case
+        when v_filas1 = 0 or v_filas2 = 0
+          then '>>> 0 FILAS AFECTADAS: la RLS está filtrando la fila para service_role'
+        when v_tier_fin is not distinct from v_paso1 and v_paso1 is not distinct from v_tier_ini
+          then '>>> ningún cambio se aplicó: un trigger BEFORE está revirtiendo las escrituras'
+        when v_ok then '>>> transición observada correctamente'
+        else '>>> transición incompleta · ejecuta supabase/diagnose-subscription-guard.sql'
+      end);
     raise exception using errcode = 'VT001', message = 'fin del escenario';
   exception
     when sqlstate 'VT001' then null;
@@ -266,7 +320,7 @@ begin
   end;
   n := 5;
   escenario := 'service_role degrada a free (evento EXPIRATION)';
-  esperado  := 'funciona: la caducidad debe poder aplicarse';
+  esperado  := 'transición observada pro → free';
   observado := v_obs;
   veredicto := case when v_ok then 'PASA' else 'FALLA' end;
   return next;

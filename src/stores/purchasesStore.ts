@@ -7,7 +7,9 @@ import { create } from 'zustand';
 import Purchases, { LOG_LEVEL } from 'react-native-purchases';
 import type { CustomerInfo, PurchasesOfferings } from 'react-native-purchases';
 
-export const ENTITLEMENT_PRO = 'pro';
+// Fuente única: la constante vive junto a la regla de decisión pura, para que
+// el id del entitlement no pueda divergir entre el SDK y `usePro`.
+export { ENTITLEMENT_PRO } from '@/utils/proEntitlement';
 
 interface PurchasesState {
   customerInfo: CustomerInfo | null;

@@ -242,7 +242,115 @@ una escritura fallida y silenciosa en clientes antiguos.
 
 ---
 
-## 6. Pendiente de verificar (no está en el repositorio)
+## 6. Escenario 5: la degradación a free no se aplicaba
+
+Al ejecutar la verificación contra el proyecto real salió `1-4 PASA`, `5 FALLA`:
+`service_role` intentó bajar `subscription_tier` de `pro` a `free` y el valor se
+quedó en `pro`.
+
+### El veredicto era engañoso: dos defectos del script de verificación
+
+**Defecto 1 — el escenario 4 podía aprobar en vacío.** Comprobaba el estado
+final (`v_ok := (v_tier_fin = 'pro')`) sin compararlo con el valor de partida.
+Sobre un perfil que **ya estaba en `pro`**, aprobaba aunque el `UPDATE` no
+hubiera hecho absolutamente nada. Un test que aprueba sin que ocurra nada no es
+un test.
+
+**Defecto 2 — el inventario de triggers sólo miraba el nuestro.** La consulta
+filtraba `and t.tgname = 'trg_profiles_entitlement_guard'`, así que cualquier
+*otro* trigger sobre `profiles` —justo la clase de conflicto que hay que
+descartar aquí— quedaba invisible.
+
+Corolario importante: los escenarios 4 y 5 ejecutan el mismo código con el mismo
+rol, la misma tabla, las mismas columnas y los mismos privilegios. **No hay
+ningún mecanismo por el que `service_role` pueda escribir `'pro'` en el 4 y
+fallar al escribir `'free'` en el 5.** La única lectura internamente coherente
+es que *ninguno de los dos escribió nada*, y que el 4 aprobó en vacío porque el
+perfil ya era `pro`. Es decir: **no tenemos ninguna evidencia de que
+`service_role` pueda escribir la columna**, y el escenario 5 es el único que lo
+destapó.
+
+### Tres causas candidatas, y cómo distinguirlas
+
+Cuál de las tres es no se puede deducir del repositorio: depende del estado real
+de la base de datos. `supabase/diagnose-subscription-guard.sql` las separa con
+datos, usando `ROW_COUNT` como discriminador:
+
+| Observación | Causa |
+|---|---|
+| `filas_afectadas = 0` | La RLS filtra la fila para `service_role` (`auth.uid()` es NULL sin JWT y la policy es `auth.uid() = id`). No es ningún trigger. Ver `rolbypassrls` en D5. |
+| `1 fila`, valor sin cambiar con nuestro guard activo, **sí** cambia con el guard desactivado | La causa es **nuestro** trigger: `claim_role` está demotando a `service_role`. Ver abajo. |
+| `1 fila`, valor sin cambiar en **ambos** casos | Hay **otro** trigger `BEFORE UPDATE` sobre `profiles` revirtiéndolo. Los triggers disparan en orden alfabético, así que uno cuyo nombre vaya después de `trg_profiles_entitlement_guard` sobrescribe lo que nosotros dejamos pasar. Ver D2/D3. |
+
+### La debilidad de diseño que sí podemos afirmar
+
+Independientemente de cuál sea la causa aquí, la condición del guard tiene un
+fallo de diseño:
+
+```sql
+if caller_role not in ('anon', 'authenticated')
+   and claim_role  not in ('anon', 'authenticated') then
+  return new;
+end if;
+```
+
+Es un **AND de dos negaciones**: basta con que `request.jwt.claims` contenga
+`"role":"authenticated"` para que el guard trate al escritor como cliente
+**aunque `current_user` sea `service_role`**. El claim del JWT puede *degradar* a
+un `current_user` legítimo, y eso está al revés: `current_user` es el rol que
+Postgres ha establecido de verdad y debe ser la autoridad. El claim aporta
+seguridad casi nula (PostgREST siempre hace el `SET ROLE`; sin él el rol sería
+`authenticator`, que no tiene privilegios) y a cambio abre esta superficie de
+falsos positivos.
+
+**Corrección propuesta** (pendiente de confirmar con el diagnóstico antes de
+escribir la migración):
+
+```sql
+-- current_user manda. El claim sólo restringe cuando el rol efectivo es
+-- `authenticator`, es decir, cuando el SET ROLE no llegó a aplicarse.
+if caller_role not in ('anon', 'authenticated')
+   and not (caller_role = 'authenticator' and claim_role in ('anon', 'authenticated'))
+then
+  return new;
+end if;
+```
+
+Esto mantiene A, B, E y F intactas y devuelve C y D.
+
+### Qué se ha corregido ya (sin tocar la base de datos)
+
+- `verify-subscription-guard.sql`: los escenarios 4 y 5 comprueban ahora una
+  **transición observada** (`free → pro` y `pro → free`), informan de
+  `ROW_COUNT` y no pueden aprobar en vacío. El inventario A3 lista **todos** los
+  triggers de `profiles` con su momento, eventos y orden de disparo.
+- `diagnose-subscription-guard.sql` (nuevo): D1-D6 de sólo lectura y D7, el
+  experimento decisivo que ejecuta la escritura como `service_role` con nuestro
+  guard activo y desactivado, dentro de una transacción con `ROLLBACK`.
+- Tests de regresión: `src/__tests__/verifyScriptIntegrity.test.ts` impide que
+  vuelvan los dos defectos; `src/utils/__tests__/proEntitlement.test.ts` fija la
+  semántica del entitlement.
+
+**No se ha modificado nada en Supabase.** El arreglo del trigger espera a la
+salida del diagnóstico.
+
+### Por qué esto importa más de lo que parece
+
+El handler de `EXPIRATION` escribe **dos** columnas:
+
+```ts
+.update({ subscription_tier: 'free', subscription_expires_at: null, ... })
+```
+
+Y `hasProfilePro()` interpreta una caducidad nula como *"no caduca nunca"*. Si la
+escritura del `tier` se pierde y la de la fecha no, el usuario pasa de
+*"Pro hasta el día X"* a **Pro para siempre**. Una degradación que falla no es
+neutra: mejora silenciosamente el entitlement. Queda fijado en
+`src/utils/__tests__/proEntitlement.test.ts`.
+
+---
+
+## 7. Pendiente de verificar (no está en el repositorio)
 
 Estas cosas no se pueden comprobar desde el código y conviene revisarlas en el
 panel de Supabase:
@@ -281,7 +389,7 @@ panel de Supabase:
 
 ---
 
-## 7. Si en el futuro hay que añadir una columna que el cliente escriba
+## 8. Si en el futuro hay que añadir una columna que el cliente escriba
 
 1. Añadirla al `grant update (...)` de una **nueva** migración (no editar la ya
    aplicada).
