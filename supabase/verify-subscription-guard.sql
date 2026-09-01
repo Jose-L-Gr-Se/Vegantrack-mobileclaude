@@ -1,8 +1,15 @@
 -- ═════════════════════════════════════════════════════════════════════════════
--- Verificación del blindaje de subscription_tier
+-- Verificación del blindaje de subscription_tier — ARQUITECTURA CONSOLIDADA
 --
 -- Ejecutar en Supabase → SQL Editor DESPUÉS de aplicar
--- supabase/migrations/20260901000000_protect_subscription_columns.sql
+-- supabase/migrations/20260901000001_consolidate_subscription_guard.sql
+-- (que a su vez requiere 20260901000000_protect_subscription_columns.sql).
+--
+-- Arquitectura verificada por este script (ver docs/SEGURIDAD-SUSCRIPCION.md):
+--   Capa 1 — privilegios por columna: authenticated/anon sin UPDATE sobre
+--            subscription_tier / subscription_expires_at / stripe_customer_id.
+--   Capa 2 — protect_subscription_fields_trigger (ÚNICA autoridad; se retiró
+--            trg_profiles_entitlement_guard, redundante).
 --
 -- NO concede ningún permiso de forma permanente y NO modifica ningún dato.
 -- La única concesión que aparece (escenario 3) vive dentro de una
@@ -13,17 +20,14 @@
 -- (select id from public.profiles limit 1).
 --
 -- ─────────────────────────────────────────────────────────────────────────────
--- POR QUÉ ESTE SCRIPT NO ES UNA LISTA DE UPDATEs SUELTOS
+-- POR QUÉ LOS ESCENARIOS DE service_role FIJAN EL CLAIM DEL JWT
 --
--- El escenario 1 (el ataque) DEBE terminar en error 42501. El SQL Editor de
--- Supabase aborta el script entero en el primer error, así que una versión
--- lineal nunca llegaba a ejecutar los escenarios 2-5: parecía un script roto
--- cuando en realidad la defensa estaba funcionando.
---
--- Aquí cada escenario corre dentro de su propia subtransacción con manejador
--- de excepciones, de modo que el error esperado se captura, se convierte en un
--- veredicto y el script continúa. Una sola ejecución devuelve una tabla con
--- las cinco pruebas.
+-- protect_subscription_fields decide con auth.role(), que lee
+-- request.jwt.claims. Un `set local role service_role` desnudo (sin fijar ese
+-- claim) NO reproduce una llamada real: PostgREST, al decodificar la
+-- service_role key, SÍ deja ese claim (confirmado con datos, no supuesto — ver
+-- diagnose-subscription-guard.sql D10). Los escenarios 4 y 5 fijan el claim
+-- explícitamente para probar el camino real, no un artefacto del SQL Editor.
 -- ═════════════════════════════════════════════════════════════════════════════
 
 
@@ -61,14 +65,15 @@ where table_schema   = 'public'
 
 
 -- A3. TODOS los triggers de profiles, en su orden real de disparo (alfabético).
--- Esperado como mínimo: trg_profiles_entitlement_guard, habilitado ('O') y con
--- es_security_definer = false. Si fuese true, `current_user` dentro de la
--- función sería el propietario y el guard no detectaría a ningún cliente.
+-- Esperado tras la consolidación: EXACTAMENTE UNO gobernando el entitlement —
+-- protect_subscription_fields_trigger, habilitado ('O'). Si aparece TAMBIÉN
+-- trg_profiles_entitlement_guard, la migración de consolidación no se aplicó
+-- (o no se aplicó del todo): son dos autoridades otra vez, el problema que
+-- esta consolidación existe para cerrar.
 --
 -- IMPORTANTE: esta consulta NO filtra por nombre a propósito. Cualquier otro
--- trigger BEFORE UPDATE sobre profiles cuyo nombre vaya después del nuestro
--- alfabéticamente se ejecuta DESPUÉS y puede sobrescribir lo que dejamos pasar.
--- Filtrar por nombre nos habría ocultado justo esa clase de conflicto.
+-- trigger BEFORE UPDATE sobre profiles cuyo nombre vaya antes o después del
+-- nuestro alfabéticamente se ejecuta en ese orden y puede interactuar con él.
 select
   t.tgname                                            as trigger_name,
   case t.tgenabled when 'O' then 'habilitado'
@@ -88,6 +93,17 @@ where t.tgrelid = 'public.profiles'::regclass
 order by t.tgname;
 
 
+-- A3b. Verificación específica: no debe quedar rastro del mecanismo retirado.
+-- Esperado: 0 filas en ambas.
+select tgname from pg_trigger
+where tgrelid = 'public.profiles'::regclass
+  and tgname = 'trg_profiles_entitlement_guard';
+
+select proname from pg_proc
+where pronamespace = 'public'::regnamespace
+  and proname = 'enforce_profile_entitlement_guard';
+
+
 -- A4. La RLS sigue exactamente como estaba (no la hemos tocado).
 select polname, polcmd, pg_get_expr(polqual, polrelid) as using_expr
 from pg_policy
@@ -95,9 +111,20 @@ where polrelid = 'public.profiles'::regclass
 order by polname;
 
 
+-- A5. protect_subscription_fields protege ahora también stripe_customer_id.
+-- Esperado: el texto de la definición menciona las tres columnas.
+select
+  pg_get_functiondef(p.oid) ilike '%subscription_tier%'      as protege_tier,
+  pg_get_functiondef(p.oid) ilike '%subscription_expires_at%' as protege_expires,
+  pg_get_functiondef(p.oid) ilike '%stripe_customer_id%'      as protege_stripe
+from pg_proc p
+where p.pronamespace = 'public'::regnamespace
+  and p.proname = 'protect_subscription_fields';
+
+
 -- ╔═══════════════════════════════════════════════════════════════════════════╗
 -- ║ PARTE B · Veredicto — ejecutar este bloque ENTERO de una vez              ║
--- ║           (selecciónalo y pulsa Run). Devuelve una tabla de 5 filas.      ║
+-- ║           (selecciónalo y pulsa Run). Devuelve una tabla de 7 filas.      ║
 -- ╚═══════════════════════════════════════════════════════════════════════════╝
 
 begin;
@@ -113,10 +140,12 @@ returns table (
 language plpgsql
 as $fn$
 declare
-  v_claims   text;
+  v_claims_auth    text;
+  v_claims_service text;
   v_tier_ini text;
   v_tier_fin text;
   v_name_fin text;
+  v_stripe_fin text;
   v_obs      text;
   v_ok       boolean;
   v_paso1    text;
@@ -128,11 +157,13 @@ begin
   end if;
 
   select p.subscription_tier into v_tier_ini from public.profiles p where p.id = p_id;
-  v_claims := json_build_object('sub', p_id::text, 'role', 'authenticated')::text;
+  v_claims_auth    := json_build_object('sub', p_id::text, 'role', 'authenticated')::text;
+  -- Réplica del claim real que PostgREST fija para la service_role key.
+  v_claims_service := json_build_object('role', 'service_role', 'iss', 'supabase')::text;
 
   -- ── 1 ─ Un usuario autenticado intenta concederse Pro ─────────────────────
   begin
-    perform set_config('request.jwt.claims', v_claims, true);
+    perform set_config('request.jwt.claims', v_claims_auth, true);
     execute 'set local role authenticated';
 
     update public.profiles
@@ -140,7 +171,6 @@ begin
            subscription_expires_at = now() + interval '10 years'
      where id = p_id;
 
-    -- Si llegamos aquí, el privilegio NO ha bloqueado la sentencia.
     execute 'reset role';
     select p.subscription_tier into v_tier_fin from public.profiles p where p.id = p_id;
     v_ok  := (v_tier_fin is not distinct from v_tier_ini);
@@ -166,7 +196,7 @@ begin
 
   -- ── 2 ─ No regresión: actualización legítima de perfil ────────────────────
   begin
-    perform set_config('request.jwt.claims', v_claims, true);
+    perform set_config('request.jwt.claims', v_claims_auth, true);
     execute 'set local role authenticated';
 
     update public.profiles
@@ -195,14 +225,13 @@ begin
   return next;
 
   -- ── 3 ─ Regresión simulada: alguien restaura el UPDATE de tabla ───────────
-  --        `grant all on all tables in schema public to authenticated` es
-  --        idiomático en Supabase y desharía la capa 1 sin dar ningún error.
-  --        El GRANT vive sólo dentro de esta subtransacción, que SIEMPRE
-  --        aborta (por VT001 o por excepción).
+  --        Con la arquitectura consolidada, la única red que queda es
+  --        protect_subscription_fields_trigger. Este escenario demuestra que
+  --        aguanta sola.
   begin
     execute 'grant update on public.profiles to authenticated';
 
-    perform set_config('request.jwt.claims', v_claims, true);
+    perform set_config('request.jwt.claims', v_claims_auth, true);
     execute 'set local role authenticated';
 
     update public.profiles
@@ -213,7 +242,7 @@ begin
     select p.subscription_tier into v_tier_fin from public.profiles p where p.id = p_id;
     v_ok  := (v_tier_fin is not distinct from v_tier_ini);
     v_obs := format(
-      'con UPDATE de tabla concedido la sentencia no falla, pero el trigger revirtió el valor: subscription_tier = %L (era %L)',
+      'con UPDATE de tabla concedido la sentencia no falla, pero protect_subscription_fields_trigger revirtió el valor: subscription_tier = %L (era %L)',
       v_tier_fin, v_tier_ini);
     raise exception using errcode = 'VT001', message = 'fin del escenario';
   exception
@@ -224,26 +253,20 @@ begin
   end;
   n := 3;
   escenario := 'con el UPDATE de tabla reconcedido por accidente, authenticated lo reintenta';
-  esperado  := 'la capa 2 (trigger) revierte el valor: subscription_tier no cambia';
+  esperado  := 'protect_subscription_fields_trigger revierte el valor solo, sin la capa 1';
   observado := v_obs;
   veredicto := case when v_ok then 'PASA' else 'FALLA' end;
   return next;
 
-  -- ── 4 ─ El webhook activa Pro ─────────────────────────────────────────────
-  --        Comprueba una TRANSICIÓN OBSERVADA (free → pro), no el estado final.
-  --        Una versión anterior de este script sólo miraba si el valor final
-  --        era 'pro': pasaba en vacío cuando el perfil YA era 'pro', aunque el
-  --        UPDATE no hubiera hecho nada. Un test que aprueba sin que ocurra
-  --        nada es un test roto.
+  -- ── 4 ─ El webhook activa Pro (free → pro), con el claim real ─────────────
   begin
     execute 'set local role service_role';
+    perform set_config('request.jwt.claims', v_claims_service, true);
 
-    -- Paso 1: línea base en 'free'.
-    update public.profiles set subscription_tier = 'free' where id = p_id;
+    update public.profiles set subscription_tier = 'free', subscription_expires_at = null where id = p_id;
     get diagnostics v_filas1 = row_count;
     select p.subscription_tier into v_paso1 from public.profiles p where p.id = p_id;
 
-    -- Paso 2: activar Pro.
     update public.profiles
        set subscription_tier       = 'pro',
            subscription_expires_at = now() + interval '30 days',
@@ -255,16 +278,11 @@ begin
     execute 'reset role';
     v_ok  := (v_paso1 = 'free' and v_tier_fin = 'pro');
     v_obs := format(
-      'filas afectadas %s y %s · valor: %L → (paso 1) %L → (paso 2) %L · %s',
-      v_filas1, v_filas2, v_tier_ini, v_paso1, v_tier_fin,
-      case
-        when v_filas1 = 0 or v_filas2 = 0
-          then '>>> 0 FILAS AFECTADAS: la RLS está filtrando la fila para service_role'
-        when v_paso1 is not distinct from v_tier_ini and v_tier_fin is not distinct from v_tier_ini
-          then '>>> ningún cambio se aplicó: un trigger BEFORE está revirtiendo las escrituras'
-        when v_ok then '>>> transición observada correctamente'
-        else '>>> transición incompleta'
-      end);
+      'filas afectadas %s y %s · valor: (paso 1) %L → (paso 2) %L · %s',
+      v_filas1, v_filas2, v_paso1, v_tier_fin,
+      case when v_filas1 = 0 or v_filas2 = 0 then '>>> 0 FILAS AFECTADAS: revisar RLS/service_role'
+           when v_ok then '>>> transición observada correctamente'
+           else '>>> transición incompleta' end);
     raise exception using errcode = 'VT001', message = 'fin del escenario';
   exception
     when sqlstate 'VT001' then null;
@@ -273,23 +291,21 @@ begin
       v_obs := format('el webhook NO puede activar Pro: %s · %s', sqlstate, sqlerrm);
   end;
   n := 4;
-  escenario := 'service_role activa Pro (evento INITIAL_PURCHASE / RENEWAL)';
+  escenario := 'service_role activa Pro (evento INITIAL_PURCHASE / RENEWAL), claim real';
   esperado  := 'transición observada free → pro';
   observado := v_obs;
   veredicto := case when v_ok then 'PASA' else 'FALLA' end;
   return next;
 
-  -- ── 5 ─ El webhook degrada a free ─────────────────────────────────────────
-  --        Misma disciplina: transición observada pro → free.
+  -- ── 5 ─ El webhook degrada a free (pro → free), con el claim real ─────────
   begin
     execute 'set local role service_role';
+    perform set_config('request.jwt.claims', v_claims_service, true);
 
-    -- Paso 1: línea base en 'pro'.
     update public.profiles set subscription_tier = 'pro' where id = p_id;
     get diagnostics v_filas1 = row_count;
     select p.subscription_tier into v_paso1 from public.profiles p where p.id = p_id;
 
-    -- Paso 2: degradar (evento EXPIRATION).
     update public.profiles
        set subscription_tier       = 'free',
            subscription_expires_at = null,
@@ -301,16 +317,11 @@ begin
     execute 'reset role';
     v_ok  := (v_paso1 = 'pro' and v_tier_fin = 'free');
     v_obs := format(
-      'filas afectadas %s y %s · valor: %L → (paso 1) %L → (paso 2) %L · %s',
-      v_filas1, v_filas2, v_tier_ini, v_paso1, v_tier_fin,
-      case
-        when v_filas1 = 0 or v_filas2 = 0
-          then '>>> 0 FILAS AFECTADAS: la RLS está filtrando la fila para service_role'
-        when v_tier_fin is not distinct from v_paso1 and v_paso1 is not distinct from v_tier_ini
-          then '>>> ningún cambio se aplicó: un trigger BEFORE está revirtiendo las escrituras'
-        when v_ok then '>>> transición observada correctamente'
-        else '>>> transición incompleta · ejecuta supabase/diagnose-subscription-guard.sql'
-      end);
+      'filas afectadas %s y %s · valor: (paso 1) %L → (paso 2) %L · %s',
+      v_filas1, v_filas2, v_paso1, v_tier_fin,
+      case when v_filas1 = 0 or v_filas2 = 0 then '>>> 0 FILAS AFECTADAS: revisar RLS/service_role'
+           when v_ok then '>>> transición observada correctamente'
+           else '>>> transición incompleta' end);
     raise exception using errcode = 'VT001', message = 'fin del escenario';
   exception
     when sqlstate 'VT001' then null;
@@ -319,8 +330,56 @@ begin
       v_obs := format('el webhook NO puede degradar a free: %s · %s', sqlstate, sqlerrm);
   end;
   n := 5;
-  escenario := 'service_role degrada a free (evento EXPIRATION)';
+  escenario := 'service_role degrada a free (evento EXPIRATION), claim real';
   esperado  := 'transición observada pro → free';
+  observado := v_obs;
+  veredicto := case when v_ok then 'PASA' else 'FALLA' end;
+  return next;
+
+  -- ── 6 ─ stripe_customer_id queda protegido (el hueco que cerró esta       ─
+  --        consolidación: protect_subscription_fields original no lo cubría)
+  begin
+    perform set_config('request.jwt.claims', v_claims_auth, true);
+    execute 'grant update (stripe_customer_id) on public.profiles to authenticated';
+    execute 'set local role authenticated';
+
+    update public.profiles set stripe_customer_id = 'cus_hackeado' where id = p_id;
+
+    execute 'reset role';
+    select p.stripe_customer_id into v_stripe_fin from public.profiles p where p.id = p_id;
+    v_ok  := (v_stripe_fin is distinct from 'cus_hackeado');
+    v_obs := format('stripe_customer_id quedó en %L tras el intento', v_stripe_fin);
+    raise exception using errcode = 'VT001', message = 'fin del escenario';
+  exception
+    when sqlstate 'VT001' then null;
+    when insufficient_privilege then
+      v_ok  := true;
+      v_obs := format('bloqueado por privilegios · SQLSTATE 42501 · %s', sqlerrm);
+    when others then
+      v_ok  := false;
+      v_obs := format('error inesperado %s · %s', sqlstate, sqlerrm);
+  end;
+  n := 6;
+  escenario := 'authenticated intenta escribir stripe_customer_id';
+  esperado  := 'bloqueado (por privilegios o por protect_subscription_fields_trigger)';
+  observado := v_obs;
+  veredicto := case when v_ok then 'PASA' else 'FALLA' end;
+  return next;
+
+  -- ── 7 ─ Sólo queda UNA autoridad de entitlement ────────────────────────────
+  begin
+    v_ok := not exists (
+      select 1 from pg_trigger
+      where tgrelid = 'public.profiles'::regclass
+        and tgname = 'trg_profiles_entitlement_guard'
+    );
+    v_obs := case when v_ok
+      then 'trg_profiles_entitlement_guard no existe: consolidación completa'
+      else 'trg_profiles_entitlement_guard SIGUE EXISTIENDO: quedan dos autoridades' end;
+  end;
+  n := 7;
+  escenario := 'no quedan dos triggers gobernando el entitlement';
+  esperado  := 'trg_profiles_entitlement_guard fue retirado';
   observado := v_obs;
   veredicto := case when v_ok then 'PASA' else 'FALLA' end;
   return next;
@@ -336,42 +395,29 @@ rollback;
 -- ║ PARTE C · Red de seguridad — ejecutar DESPUÉS de la parte B               ║
 -- ╚═══════════════════════════════════════════════════════════════════════════╝
 
--- C1. Confirma que el GRANT temporal del escenario 3 no ha sobrevivido.
--- Esperado: 0 filas. Si devuelve algo, ejecuta:
---   revoke update on public.profiles from authenticated;
---   -- y vuelve a aplicar el grant de columnas de la migración
+-- C1. Confirma que los GRANTs temporales de los escenarios 3 y 6 no sobrevivieron.
+-- Esperado: 0 filas.
 select grantee, privilege_type
 from information_schema.table_privileges
-where table_schema   = 'public'
-  and table_name     = 'profiles'
-  and privilege_type = 'UPDATE'
-  and grantee in ('anon', 'authenticated');
+where table_schema = 'public' and table_name = 'profiles'
+  and privilege_type = 'UPDATE' and grantee in ('anon', 'authenticated');
+
+select grantee, column_name
+from information_schema.column_privileges
+where table_schema = 'public' and table_name = 'profiles'
+  and column_name = 'stripe_customer_id' and grantee = 'authenticated';
 
 -- C2. Confirma que los datos del perfil de prueba están intactos.
-select id, display_name, subscription_tier, subscription_expires_at, updated_at
+select id, display_name, subscription_tier, subscription_expires_at, stripe_customer_id, updated_at
 from public.profiles
 where id = '<UUID_DE_PRUEBA>';
 
 
 -- ╔═══════════════════════════════════════════════════════════════════════════╗
 -- ║ APÉNDICE · El ataque en crudo                                            ║
--- ║                                                                          ║
--- ║ Este bloque SÍ termina en error: es exactamente lo que queremos ver.     ║
 -- ║ Ejecútalo sólo si quieres leer el mensaje original de Postgres.          ║
--- ║                                                                          ║
--- ║ Mensaje esperado:                                                        ║
--- ║   ERROR: 42501: permission denied for table profiles                     ║
--- ║                                                                          ║
--- ║ Postgres informa de los fallos de privilegio de columna en DML a nivel   ║
--- ║ de TABLA, no de columna: el ejecutor lanza el error con el nombre de la  ║
--- ║ relación. Que diga "table" no significa que falte el UPDATE de tabla por ║
--- ║ error — significa que falta el privilegio sobre alguna columna que la    ║
--- ║ sentencia intenta escribir. Compruébalo cambiando subscription_tier por  ║
--- ║ display_name: esa versión funciona.                                      ║
--- ║                                                                          ║
--- ║ IGNORA el HINT del editor de Supabase                                    ║
--- ║ ("GRANT UPDATE ON public.profiles TO authenticated"): ese grant es       ║
--- ║ justamente el agujero que cierra la capa 1.                              ║
+-- ║ Mensaje esperado: ERROR 42501: permission denied for table profiles      ║
+-- ║ IGNORA el HINT del editor ("GRANT UPDATE ... TO authenticated").         ║
 -- ╚═══════════════════════════════════════════════════════════════════════════╝
 
 -- begin;

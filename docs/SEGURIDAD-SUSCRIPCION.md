@@ -361,10 +361,13 @@ panel de Supabase:
    allowlist. Si se confirma que es `SECURITY DEFINER`, **deberían quitarse del
    grant**, porque el cliente no tiene ningún motivo legítimo para escribir su
    propia racha (hoy puede).
-2. **La policy de INSERT de `profiles`.** No la conocemos. El trigger cubre el
-   caso (fuerza `free` en cualquier INSERT hecho por un cliente), pero conviene
-   confirmar que el alta de perfiles la hace un trigger `SECURITY DEFINER` sobre
-   `auth.users` y no el propio cliente.
+2. ~~**La policy de INSERT de `profiles`.**~~ Investigado en §9 — ver el
+   diagnóstico completo allí. Conclusión corta: ningún código cliente (ni el de
+   esta app ni el de la PWA) inserta nunca en `profiles`; la policy/privilegio
+   real de INSERT en la base de datos sigue pendiente de confirmar con
+   `supabase/diagnose-insert-policy.sql`, pero el vector por el que se llegó a
+   esta investigación (que la app cliente pudiera crear su propio perfil ya en
+   `pro`) queda descartado por el propio código de ambas apps.
 3. **Columnas reales de la tabla.** La allowlist se ha construido a partir de
    `src/types/index.ts` y de los callers de `updateProfile()`. Si la tabla en
    producción tiene columnas que el cliente escribe y que no están en el tipo de
@@ -400,3 +403,200 @@ panel de Supabase:
 Si lo que hay que añadir es otra columna **de entitlement**, va al revés: se
 añade a `ENTITLEMENT_PROFILE_COLUMNS`, al trigger y a los `comment on column`,
 y **no** al grant.
+
+---
+
+## 9. Consolidación: una única autoridad de entitlement
+
+Tras aplicar §§1-8, la verificación contra el proyecto real (no simulada)
+mostró `1-4 PASA / 5 FALLA`: `service_role` no podía degradar `pro → free`.
+La investigación de esa discrepancia —completa en el historial de este
+documento y en los commits de `supabase/diagnose-subscription-guard.sql`—
+llevó a un hallazgo mayor: **ya existía en producción, sin versionar, una
+protección equivalente**, `protect_subscription_fields_trigger` →
+`protect_subscription_fields()`, creada directamente en el SQL Editor antes de
+que este repositorio existiera.
+
+```sql
+CREATE OR REPLACE FUNCTION public.protect_subscription_fields()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+BEGIN
+    IF auth.role() IS DISTINCT FROM 'service_role' THEN
+        NEW.subscription_tier = OLD.subscription_tier;
+        NEW.subscription_expires_at = OLD.subscription_expires_at;
+    END IF;
+    RETURN NEW;
+END;
+$function$
+```
+
+### 9.1 Análisis del webhook real
+
+`revenuecat-webhook/index.ts` crea el cliente así:
+
+```ts
+const supabase = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+);
+```
+
+Sin tercer argumento `options`, sin `global.headers`. Es el comportamiento por
+defecto de `@supabase/supabase-js`: fija `Authorization: Bearer
+<service_role_key>` en cada petición. La `service_role_key` **es** un JWT
+firmado con el secreto del proyecto y con el claim `"role":"service_role"`
+dentro. PostgREST, al recibir esa petición, decodifica el JWT, hace `SET ROLE
+service_role` y **también** vuelca el payload en el GUC `request.jwt.claims`
+—comportamiento estándar suyo para cualquier JWT válido, no algo que haya que
+configurar aparte.
+
+`auth.role()` lee exactamente ese GUC. Así que para la llamada real del
+webhook, `auth.role()` devuelve `'service_role'` de forma correcta y
+automática. Confirmado con datos, no supuesto: el experimento D10
+(`supabase/diagnose-subscription-guard.sql`) replicó ese claim exacto y
+`protect_subscription_fields` dejó pasar la escritura en ambas direcciones.
+**El webhook nunca ha estado fallando en producción** — el `FALLA` original
+era un artefacto de cómo probamos nosotros en el SQL Editor (`set local role
+service_role` sin fijar ningún claim), no del comportamiento real.
+
+### 9.2 Comparación de los dos triggers
+
+| | `protect_subscription_fields_trigger` (existente) | `trg_profiles_entitlement_guard` (retirado) |
+|---|---|---|
+| Se dispara | `BEFORE UPDATE` | `BEFORE INSERT OR UPDATE` |
+| Orden de disparo | 1º (alfabético: `p` < `t`) | 2º |
+| Decide por | `auth.role()` (claim del JWT) | `current_user`, claim como refuerzo |
+| Columnas que protegía | `subscription_tier`, `subscription_expires_at` | + `stripe_customer_id` |
+| `SECURITY` | `DEFINER`, propietario `postgres` | `INVOKER` |
+| Versionado en el repo | No, hasta esta sección | Sí, desde el principio |
+
+Trazada la ejecución completa para ambos órdenes de escritura (`service_role`
+legítimo y `authenticated` en el escenario de regresión), **ningún caso produce
+un valor incorrecto**: cuando coexistían, el segundo trigger en dispararse
+encontraba las columnas ya en su valor correcto y no hacía nada, salvo para
+`stripe_customer_id`, que sólo cubría el trigger retirado. El problema nunca
+fue de corrección — fue que dos mecanismos independientes, con lógicas de
+decisión distintas, gobernaban la misma propiedad, lo que costó dos rondas de
+diagnóstico separar "no escribe por A" de "no escribe por B".
+
+Quirk documentado, no corregido (no forma parte de esta migración):
+`auth.role()` fuera de una petición HTTP —por ejemplo, `postgres` corrigiendo
+un dato a mano en el SQL Editor sin fijar `request.jwt.claims`— devuelve
+`NULL`, y `NULL IS DISTINCT FROM 'service_role'` es `TRUE`. Una corrección
+manual así también se revertiría, salvo que se fije el claim a mano (como en
+D10b). Tenlo presente el día que necesites tocar un dato a mano.
+
+### 9.3 Diagnóstico de INSERT
+
+Pregunta abierta antes de escribir la migración definitiva: ¿existe un vector
+por el que un cliente pudiera crear su propio perfil ya en `pro`?
+
+**Lo que confirma el código, en las DOS bases de código** (esta app y la PWA
+hermana, clonada para esta comprobación desde
+`github.com/Jose-L-Gr-Se/vegantrack`):
+
+- Ningún fichero de ninguna de las dos apps ejecuta `.from('profiles').insert(...)`.
+- `authStore.signUp()` en ambas apps es, literalmente, `supabase.auth.signUp({email,
+  password})` y nada más — ni una llamada adicional que cree la fila.
+- El README de este repositorio ya lo documentaba: *"No hay esquema nuevo: la
+  app usa las tablas existentes del proyecto Supabase de la PWA"* — el alta de
+  perfiles no es responsabilidad de ningún código cliente que controlemos.
+- `schema.sql` de la PWA está explícitamente marcado *"for context only and is
+  not meant to be run"*: es un volcado de tablas sin funciones, triggers ni
+  policies, así que tampoco resuelve la pregunta por sí solo.
+
+**Hallazgo colateral, fuera de alcance de esta tarea:** el `updateProfile()` de
+la PWA tiene exactamente el mismo patrón que tenía el de esta app antes de
+`sanitizeProfilePatch()` — envía el `patch` completo sin filtrar
+(`src/stores/authStore.ts` de la PWA). Hoy ningún componente de su UI le pasa
+`subscription_tier` (comprobado: sólo se *lee* en su `usePro`), así que no es
+explotable *ahora mismo*, pero es la misma clase de riesgo latente que
+motivó todo este trabajo aquí. No se ha tocado la PWA — es un repositorio
+aparte, sólo clonado en modo lectura para este diagnóstico — pero merece su
+propio arreglo si alguien retoma ese proyecto.
+
+**Lo que NO puede confirmarse desde ningún repositorio de cliente:** si
+`authenticated` tiene privilegio de tabla `INSERT` sobre `profiles` y si existe
+una policy de RLS que lo permita. Eso es configuración de la base de datos, no
+de ningún código cliente — ninguna cantidad de lectura de repositorios lo
+resuelve. `supabase/diagnose-insert-policy.sql` (íntegramente de sólo lectura,
+sin necesidad de `ROLLBACK` porque no escribe nada) responde a las 6 preguntas
+restantes con metadatos del catálogo de Postgres, sin necesidad de intentar
+ningún `INSERT` real.
+
+**Conclusión y decisión:** con dos bases de código independientes descartando
+el vector "la app legítima inserta perfiles con datos del cliente", el riesgo
+residual es mucho menor de lo que parecía al plantear la pregunta. La
+migración definitiva (§9.4) **no toca el `INSERT`**, por una razón que no es
+sólo "falta evidencia": `protect_subscription_fields` referencia `OLD.*`, y en
+un trigger `BEFORE INSERT` no existe fila `OLD` — añadir `INSERT` a su alcance
+sin una rama dedicada (como sí tenía `enforce_profile_entitlement_guard`)
+**rompería el alta de cualquier perfil** con un error en tiempo de ejecución.
+Es exactamente la clase de cambio especulativo que `CLAUDE.md` pide evitar sin
+evidencia de que resuelve un problema real. Si `diagnose-insert-policy.sql`
+revela un vector real, se aborda en una migración propia y deliberada — nunca
+mezclada aquí bajo la presión de consolidar dos triggers de `UPDATE`.
+
+### 9.4 Arquitectura final
+
+| Capa | Mecanismo | Único dueño |
+|---|---|---|
+| 1 | Privilegios por columna | `authenticated`/`anon` sin `UPDATE` sobre las 3 columnas |
+| 2 | `protect_subscription_fields_trigger` (extendido) | `auth.role() = 'service_role'` es la única condición que deja pasar un cambio |
+
+Migraciones:
+
+- **`supabase/migrations/20260901000001_consolidate_subscription_guard.sql`** —
+  versiona y extiende `protect_subscription_fields` (añade `stripe_customer_id`,
+  conserva la condición `auth.role()` validada contra el camino real), retira
+  `trg_profiles_entitlement_guard` + `enforce_profile_entitlement_guard`,
+  actualiza los `comment on column`. Transaccional, no destructiva, no toca la
+  capa 1 ni el `INSERT`. Todo en una única transacción: la autoridad
+  consolidada queda activa **antes** de retirar la redundante, así que nunca
+  hay una ventana sin protección.
+- **`supabase/migrations/20260901000002_rollback_consolidation.sql`** —
+  reversión exacta: devuelve `protect_subscription_fields` a su forma original
+  (sin `stripe_customer_id`) y recrea el mecanismo retirado. No forma parte del
+  despliegue normal; sólo se aplica si hiciera falta deshacer la consolidación.
+
+### 9.5 Riesgos de aplicar la consolidación
+
+- **Privilegio para reemplazar una función `postgres`-owned.**
+  `protect_subscription_fields` es propiedad de `postgres`. Aplicar la
+  migración exige un rol con privilegio sobre ese objeto — normalmente el que
+  usa el SQL Editor de Supabase. Si falta, la sentencia falla con un error de
+  permiso explícito y la transacción entera revierte; no hay estado intermedio.
+- **Lock breve.** `DROP TRIGGER`/`CREATE TRIGGER` piden `ACCESS EXCLUSIVE`
+  sobre `profiles` durante la DDL — milisegundos en la práctica, pero conviene
+  aplicarla en tráfico bajo por higiene.
+- **No hay ventana sin protección**, por el orden dentro de la transacción
+  (§9.4). Si cualquier sentencia falla, nada de la migración queda aplicado.
+- **El `INSERT` queda con la cobertura que tenía antes de este repositorio**
+  —ninguna—, no una regresión respecto al estado *anterior a toda esta tarea*,
+  pero sí respecto a lo que `trg_profiles_entitlement_guard` cubría mientras
+  existió. Ver la decisión razonada en §9.3.
+- **Es DDL confirmada, no un `ROLLBACK` de sesión.** Deshacerla en producción
+  exige aplicar la migración inversa (§9.4), no basta con cerrar la conexión.
+
+### 9.6 Procedimiento de despliegue
+
+1. Confirmar que `20260901000000_protect_subscription_columns.sql` ya está
+   aplicada (lo está, según la verificación de §4).
+2. Opcional pero recomendado: ejecutar `supabase/diagnose-insert-policy.sql`
+   (sólo lectura) y guardar el resultado, por si algún día hace falta decidir
+   sobre el `INSERT`.
+3. Supabase → SQL Editor → pegar y ejecutar
+   `supabase/migrations/20260901000001_consolidate_subscription_guard.sql`
+   entero. Termina en `COMMIT`: si no hay errores, queda aplicada.
+4. Ejecutar `supabase/verify-subscription-guard.sql` (versión actualizada para
+   la arquitectura consolidada): Parte A entera, luego Parte B seleccionada
+   entera de una vez, luego Parte C. Esperado: las 7 filas de la Parte B en
+   `PASA`.
+5. Si algo falla: NO seguir depurando en producción. Aplicar
+   `20260901000002_rollback_consolidation.sql` entero, confirmar con la Parte A
+   del script de verificación (debe volver a verse `trg_profiles_entitlement_guard`),
+   y traer el resultado aquí antes de reintentar.
