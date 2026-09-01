@@ -177,4 +177,23 @@ describe('diagnose-insert-policy.sql', () => {
     expect(DIAGNOSE_INSERT).toContain('pg_get_functiondef');
     expect(DIAGNOSE_INSERT).toContain('security_definer');
   });
+
+  it('regresión: no vuelve el patrón que causó ERROR 42809 "array_agg is an aggregate function"', () => {
+    // string_agg(...) agregando sobre unnest(polroles) dentro de una
+    // subconsulta escalar correlacionada falló contra el proyecto real. La
+    // consulta I2 debe seguir agregando sobre una tabla real (pg_roles
+    // filtrada con `= any(...)`), nunca sobre `unnest(polroles)`.
+    //
+    // Se comprueba sobre el SQL sin comentarios: el comentario que explica
+    // este mismo arreglo cita a propósito el código roto como ejemplo, y
+    // buscarlo sobre el texto crudo del fichero encontraría esa cita, no SQL
+    // ejecutable.
+    const sinComentarios = DIAGNOSE_INSERT.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toContain('unnest(polroles)');
+    expect(sinComentarios).not.toMatch(/\barray_agg\s*\(/);
+    expect(sinComentarios).toContain('from pg_roles pr');
+    expect(sinComentarios).toContain('pr.oid = any(pol.polroles)');
+  });
 });

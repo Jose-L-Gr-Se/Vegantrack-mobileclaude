@@ -37,18 +37,34 @@ where oid = 'public.profiles'::regclass;
 -- >0 filas → mira with_check_expr: si no menciona subscription_tier ni
 --            subscription_expires_at, un INSERT permitido por esa policy
 --            podría dejarlas con cualquier valor que el cliente envíe.
+-- NOTA sobre un error corregido aquí: la versión anterior de esta consulta
+-- resolvía los roles con `string_agg(pg_get_userbyid(r), ', ') from
+-- unnest(polroles) r` — un agregado sobre un unnest() correlacionado dentro de
+-- una subconsulta escalar. Contra el proyecto real eso falló con
+-- `ERROR 42809: "array_agg" is an aggregate function`. Se sustituye por un
+-- agregado sobre una tabla real (pg_roles, filtrada con `= any(polroles)`),
+-- que evita del todo esa combinación frágil de unnest + subconsulta
+-- correlacionada + agregado. De paso corrige un defecto que tenía la versión
+-- anterior independientemente del error: PUBLIC se representa como
+-- `polroles = '{0}'` (un array de UN elemento, no vacío), así que el
+-- `coalesce(..., 'public')` original nunca llegaba a activarse para ese caso.
+-- Con `pg_roles` no hay ninguna fila con oid=0, así que `= any('{0}')` da 0
+-- filas, string_agg sobre 0 filas da NULL, y el coalesce externo sí cae en
+-- 'public' correctamente.
 select
-  polname,
-  case polcmd when 'a' then 'INSERT' when '*' then 'ALL' else polcmd::text end as comando,
-  polpermissive                                              as permisiva,
+  pol.polname                                                 as polname,
+  case pol.polcmd when 'a' then 'INSERT' when '*' then 'ALL' else pol.polcmd::text end as comando,
+  pol.polpermissive                                           as permisiva,
   coalesce(
-    (select string_agg(pg_get_userbyid(r), ', ') from unnest(polroles) r),
+    (select string_agg(pr.rolname, ', ' order by pr.rolname)
+       from pg_roles pr
+      where pr.oid = any(pol.polroles)),
     'public')                                                as roles,
-  pg_get_expr(polwithcheck, polrelid)                         as with_check_expr
-from pg_policy
-where polrelid = 'public.profiles'::regclass
-  and polcmd in ('a', '*')
-order by polname;
+  pg_get_expr(pol.polwithcheck, pol.polrelid)                 as with_check_expr
+from pg_policy pol
+where pol.polrelid = 'public.profiles'::regclass
+  and pol.polcmd in ('a', '*')
+order by pol.polname;
 
 
 -- ╔═══════════════════════════════════════════════════════════════════════════╗
