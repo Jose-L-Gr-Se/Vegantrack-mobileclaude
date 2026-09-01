@@ -255,3 +255,149 @@ order by t.tgname;
 
 select id, subscription_tier, subscription_expires_at, updated_at
 from public.profiles where id = '<UUID_DE_PRUEBA>';
+
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- SEGUNDA RONDA — añadida tras ver los resultados de D2/D5/D7
+--
+-- D7 demostró que activar o desactivar trg_profiles_entitlement_guard no
+-- cambia nada: service_role sigue sin poder escribir. El único sospechoso que
+-- queda en pie es protect_subscription_fields_trigger, que NO está en este
+-- repositorio y del que aún no tenemos el código (falta D3).
+--
+-- Estos dos bloques NO tocan protect_subscription_fields_trigger en absoluto
+-- -ni lo deshabilitan, ni lo alteran-, sólo hacen variar el ROL y los CLAIMS
+-- con los que se ejecuta el UPDATE, para acotar por qué distingue (si es que
+-- lo hace) una llamada real del webhook de una llamada manual del SQL Editor.
+-- Todo dentro de transacciones con ROLLBACK.
+-- ═════════════════════════════════════════════════════════════════════════════
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║ D9 · ¿Bloquea también free → pro, o sólo pro → free?                     ║
+-- ║      (D7 sólo probó pro → free, porque el perfil ya partía de 'pro')     ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+
+begin;
+
+create or replace function pg_temp.vt_d9(p_id uuid)
+returns table (paso text, detalle text)
+language plpgsql
+as $fn$
+declare
+  v_filas bigint;
+  v_tras  text;
+begin
+  -- Línea base en 'free', igual que D7 la ponía en 'pro'.
+  update public.profiles set subscription_tier = 'free' where id = p_id;
+
+  begin
+    execute 'set local role service_role';
+    update public.profiles set subscription_tier = 'pro' where id = p_id;
+    get diagnostics v_filas = row_count;
+    select p.subscription_tier into v_tras from public.profiles p where p.id = p_id;
+    execute 'reset role';
+    paso := 'D9 · service_role escribe free → pro';
+    detalle := format(
+      'filas_afectadas = %s · valor final = %L · %s',
+      v_filas, v_tras,
+      case when v_tras = 'pro' then '>>> SÍ escribe: sólo bloquea pro → free'
+           else '>>> NO escribe: bloquea en ambas direcciones' end);
+    raise exception using errcode = 'VT003', message = 'fin';
+  exception
+    when sqlstate 'VT003' then null;
+    when others then
+      paso := 'D9 · service_role escribe free → pro';
+      detalle := format('ERROR %s · %s', sqlstate, sqlerrm);
+  end;
+  return next;
+end;
+$fn$;
+
+select * from pg_temp.vt_d9('<UUID_DE_PRUEBA>');
+
+rollback;
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════════╗
+-- ║ D10 · ¿Distingue protect_subscription_fields por current_user o por el   ║
+-- ║       claim del JWT? Decisivo para saber si el webhook REAL falla igual. ║
+-- ║                                                                          ║
+-- ║ El SQL Editor, al hacer `set local role service_role`, cambia el rol     ║
+-- ║ efectivo pero NO deja ningún request.jwt.claims (session_role queda      ║
+-- ║ vacío). Una llamada real del webhook, en cambio, llega a través de       ║
+-- ║ PostgREST con la service_role key, y PostgREST sí puede fijar            ║
+-- ║ request.jwt.claims con {"role":"service_role", ...} antes del SET ROLE.  ║
+-- ║                                                                          ║
+-- ║ Si protect_subscription_fields decide mirando el CLAIM en vez de         ║
+-- ║ current_user, este experimento lo demuestra: el mismo rol, con y sin ese ║
+-- ║ claim puesto, da resultados distintos.                                   ║
+-- ╚═══════════════════════════════════════════════════════════════════════════╝
+
+begin;
+
+create or replace function pg_temp.vt_d10(p_id uuid)
+returns table (paso text, detalle text)
+language plpgsql
+as $fn$
+declare
+  v_filas bigint;
+  v_tras  text;
+begin
+  -- ── (a) service_role SIN ningún claim de JWT (como en D7) ────────────────
+  update public.profiles set subscription_tier = 'pro' where id = p_id;
+  begin
+    perform set_config('request.jwt.claims', '', true);
+    execute 'set local role service_role';
+    update public.profiles set subscription_tier = 'free' where id = p_id;
+    get diagnostics v_filas = row_count;
+    select p.subscription_tier into v_tras from public.profiles p where p.id = p_id;
+    execute 'reset role';
+    paso := 'D10a · service_role, SIN claims de JWT';
+    detalle := format('filas = %s · valor final = %L · %s',
+      v_filas, v_tras, case when v_tras = 'free' then '>>> escribe' else '>>> bloqueado' end);
+    raise exception using errcode = 'VT004', message = 'fin';
+  exception
+    when sqlstate 'VT004' then null;
+    when others then
+      paso := 'D10a · service_role, SIN claims de JWT';
+      detalle := format('ERROR %s · %s', sqlstate, sqlerrm);
+  end;
+  return next;
+
+  -- ── (b) service_role CON el claim que pondría PostgREST de verdad ────────
+  update public.profiles set subscription_tier = 'pro' where id = p_id;
+  begin
+    perform set_config(
+      'request.jwt.claims',
+      json_build_object('role', 'service_role', 'iss', 'supabase')::text,
+      true
+    );
+    execute 'set local role service_role';
+    update public.profiles set subscription_tier = 'free' where id = p_id;
+    get diagnostics v_filas = row_count;
+    select p.subscription_tier into v_tras from public.profiles p where p.id = p_id;
+    execute 'reset role';
+    paso := 'D10b · service_role, CON claim role=service_role';
+    detalle := format('filas = %s · valor final = %L · %s',
+      v_filas, v_tras, case when v_tras = 'free' then '>>> escribe' else '>>> bloqueado' end);
+    raise exception using errcode = 'VT004', message = 'fin';
+  exception
+    when sqlstate 'VT004' then null;
+    when others then
+      paso := 'D10b · service_role, CON claim role=service_role';
+      detalle := format('ERROR %s · %s', sqlstate, sqlerrm);
+  end;
+  return next;
+end;
+$fn$;
+
+select * from pg_temp.vt_d10('<UUID_DE_PRUEBA>');
+
+rollback;
+
+-- Si D10a y D10b dan resultados DISTINTOS, protect_subscription_fields decide
+-- por el claim del JWT, no por current_user, y hay que revisar en producción
+-- si las llamadas reales de PostgREST con la service_role key sí incluyen ese
+-- claim (los logs de la función revenuecat-webhook y la latencia/estado de
+-- sus últimas invocaciones son la evidencia que lo confirma o lo descarta).
