@@ -88,8 +88,17 @@ grant update (display_name, weight_kg, ...) on public.profiles to authenticated;
 - Es el mecanismo **nativo y declarativo** de Postgres para exactamente este
   problema.
 - Se evalúa **antes de tocar ninguna fila**: el intento falla con
-  `42501 permission denied for column subscription_tier`. Un rechazo duro y
+  `ERROR 42501: permission denied for table profiles`. Un rechazo duro y
   visible, no un no-op silencioso.
+
+  > **Ojo con ese mensaje.** Postgres informa de los fallos de privilegio de
+  > *columna* en sentencias DML **a nivel de tabla**: el ejecutor
+  > (`ExecCheckPermissions`) lanza el error con el nombre de la relación, no de
+  > la columna. Que diga *table* no significa que falte el `UPDATE` de tabla por
+  > error, sino que la sentencia intenta escribir alguna columna sobre la que el
+  > rol no tiene privilegio. El SQL Editor de Supabase añade además un HINT
+  > sugiriendo `GRANT UPDATE ON public.profiles TO authenticated`: **ese grant es
+  > justamente el agujero que esta capa cierra.** No seguir el hint.
 - Es una **allowlist**: si mañana se añade una columna sensible a `profiles`,
   el cliente no podrá escribirla hasta que alguien la añada aquí a conciencia
   (*fail-closed*).
@@ -150,7 +159,7 @@ toca SELECT/INSERT/DELETE.
 **La función debe permanecer `SECURITY INVOKER`** (el valor por defecto). Con
 `SECURITY DEFINER`, `current_user` pasaría a ser el propietario de la función y
 el guard no detectaría a ningún cliente. Está anotado en el SQL y verificado en
-`verify-subscription-guard.sql` (punto 0c).
+`verify-subscription-guard.sql` (parte A3).
 
 El guard identifica al cliente por `current_user` (el rol efectivo tras el
 `SET ROLE` de PostgREST) y, como segunda señal, por el claim `role` del JWT.
@@ -194,8 +203,24 @@ Supabase → SQL Editor → pegar y ejecutar:
 O con la CLI: `supabase db push`.
 
 Después, verificar con `supabase/verify-subscription-guard.sql` (sustituyendo
-`<UUID_DE_PRUEBA>` por el id de un perfil de pruebas). Todos sus bloques de
-simulación terminan en `ROLLBACK` y no modifican datos reales.
+`<UUID_DE_PRUEBA>` por el id de un perfil de pruebas).
+
+El script está dividido en tres partes. La **parte A** son consultas de sólo
+lectura sobre la configuración. La **parte B** es el veredicto: un único bloque
+que devuelve una tabla de cinco filas con `PASA` / `FALLA` por escenario. La
+**parte C** es la red de seguridad posterior.
+
+Cada escenario de la parte B corre dentro de su propia subtransacción con
+manejador de excepciones. Esto no es un adorno: el escenario del ataque **debe**
+terminar en error 42501, y el SQL Editor de Supabase aborta el script entero en
+el primer error. Una versión lineal nunca llegaba a ejecutar los escenarios
+siguientes y parecía un script roto justo cuando la defensa estaba funcionando.
+
+El escenario 3 necesita conceder temporalmente `update on public.profiles to
+authenticated` para reproducir la regresión. Ese `GRANT` vive dentro de una
+subtransacción que **siempre** aborta, dentro de una transacción que además
+termina en `ROLLBACK`, y la parte C vuelve a comprobar que no ha sobrevivido.
+Ningún permiso de producción se modifica.
 
 **Orden recomendado:** desplegar primero la app con estos cambios y después
 aplicar el SQL. No es obligatorio —el orden inverso también funciona— pero evita

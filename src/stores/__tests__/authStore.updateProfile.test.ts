@@ -123,11 +123,11 @@ describe('authStore.updateProfile', () => {
   });
 
   it('revierte el perfil optimista si el servidor rechaza la actualización', async () => {
-    mockUpdateResponse = { data: null, error: { message: 'permission denied for column subscription_tier' } };
+    mockUpdateResponse = { data: null, error: { message: 'permission denied for table profiles' } };
 
     const res = await useAuthStore.getState().updateProfile({ display_name: 'Ana C' });
 
-    expect(res.error).toBe('permission denied for column subscription_tier');
+    expect(res.error).toBe('permission denied for table profiles');
     expect(useAuthStore.getState().profile?.display_name).toBe('Ana');
   });
 });
