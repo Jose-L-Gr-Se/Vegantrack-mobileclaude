@@ -2,6 +2,13 @@
  * Modal de planes Pro con Google Play Billing vía RevenueCat.
  * Los precios se leen del catálogo de Play Store; si no hay red se muestran
  * los valores de fallback hardcodeados.
+ *
+ * El estado Pro NO se escribe desde aquí. La única ruta legítima para activar
+ * Pro en `profiles.subscription_tier` es el webhook de RevenueCat, que escribe
+ * con `service_role` (ver docs/SEGURIDAD-SUSCRIPCION.md). Tras una compra, el
+ * `customerInfo` del SDK ya refleja el entitlement, así que `usePro()` da Pro
+ * al instante sin tocar la base de datos; sólo refrescamos el perfil para
+ * recoger lo que haya escrito el webhook.
  */
 import React, { useEffect, useState } from 'react';
 import { Alert, ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
@@ -151,7 +158,7 @@ function PlanCard({
 export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => void }) {
   const t = useTheme();
   const { offerings, offeringsLoading, loadOfferings, customerInfo } = usePurchasesStore();
-  const { updateProfile } = useAuthStore();
+  const fetchProfile = useAuthStore((s) => s.fetchProfile);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
@@ -195,8 +202,10 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
       const { customerInfo: info } = await Purchases.purchasePackage(pkg);
       const nowPro = info.entitlements.active[ENTITLEMENT_PRO] !== undefined;
       if (nowPro) {
-        const expiresAt = info.entitlements.active[ENTITLEMENT_PRO]?.expirationDate ?? null;
-        await updateProfile({ subscription_tier: 'pro', subscription_expires_at: expiresAt });
+        // `info` ya contiene el entitlement: usePro() devuelve Pro de inmediato.
+        // El webhook de RevenueCat es quien escribe subscription_tier; lo
+        // recogemos en cuanto llegue, sin bloquear el cierre del modal.
+        void fetchProfile();
         onClose();
       }
     } catch (e: any) {
@@ -215,8 +224,8 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
       const info = await Purchases.restorePurchases();
       const nowPro = info.entitlements.active[ENTITLEMENT_PRO] !== undefined;
       if (nowPro) {
-        const expiresAt = info.entitlements.active[ENTITLEMENT_PRO]?.expirationDate ?? null;
-        await updateProfile({ subscription_tier: 'pro', subscription_expires_at: expiresAt });
+        // Igual que en la compra: el entitlement lo manda RevenueCat, no el cliente.
+        void fetchProfile();
         Alert.alert('Compras restauradas', 'Tu suscripción Pro ha sido restaurada correctamente.');
         onClose();
       } else {

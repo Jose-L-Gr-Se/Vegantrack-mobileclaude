@@ -9,6 +9,10 @@ import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { kvGet, kvSet } from '@/db/database';
 import { usePurchasesStore } from '@/stores/purchasesStore';
+import {
+  sanitizeProfilePatch,
+  type EditableProfileFields,
+} from '@/utils/profilePatch';
 import type { Profile } from '@/types';
 
 interface AuthState {
@@ -32,7 +36,15 @@ interface AuthState {
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<{ error: string | null }>;
   fetchProfile: () => Promise<void>;
-  updateProfile: (patch: Partial<Profile>) => Promise<{ error: string | null }>;
+  /**
+   * Actualiza el perfil del usuario.
+   *
+   * El tipo excluye a propósito las columnas de suscripción y de identidad
+   * (ver `@/utils/profilePatch`): el entitlement Pro sólo lo escribe el webhook
+   * de RevenueCat con `service_role`. Intentar pasarlas es un error de
+   * compilación, y en tiempo de ejecución se descartan antes de la petición.
+   */
+  updateProfile: (patch: Partial<EditableProfileFields>) => Promise<{ error: string | null }>;
 }
 
 const profileKvKey = (userId: string) => `profile:${userId}`;
@@ -231,12 +243,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const user = get().user;
     if (!user) return { error: 'No hay sesión' };
     const current = get().profile;
+
+    // Red de seguridad en el borde: nunca enviamos columnas que el servidor va
+    // a rechazar (subscription_tier y compañía). La protección real está en
+    // Postgres; esto sólo evita peticiones condenadas al 42501 y mantiene la
+    // UI optimista libre de un estado Pro que el usuario no tiene.
+    const { patch: safePatch, removed } = sanitizeProfilePatch(patch);
+    if (removed.length > 0 && __DEV__) {
+      console.warn(
+        `[authStore] updateProfile: columnas ignoradas (sólo el servidor puede escribirlas): ${removed.join(', ')}`
+      );
+    }
+    if (Object.keys(safePatch).length === 0) return { error: null };
+
     // Optimista: la UI refleja el cambio al instante
-    if (current) set({ profile: { ...current, ...patch } });
+    if (current) set({ profile: { ...current, ...safePatch } });
 
     const { data, error } = await supabase
       .from('profiles')
-      .update({ ...patch, updated_at: new Date().toISOString() })
+      .update({ ...safePatch, updated_at: new Date().toISOString() })
       .eq('id', user.id)
       .select()
       .single();
