@@ -18,8 +18,7 @@ import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
 import { calculateTargets } from '@/utils/nutrition';
 import { exportDiaryCsv } from '@/utils/exportCsv';
-import { supplementsNeedingReview } from '@/utils/supplementUnits';
-import { NEEDS_REVIEW_ACCESSIBILITY_LABEL } from '@/utils/supplementDoseCopy';
+import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import {
   cancelDailyReminder,
@@ -747,8 +746,10 @@ function SupplementsModal({
 
   const [editing, setEditing] = React.useState<Supplement | 'new' | { preset: number } | null>(null);
 
-  const needsReviewIds = React.useMemo(
-    () => new Set(supplementsNeedingReview(store.supplements).map((s) => s.id)),
+  // Fases 5 y 6 del P0 de unidades: needs_review + unsupported, con la
+  // etiqueta accesible ya resuelta — misma función que usa DiaryScreen.
+  const attentionLabelById = React.useMemo(
+    () => attentionLabelsBySupplementId(store.supplements),
     [store.supplements]
   );
 
@@ -889,8 +890,8 @@ function SupplementsModal({
                     <Text style={{ color: t.textMuted, fontSize: 12 }}>
                       {s.dose_amount} {s.dose_unit}
                     </Text>
-                    {needsReviewIds.has(s.id) ? (
-                      <View accessible accessibilityLabel={NEEDS_REVIEW_ACCESSIBILITY_LABEL}>
+                    {attentionLabelById.has(s.id) ? (
+                      <View accessible accessibilityLabel={attentionLabelById.get(s.id)}>
                         <Ionicons name={'alert-circle-outline' as any} size={14} color={semantic.warning} />
                       </View>
                     ) : null}

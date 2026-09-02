@@ -20,8 +20,7 @@ import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
-import { supplementsNeedingReview } from '@/utils/supplementUnits';
-import { NEEDS_REVIEW_ACCESSIBILITY_LABEL } from '@/utils/supplementDoseCopy';
+import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
 import { useMealPhoto } from '@/hooks/useMealPhoto';
 import { track, trackAppOpenOnce } from '@/lib/analytics';
 import { FREE_HISTORY_DAYS, FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
@@ -44,11 +43,12 @@ export function DiaryScreen() {
   const [editing, setEditing] = useState<FoodLogEntry | null>(null);
   const [mealSheetMode, setMealSheetMode] = useState<MealSheetMode | null>(null);
 
-  // Fase 5 del P0 de unidades: suplementos configurados (tomados hoy o no)
-  // cuya dosis normaliza a 'needs_review'. Misma función pura que usa
-  // ProfileScreen — nunca se reimplementa el filtro por pantalla.
-  const needsReviewIds = useMemo(
-    () => new Set(supplementsNeedingReview(supplements.supplements).map((s) => s.id)),
+  // Fases 5 y 6 del P0 de unidades: suplementos configurados (tomados hoy o
+  // no) cuya dosis es needs_review o unsupported, con la etiqueta accesible
+  // ya resuelta para cada uno. Misma función que usa ProfileScreen — nunca
+  // se reimplementa el filtro combinado por pantalla.
+  const attentionLabelById = useMemo(
+    () => attentionLabelsBySupplementId(supplements.supplements),
     [supplements.supplements]
   );
 
@@ -451,12 +451,12 @@ export function DiaryScreen() {
                       <Text style={{ color: t.textMuted, fontSize: 12 }}>
                         {s.dose_amount} {s.dose_unit}
                       </Text>
-                      {needsReviewIds.has(s.id) ? (
+                      {attentionLabelById.has(s.id) ? (
                         <Pressable
                           onPress={() => setSuppEditor(s)}
                           hitSlop={8}
                           accessibilityRole="button"
-                          accessibilityLabel={NEEDS_REVIEW_ACCESSIBILITY_LABEL}
+                          accessibilityLabel={attentionLabelById.get(s.id)}
                         >
                           <Ionicons name={'alert-circle-outline' as any} size={14} color={semantic.warning} />
                         </Pressable>

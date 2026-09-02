@@ -11,7 +11,7 @@ jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 jest.mock('@/db/database', () => ({ kvGet: jest.fn(), kvSet: jest.fn() }));
 
 import { useSupplementStore } from '@/stores/supplementStore';
-import { describeNeedsReviewBanner } from '@/utils/supplementDoseCopy';
+import { describeAttentionBanner, describeNeedsReviewBanner } from '@/utils/supplementDoseCopy';
 import type { Supplement, SupplementNutrientKey } from '@/types';
 
 function makeSupplement(over: Partial<Supplement> & { id: string }): Supplement {
@@ -226,6 +226,60 @@ describe('Fase 5 — aviso agregado de Dashboard (getTodayContributionDetails + 
     expect(todayNeedsReview.map((d) => d.supplementId)).toEqual(['s-tomado']);
     expect(describeNeedsReviewBanner(todayNeedsReview.length)).toBe(
       '1 suplemento no se está contando hoy — revisa su unidad'
+    );
+  });
+});
+
+describe('Fase 6 — aviso agregado de Dashboard con unsupported (getTodayContributionDetails + describeAttentionBanner)', () => {
+  it('5. B12 + cápsula (unsupported) NO tomado hoy → no cuenta para el banner de hoy', () => {
+    setSupplements([{ id: 's-b12', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'cápsula', taken: false }]);
+    const today = useSupplementStore.getState().getTodayContributionDetails();
+    const unsupportedToday = today.filter((d) => d.dose.status === 'unsupported');
+    expect(unsupportedToday).toEqual([]);
+    expect(describeAttentionBanner(0, unsupportedToday.length)).toBeNull();
+  });
+
+  it('5. B12 + cápsula (unsupported) SÍ tomado hoy → aparece y cuenta 1 para el banner', () => {
+    setSupplements([{ id: 's-b12', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'cápsula', taken: true }]);
+    const today = useSupplementStore.getState().getTodayContributionDetails();
+    const unsupportedToday = today.filter((d) => d.dose.status === 'unsupported');
+    expect(unsupportedToday).toHaveLength(1);
+    expect(unsupportedToday[0].supplementId).toBe('s-b12');
+    expect(describeAttentionBanner(0, unsupportedToday.length)).toBe(
+      '1 suplemento no se está contando hoy — revisa su dosis'
+    );
+  });
+
+  it('8. needs_review + unsupported tomados el mismo día → un único banner agregado, ninguno de los dos por separado', () => {
+    setSupplements([
+      { id: 's-calcio', nutrient_key: 'calcium_mg', dose_amount: 150, dose_unit: 'g', taken: true }, // needs_review
+      { id: 's-b12', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'cápsula', taken: true }, // unsupported
+    ]);
+    const today = useSupplementStore.getState().getTodayContributionDetails();
+    const needsReviewToday = today.filter((d) => d.dose.status === 'needs_review').length;
+    const unsupportedToday = today.filter((d) => d.dose.status === 'unsupported').length;
+
+    expect(needsReviewToday).toBe(1);
+    expect(unsupportedToday).toBe(1);
+
+    const banner = describeAttentionBanner(needsReviewToday, unsupportedToday);
+    expect(banner).toBe('2 suplementos no se están contando hoy — revísalos');
+    expect(banner).not.toBe(describeNeedsReviewBanner(2));
+  });
+
+  it('un suplemento unsupported no contamina el recuento de otro needs_review no tomado el mismo día', () => {
+    setSupplements([
+      { id: 's-calcio', nutrient_key: 'calcium_mg', dose_amount: 150, dose_unit: 'g', taken: false }, // needs_review, no tomado
+      { id: 's-b12', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'cápsula', taken: true }, // unsupported, tomado
+    ]);
+    const today = useSupplementStore.getState().getTodayContributionDetails();
+    const needsReviewToday = today.filter((d) => d.dose.status === 'needs_review').length;
+    const unsupportedToday = today.filter((d) => d.dose.status === 'unsupported').length;
+
+    expect(needsReviewToday).toBe(0);
+    expect(unsupportedToday).toBe(1);
+    expect(describeAttentionBanner(needsReviewToday, unsupportedToday)).toBe(
+      '1 suplemento no se está contando hoy — revisa su dosis'
     );
   });
 });

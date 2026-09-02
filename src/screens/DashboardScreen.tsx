@@ -15,7 +15,7 @@ import { useSupplementStore } from '@/stores/supplementStore';
 import { usePro } from '@/hooks/usePro';
 import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
 import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay } from '@/utils/nutrition';
-import { describeNeedsReviewBanner } from '@/utils/supplementDoseCopy';
+import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
 import type { RootStackParamList } from '@/navigation/types';
 
 export function DashboardScreen() {
@@ -71,19 +71,22 @@ export function DashboardScreen() {
   const calProgress = calTarget > 0 ? Math.min(1, summary.calories / calTarget) : 0;
   const remaining = calTarget > 0 ? Math.max(0, calTarget - Math.round(summary.calories)) : null;
 
-  // Fase 5 del P0 de unidades de suplementos: suplementos tomados HOY cuya
-  // dosis quedó needs_review (excluidos de suppContrib más arriba). Sólo
-  // hoy — a diferencia de las listas de Diario/Perfil, que muestran todos
-  // los configurados aunque no se hayan tomado. Nunca se muestra por
-  // micronutriente, ni entra en VeganScore ni en Tendencias.
-  const needsReviewToday = supplementStore
+  // Fases 5 y 6 del P0 de unidades de suplementos: suplementos tomados HOY
+  // cuya dosis quedó needs_review o unsupported (ambos ya excluidos de
+  // suppContrib más arriba). Sólo hoy — a diferencia de las listas de
+  // Diario/Perfil, que muestran todos los configurados aunque no se hayan
+  // tomado. Nunca se muestra por micronutriente, ni entra en VeganScore ni
+  // en Tendencias.
+  const attentionToday = supplementStore
     .getTodayContributionDetails()
-    .filter((d) => d.dose.status === 'needs_review');
-  const needsReviewBanner = describeNeedsReviewBanner(needsReviewToday.length);
+    .filter((d) => d.dose.status === 'needs_review' || d.dose.status === 'unsupported');
+  const needsReviewCountToday = attentionToday.filter((d) => d.dose.status === 'needs_review').length;
+  const unsupportedCountToday = attentionToday.filter((d) => d.dose.status === 'unsupported').length;
+  const attentionBanner = describeAttentionBanner(needsReviewCountToday, unsupportedCountToday);
 
   const openSupplementReview = () => {
-    if (needsReviewToday.length === 1) {
-      navigation.navigate('Main', { screen: 'Profile', params: { openSupplementId: needsReviewToday[0].supplementId } });
+    if (attentionToday.length === 1) {
+      navigation.navigate('Main', { screen: 'Profile', params: { openSupplementId: attentionToday[0].supplementId } });
     } else {
       navigation.navigate('Main', { screen: 'Profile', params: { openSupplements: true } });
     }
@@ -236,8 +239,8 @@ export function DashboardScreen() {
         </Text>
       </Card>
 
-      {/* Suplementos que necesitan revisión (Fase 5 del P0 de unidades) */}
-      {needsReviewBanner ? (
+      {/* Suplementos que necesitan atención — needs_review y unsupported (Fases 5 y 6) */}
+      {attentionBanner ? (
         <Pressable onPress={openSupplementReview}>
           <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
             <View
@@ -253,7 +256,7 @@ export function DashboardScreen() {
               <Ionicons name={'alert-circle-outline' as never} size={20} color={semantic.warning} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '700', fontSize: 14, color: t.text }}>{needsReviewBanner}</Text>
+              <Text style={{ fontWeight: '700', fontSize: 14, color: t.text }}>{attentionBanner}</Text>
             </View>
             <Ionicons name={'chevron-forward' as never} size={18} color={t.textMuted} />
           </Card>

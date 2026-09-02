@@ -1,4 +1,4 @@
-# Unidades de suplementos — Fases 1 a 5
+# Unidades de suplementos — Fases 1 a 6
 
 > **Invariante central:** ninguna dosis se convierte "a ojo". Toda
 > combinación de cantidad/unidad/nutriente tiene una salida definida —
@@ -218,3 +218,109 @@ Dashboard sólo cuenta lo tomado hoy) y `noDuplicateSupplementCopy.test.ts`
 llegar al editor correcto) no tiene test automatizado — mismo límite de
 entorno que en fases anteriores (`@testing-library/react-native`/`renderHook`
 no fiables aquí) — queda como validación manual.
+
+## Fase 6 — `unsupported` heredado
+
+Auditoría de solo lectura previa a esta fase (34 filas reales de
+`public.supplements`, sin tocar nada): 30 `success`, 3 `needs_review`, 1
+`unsupported` — el único `unsupported` activo y tomado es "Vitamina B12 · 25
+cápsula · `nutrient_key = vitamin_b12_mcg`", creado antes de que la Fase 3
+bloqueara esa combinación desde el editor. Esa fila seguía desapareciendo en
+silencio: Fase 2 ya la excluye del cálculo, pero hasta esta fase no había
+ninguna señal de por qué.
+
+**`normalizeSupplementDose()` sin tocar** (confirmado en el diff: el único
+hunk en `supplementUnits.ts` está muy por debajo de su definición). Sin
+cambios en Supabase, esquema, `dose_amount`/`dose_unit` almacenados,
+`supplementStore.ts`, `diaryStore.ts`, `SupplementEditor.tsx`, VeganScore ni
+MicroTrends.
+
+### Cómo se distingue `needs_review` de `unsupported`
+
+Son estados con forma distinta desde la Fase 1
+(`SupplementDoseNeedsReview` vs. `SupplementDoseUnsupported`) y ahora
+también con tratamiento visual distinto en cada superficie:
+
+| | `needs_review` | `unsupported` |
+|---|---|---|
+| Significado | Convertible, pero implausible | No convertible en absoluto |
+| ¿Se puede guardar desde el editor? | Sí (aviso, no bloqueo) | No (bloquea) |
+| ¿Entra en el cálculo? | No (desde la Fase 2) | No (desde la Fase 2) |
+| Icono en listados | `alert-circle-outline` (mismo glifo) | `alert-circle-outline` (mismo glifo) |
+| Etiqueta accesible | "Necesita revisión: esta cantidad parece alta..." | Mensaje específico del `reason` (p. ej. "...falta indicar cuánto nutriente contiene cada cápsula.") |
+| Banner de Dashboard | "...revisa su/sus unidad(es)" | "...revisa su/sus dosis" |
+| Ambos el mismo día | — | Un único banner combinado: "...revísalo(s)", sin mezclar motivos por nutriente |
+
+El icono es deliberadamente el mismo glifo en ambos casos (mismo lenguaje
+visual que la Fase 5) — lo que distingue a un lector de pantalla, y lo que
+distingue el banner de Dashboard, es el TEXTO, no la forma del icono.
+
+### Qué ocurre específicamente con "B12 · 25 cápsula"
+
+- **Diario y Perfil**: la fila muestra el icono de atención (estuviera
+  tomada hoy o no — `supplementsNeedingAttention()` evalúa la configuración,
+  no el evento de toma). Tocarlo abre el `SupplementEditor` existente sobre
+  ese suplemento.
+- **El editor** (sin cambios en esta fase): al abrirse, ya calculaba en vivo
+  `normalizeSupplementDose()` desde la Fase 3 — para este registro heredado
+  ya mostraba, y sigue mostrando, "Para registrar cápsulas o gotas con este
+  nutriente necesitas indicar cuánto nutriente contiene cada una..." y
+  bloqueaba el guardado si no se corrige. No hace falta ningún cambio para
+  que esto funcione con datos heredados: ya funcionaba así.
+- **Dashboard**: el día que se marca como tomada, cuenta en el banner
+  agregado ("...revisa su dosis", o el mensaje combinado si coincide con un
+  `needs_review` el mismo día). Los días que no se toma, no aparece en
+  Dashboard (mismo criterio que siempre: el banner es sólo "hoy").
+- **En ningún momento se inventa `amount_per_unit`** ni se persiste nada
+  nuevo: la fila sigue exactamente igual en Supabase.
+
+### Copy (Fase 6)
+
+Añadido a `src/utils/supplementDoseCopy.ts` — nunca al editor, que mantiene
+su propio `UNSUPPORTED_MESSAGES` (Fase 3) para el momento distinto de "por
+qué no puedo guardar esto ahora":
+
+- `unsupportedAttentionMessage(dose)` — mensaje por `reason`, con el texto
+  genérico ("...no podemos interpretar su dosis.") como resultado por
+  defecto y textos diferenciados para `requires_amount_per_unit`,
+  `unit_incompatible_with_nutrient`, `unknown_unit` y `unknown_nutrient`.
+- `attentionAccessibilityLabel(dose)` — despacha a `needs_review` o
+  `unsupported` según corresponda; usado por los listados.
+- `attentionLabelsBySupplementId(supplements)` — mapa id→etiqueta, para que
+  Diario y Perfil hagan una única llamada y luego `.get(s.id)` por fila.
+- `describeUnsupportedBanner(count)` / `describeAttentionBanner(needsReviewCount, unsupportedCount)`
+  — el banner de Dashboard, con exactamente tres formas (needs_review /
+  unsupported / mezcla), cada una singular o plural — nunca una frase
+  distinta por combinación exacta de motivos.
+
+### Modelo/lógica
+
+`supplementsNeedingAttention(supplements)` en `supplementUnits.ts` — misma
+disciplina que `supplementsNeedingReview()` (Fase 5): pura, evalúa todos los
+suplementos **configurados** con `nutrient_key` (nunca los de puro
+recuento, que no tienen nada que revisar), independiente de `takenToday`.
+Devuelve el `Supplement` emparejado con su `SupplementDoseResult` completo
+(`needs_review` o `unsupported`), para que la UI decida el mensaje sin
+volver a llamar a `normalizeSupplementDose()`. `supplementsNeedingReview()`
+pasa a ser una proyección de esta función (mismo recorrido, nunca dos
+implementaciones que puedan divergir) — su comportamiento externo no
+cambia, y sus tests de la Fase 5 lo confirman sin tocarlos.
+
+**Confirmado: ningún `unsupported` entra en ningún cálculo.**
+`getTodayContributions()`/`getMicroTrends()` (Fase 2, sin tocar en esta
+fase) sólo suman `status: 'success'` — exactamente igual antes y después de
+esta fase. Esta fase es únicamente de visibilidad.
+
+### Tests (Fase 6)
+
+`supplementUnits.attention.test.ts` (`supplementsNeedingAttention()`,
+incluida la fixture de las 34 filas reales), ampliación de
+`supplementDoseCopy.test.ts` (`describeUnsupportedBanner`,
+`describeAttentionBanner`, `unsupportedAttentionMessage`,
+`attentionAccessibilityLabel`), ampliación de `supplementStore.test.ts`
+(el banner de Dashboard con `unsupported` tomado/no tomado hoy, y la mezcla
+con `needs_review`), y `noDuplicateSupplementCopy.test.ts` actualizado para
+la nueva realidad (Diario/Perfil/Dashboard SÍ activan `unsupported` ahora,
+a través de las funciones compartidas — ya no a través de un literal
+propio). Interacción de navegación: validación manual, mismo límite de
+entorno que en fases anteriores.

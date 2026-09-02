@@ -348,16 +348,50 @@ export function resolveUnitOnNutrientChange(nextNutrientKey: string | null, curr
  * una dosis sospechosa lo sigue siendo el día que no se toma, y el usuario
  * necesita verlo para poder corregirlo antes de la próxima vez.
  *
- * Pura: no depende del store, de React ni de la navegación. Reutilizada tal
- * cual por DiaryScreen y ProfileScreen — ningún componente reimplementa
- * este filtro por su cuenta.
+ * Pura: no depende del store, de React ni de la navegación. Se implementa
+ * como una proyección de `supplementsNeedingAttention()` (Fase 6) — misma
+ * iteración, mismo `normalizeSupplementDose()`, nunca dos recorridos que
+ * puedan divergir.
  */
 export function supplementsNeedingReview(supplements: readonly Supplement[]): Supplement[] {
-  return supplements.filter((s) => {
-    if (!s.nutrient_key) return false;
-    return (
-      normalizeSupplementDose({ amount: s.dose_amount, unit: s.dose_unit, nutrientKey: s.nutrient_key }).status ===
-      'needs_review'
-    );
-  });
+  return supplementsNeedingAttention(supplements)
+    .filter((a) => a.dose.status === 'needs_review')
+    .map((a) => a.supplement);
+}
+
+// ── Fase 6 — suplementos unsupported heredados ───────────────────────────────
+
+/**
+ * Un suplemento configurado cuya dosis no se puede contabilizar tal cual —
+ * `needs_review` (convertible pero sospechosa) o `unsupported` (no
+ * convertible en absoluto). Empareja el `Supplement` con su
+ * `SupplementDoseResult` completo para que la capa de presentación decida
+ * qué mostrar sin tener que volver a llamar a `normalizeSupplementDose()`.
+ */
+export interface SupplementAttention {
+  supplement: Supplement;
+  dose: SupplementDoseNeedsReview | SupplementDoseUnsupported;
+}
+
+/**
+ * Suplementos CONFIGURADOS (tomados hoy o no — mismo criterio que
+ * `supplementsNeedingReview()`) cuya dosis es `needs_review` O
+ * `unsupported`. Nunca incluye un suplemento sin `nutrient_key`: esos son
+ * de puro recuento (Creatina, Magnesio...) y son válidos dentro de su
+ * propio modelo — no les falta nada que revisar.
+ *
+ * Pura: no depende del store, de React ni de la navegación. Es la única
+ * función que DiaryScreen y ProfileScreen consultan para decidir el icono
+ * de atención por fila — ninguna reimplementa el filtro combinado.
+ */
+export function supplementsNeedingAttention(supplements: readonly Supplement[]): SupplementAttention[] {
+  const result: SupplementAttention[] = [];
+  for (const s of supplements) {
+    if (!s.nutrient_key) continue;
+    const dose = normalizeSupplementDose({ amount: s.dose_amount, unit: s.dose_unit, nutrientKey: s.nutrient_key });
+    if (dose.status === 'needs_review' || dose.status === 'unsupported') {
+      result.push({ supplement: s, dose });
+    }
+  }
+  return result;
 }
