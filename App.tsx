@@ -11,6 +11,8 @@ import {
 import { RootNavigator } from '@/navigation';
 import { useTheme } from '@/theme';
 import { useThemeStore } from '@/stores/themeStore';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { reportError } from '@/lib/errorReporting';
 
 // Keep the native splash visible until the app is ready to render.
 SplashScreen.preventAutoHideAsync();
@@ -21,10 +23,19 @@ function ThemedStatusBar() {
 }
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     InstrumentSerif_400Regular,
     InstrumentSerif_400Regular_Italic,
   });
+
+  useEffect(() => {
+    // Antes este error se ignoraba en silencio y, si la carga de fuentes
+    // fallaba, `ready` nunca pasaba a true: la app se quedaba en el splash
+    // para siempre, sin timeout ni salida. Reportamos y seguimos — la
+    // tipografía Instrument Serif es decorativa, no bloqueante: React
+    // Native cae a la fuente del sistema si falta.
+    if (fontError) reportError(fontError, { tag: 'font_load' });
+  }, [fontError]);
 
   const hydrateTheme = useThemeStore((s) => s.hydrate);
   const themeHydrated = useThemeStore((s) => s.hydrated);
@@ -32,7 +43,7 @@ export default function App() {
     void hydrateTheme();
   }, [hydrateTheme]);
 
-  const ready = fontsLoaded && themeHydrated;
+  const ready = (fontsLoaded || !!fontError) && themeHydrated;
 
   // Hide the native splash as soon as fonts + theme are ready.
   const onLayoutRootView = useCallback(async () => {
@@ -44,9 +55,11 @@ export default function App() {
   if (!ready) return null;
 
   return (
-    <SafeAreaProvider onLayout={onLayoutRootView}>
-      <ThemedStatusBar />
-      <RootNavigator />
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider onLayout={onLayoutRootView}>
+        <ThemedStatusBar />
+        <RootNavigator />
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

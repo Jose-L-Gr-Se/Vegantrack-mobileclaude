@@ -82,7 +82,8 @@
           "photosPermission": "VegeTrack usa tus fotos para analizar platos y calcular sus nutrientes.",
           "cameraPermission": "VegeTrack usa la cámara para fotografiar tus platos y analizarlos con IA."
         }
-      ]
+      ],
+      "@sentry/react-native/expo"
     ]
   }
 }
