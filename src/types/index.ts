@@ -105,11 +105,30 @@ export interface OpenFoodFactsProduct {
 
 export type VeganConfidence = 'high' | 'medium' | 'low' | 'unknown';
 
+/**
+ * Agregado diario de un micronutriente. `value` es SIEMPRE la suma exacta de
+ * los aportes conocidos — nunca se sustituye por 0 por baja cobertura; esa
+ * es la regla central del modelo (ver docs/NUTRICION-MICRONUTRIENTES.md).
+ *
+ * Dos formas de cobertura, con usos distintos y complementarios:
+ *   - `coverage` (por Nº de entradas): para frases tipo "3 alimentos sin
+ *     información suficiente".
+ *   - `coverageByGrams`: para una cifra de confianza tipo "68% de cobertura",
+ *     más representativa porque no es ciega a la cantidad registrada.
+ *
+ * `hasEntries` distingue "no se ha registrado nada relevante para este
+ * nutriente hoy" (día vacío, estado neutro) de "se ha registrado algo pero
+ * sin datos" (coverage=0 con hasEntries=true) — nunca deben tratarse igual.
+ */
 export interface MicroAggregate {
   value: number;
   knownEntries: number;
   totalEntries: number;
-  coverage: number; // 0..1
+  coverage: number; // 0..1, por Nº de entradas
+  knownGrams: number;
+  totalGrams: number;
+  coverageByGrams: number; // 0..1
+  hasEntries: boolean;
 }
 
 export interface NutrientSummary {

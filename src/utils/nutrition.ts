@@ -3,7 +3,7 @@
  * Fórmulas idénticas a la PWA (vegantrack/src/utils/nutrition.ts) para que
  * un mismo perfil produzca exactamente los mismos objetivos en ambas apps.
  */
-import type { FoodLogEntry, NutrientSummary, Profile, Sex } from '@/types';
+import type { FoodLogEntry, MicroAggregate, NutrientSummary, Profile, Sex } from '@/types';
 import { applyOverrides, type NutrientOverride } from '@/lib/nutrientOverrides';
 
 const ACTIVITY_MULTIPLIERS = {
@@ -84,14 +84,31 @@ export function formatNumber(n: number): string {
   return n.toLocaleString('es-ES');
 }
 
-function makeMicro() {
-  return { value: 0, knownEntries: 0, totalEntries: 0, coverage: 0 };
+function makeMicro(): NutrientSummary['micros'][keyof NutrientSummary['micros']] {
+  return {
+    value: 0,
+    knownEntries: 0,
+    totalEntries: 0,
+    coverage: 0,
+    knownGrams: 0,
+    totalGrams: 0,
+    coverageByGrams: 0,
+    hasEntries: false,
+  };
 }
 
 /**
  * Agrega las entries de un día en un NutrientSummary.
  * Replica getDaySummary() del diaryStore de la PWA, incluida la semántica de
  * cobertura de micros: una entry manual sin micros conocidos no penaliza.
+ *
+ * Regla central del modelo, que NO debe romperse en ninguna modificación
+ * futura de esta función: `value` es siempre la suma exacta de los aportes
+ * CONOCIDOS, nunca se descarta ni se sustituye por 0 por baja cobertura. La
+ * cobertura (por entradas y por gramos) se calcula y se expone por
+ * separado, como metadato de confianza — nunca como una puerta que decide
+ * si `value` se muestra o no. Esa decisión vive en `resolveMicroDisplay`,
+ * en la capa de presentación, no aquí.
  */
 export function summarizeEntries(
   entries: FoodLogEntry[],
@@ -134,10 +151,19 @@ export function summarizeEntries(
     for (const [key, value, known] of microFields) {
       const m = summary.micros[key];
       const isKnown = (known ?? false) && value !== null && value !== undefined;
-      if (e.source !== 'manual' || isKnown) m.totalEntries += 1;
+      // Misma regla para entradas y para gramos: una entry manual sin dato no
+      // cuenta contra la cobertura (nunca se esperó que trajera micros); el
+      // resto de fuentes (OFF, frescos, foto IA, receta, propio) sí cuentan,
+      // porque de ellas SÍ se espera que puedan traer el dato.
+      const isRelevant = e.source !== 'manual' || isKnown;
+      if (isRelevant) {
+        m.totalEntries += 1;
+        m.totalGrams += e.serving_size_g;
+      }
       if (isKnown) {
         m.value += value as number;
         m.knownEntries += 1;
+        m.knownGrams += e.serving_size_g;
       }
     }
   }
@@ -145,6 +171,11 @@ export function summarizeEntries(
   for (const key of Object.keys(summary.micros) as Array<keyof NutrientSummary['micros']>) {
     const m = summary.micros[key];
     m.coverage = m.totalEntries > 0 ? m.knownEntries / m.totalEntries : 0;
+    m.coverageByGrams = m.totalGrams > 0 ? m.knownGrams / m.totalGrams : 0;
+    // hasEntries distingue "nada relevante registrado hoy para este
+    // nutriente" (día vacío, estado neutro) de "registrado pero sin datos"
+    // (coverage=0 con hasEntries=true) — nunca deben tratarse igual.
+    m.hasEntries = m.totalEntries > 0;
   }
 
   return summary;
@@ -154,4 +185,112 @@ export function summarizeEntries(
 export function scaleServing(per100: number, grams: number, decimals = 1): number {
   const factor = Math.pow(10, decimals);
   return Math.round(((per100 * grams) / 100) * factor) / factor;
+}
+
+// ── Presentación de micronutrientes: known/unknown → confianza ─────────────
+//
+// Todo lo de aquí abajo es puro y no conoce React ni ningún componente. Es
+// la capa que decide CÓMO presentar un MicroAggregate (nunca cómo agregarlo:
+// eso es summarizeEntries) — el sitio correcto para la regla que sustituye al
+// antiguo `coverage < 0.5 ? value : 0`, que no debe volver a aparecer en
+// ningún consumidor (Dashboard, VeganScore, tendencias).
+
+/**
+ * Nivel de confianza en los datos de comida de un micronutriente, derivado
+ * de `coverageByGrams`. Describe SÓLO la calidad del dato de comida — nunca
+ * se ve afectado por el suplemento, que es una fuente aparte, siempre
+ * conocida al 100%.
+ *
+ * 'none'  → hasEntries=false: no hay nada relevante registrado hoy para este
+ *           nutriente. Es un estado neutro (día vacío), no una alarma.
+ * 'low'   → hay registros pero coverageByGrams < 0.4.
+ * 'medium'→ 0.4 <= coverageByGrams < 0.75.
+ * 'high'  → coverageByGrams >= 0.75.
+ */
+export type MicroConfidence = 'none' | 'low' | 'medium' | 'high';
+
+/** Orden de menor a mayor confianza, para comparar niveles sin números mágicos. */
+const CONFIDENCE_ORDER: readonly MicroConfidence[] = ['none', 'low', 'medium', 'high'];
+
+/**
+ * Confianza mínima que exigirá VeganScore (Fase 2 — todavía no consumida por
+ * ningún consumidor en este commit) para otorgar el crédito COMPLETO a un
+ * micronutriente parcialmente conocido, salvo que el objetivo ya se cubra
+ * sólo con el suplemento. Única constante con nombre: ningún archivo debe
+ * repetir su propio umbral de confianza por separado.
+ */
+export const MIN_SCORE_CONFIDENCE: MicroConfidence = 'medium';
+
+/** ¿`confidence` alcanza (o supera) el nivel mínimo `min`? */
+export function meetsMinConfidence(confidence: MicroConfidence, min: MicroConfidence): boolean {
+  return CONFIDENCE_ORDER.indexOf(confidence) >= CONFIDENCE_ORDER.indexOf(min);
+}
+
+const CONFIDENCE_MEDIUM_MIN = 0.4;
+const CONFIDENCE_HIGH_MIN = 0.75;
+
+/** Deriva el nivel de confianza de un agregado. Pura, sin efectos. */
+export function microConfidence(agg: MicroAggregate): MicroConfidence {
+  if (!agg.hasEntries) return 'none';
+  if (agg.coverageByGrams >= CONFIDENCE_HIGH_MIN) return 'high';
+  if (agg.coverageByGrams >= CONFIDENCE_MEDIUM_MIN) return 'medium';
+  return 'low';
+}
+
+/**
+ * Representación de presentación de un micronutriente para un día: cuánto se
+ * conoce de comida, cuánto de suplemento, el total efectivo frente al RDA, y
+ * la confianza en el dato de comida — todo por separado, nada precalculado
+ * en una sola cifra que oculte de dónde viene.
+ */
+export interface MicroDisplay {
+  /** Suma conocida de comida (= agg.value). Nunca se pone a 0 por baja cobertura. */
+  knownFood: number;
+  /** Aporte de suplementos tomados hoy para este nutriente. Siempre 100% conocido. */
+  supplement: number;
+  /** knownFood + supplement: la mejor estimación real del día. */
+  known: number;
+  /** RDA del nutriente para este usuario. */
+  target: number;
+  /** known / target. 0 si target <= 0 (sin objetivo configurado). */
+  pct: number;
+  /** Cobertura de comida por Nº de entradas (= agg.coverage). */
+  coverage: number;
+  /** Cobertura de comida por gramos (= agg.coverageByGrams). */
+  coverageByGrams: number;
+  /** Confianza derivada de coverageByGrams (ver microConfidence). */
+  confidence: MicroConfidence;
+  /** ¿Hay algo relevante registrado hoy para este nutriente? */
+  hasEntries: boolean;
+}
+
+/**
+ * Transforma un MicroAggregate (comida) + aporte de suplemento + RDA en una
+ * representación de presentación. Es la única función que debe decidir "qué
+ * mostrar" — Dashboard, VeganScore y las tendencias deben llamarla en vez de
+ * reimplementar su propia regla de umbral (la causa raíz del bug original:
+ * la misma regla `coverage < 0.5 ? value : 0` copiada tres veces).
+ *
+ * No decide NADA sobre representación visual (colores, texto, componentes):
+ * sólo devuelve los números y la confianza ya separados.
+ */
+export function resolveMicroDisplay(
+  agg: MicroAggregate,
+  suppAmount: number,
+  rda: number
+): MicroDisplay {
+  const knownFood = agg.value;
+  const supplement = suppAmount;
+  const known = knownFood + supplement;
+  return {
+    knownFood,
+    supplement,
+    known,
+    target: rda,
+    pct: rda > 0 ? known / rda : 0,
+    coverage: agg.coverage,
+    coverageByGrams: agg.coverageByGrams,
+    confidence: microConfidence(agg),
+    hasEntries: agg.hasEntries,
+  };
 }

@@ -3,8 +3,19 @@ import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganSc
 import type { NutrientSummary } from '@/types';
 
 function summary(over: Partial<NutrientSummary> = {}, micros: Partial<Record<string, number>> = {}): NutrientSummary {
-  const micro = (value: number) => ({ value, knownEntries: 1, totalEntries: 1, coverage: 1 });
-  const empty = () => ({ value: 0, knownEntries: 0, totalEntries: 0, coverage: 0 });
+  // Fase 1 del P0 de micronutrientes amplió MicroAggregate de forma aditiva
+  // (docs/NUTRICION-MICRONUTRIENTES.md): estos fixtures rellenan los campos
+  // nuevos con valores coherentes (1 entrada conocida ≈ 100 g) sólo para
+  // cumplir el tipo. veganScore.ts todavía no los lee — no hay cambio de
+  // comportamiento aquí.
+  const micro = (value: number) => ({
+    value, knownEntries: 1, totalEntries: 1, coverage: 1,
+    knownGrams: 100, totalGrams: 100, coverageByGrams: 1, hasEntries: true,
+  });
+  const empty = () => ({
+    value: 0, knownEntries: 0, totalEntries: 0, coverage: 0,
+    knownGrams: 0, totalGrams: 0, coverageByGrams: 0, hasEntries: false,
+  });
   return {
     calories: 2000,
     protein_g: 120,
@@ -77,11 +88,19 @@ describe('computeVeganScore', () => {
     expect(male.micros.score).toBeGreaterThan(female.micros.score);
   });
 
-  it('cobertura < 50% ignora el valor de comida', () => {
+  it('cobertura < 50% ignora el valor de comida (comportamiento actual de veganScore.ts, sin cambios en Fase 1)', () => {
+    // Documenta el bug conocido (docs/NUTRICION-MICRONUTRIENTES.md): la Fase 1
+    // sólo construye el núcleo de datos (MicroAggregate, summarizeEntries,
+    // resolveMicroDisplay); veganScore.ts se conecta en una fase posterior.
+    // Cuando eso ocurra, este test deberá actualizarse para reflejar que
+    // value=20 SÍ debe contar (con confianza baja), no descartarse a 0.
     const s: NutrientSummary = summary();
-    s.micros.iron_mg = { value: 20, knownEntries: 1, totalEntries: 4, coverage: 0.25 };
+    s.micros.iron_mg = {
+      value: 20, knownEntries: 1, totalEntries: 4, coverage: 0.25,
+      knownGrams: 100, totalGrams: 400, coverageByGrams: 0.25, hasEntries: true,
+    };
     const result = computeVeganScore({ ...base, summary: s });
-    // hierro no cuenta pese a value=20
+    // hierro no cuenta pese a value=20 — bug pendiente de Fase 2, no de esta.
     expect(result.micros.label).toBe('0/3 cubiertos');
   });
 });
