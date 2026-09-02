@@ -111,3 +111,47 @@ describe('getMicroTrends (Fase 2)', () => {
     expect(partial.micros.iron_mg.confidence).toBe(expected.confidence);
   });
 });
+
+describe('getMicroTrends (Fase 2 del P0 de unidades de suplementos) · aporte de suplementos normalizado', () => {
+  // Sin comida: aísla el aporte de suplemento en micros[key].value/pct.
+  const end = todayISO();
+  const day = end;
+
+  function mockSupplementsAndLogs(supplement: { id: string; nutrient_key: string; dose_amount: number; dose_unit: string }) {
+    mockFrom.mockReset();
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'food_log') return makeBuilder({ data: [] });
+      if (table === 'supplements') return makeBuilder({ data: [supplement] });
+      if (table === 'supplement_logs') {
+        return makeBuilder({ data: [{ supplement_id: supplement.id, date: day }] });
+      }
+      throw new Error(`tabla inesperada en el mock: ${table}`);
+    });
+  }
+
+  it('B12 tomado en mg se convierte a mcg antes de sumarse a la tendencia (ya no se asume la unidad canónica)', async () => {
+    mockSupplementsAndLogs({ id: 'supp-1', nutrient_key: 'vitamin_b12_mcg', dose_amount: 1, dose_unit: 'mg' });
+    const points = await useDiaryStore.getState().getMicroTrends('u1', 1, 'male');
+    const point = points.find((p) => p.date === day)!;
+    // 1 mg = 1000 mcg, no "1" crudo.
+    expect(point.micros.vitamin_b12_mcg.value).toBeCloseTo(1000, 6);
+  });
+
+  it('calcio tomado en gramos con una dosis implausible (150 g, fila real de producción) NO se suma a la tendencia', async () => {
+    mockSupplementsAndLogs({ id: 'supp-1', nutrient_key: 'calcium_mg', dose_amount: 150, dose_unit: 'g' });
+    const points = await useDiaryStore.getState().getMicroTrends('u1', 1, 'male');
+    const point = points.find((p) => p.date === day)!;
+    // Antes de esta fase se habría sumado "150" crudo (parecía razonable
+    // por casualidad); con la conversión correcta sería 150 000 mg — pero
+    // al superar la plausibilidad, needs_review se excluye del todo, nunca
+    // entra en la tendencia con un número que no se puede confiar.
+    expect(point.micros.calcium_mg.value).toBe(0);
+  });
+
+  it('suplemento con unidad no soportada (cápsula + nutriente) no se suma a la tendencia', async () => {
+    mockSupplementsAndLogs({ id: 'supp-1', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'cápsula' });
+    const points = await useDiaryStore.getState().getMicroTrends('u1', 1, 'male');
+    const point = points.find((p) => p.date === day)!;
+    expect(point.micros.vitamin_b12_mcg.value).toBe(0);
+  });
+});

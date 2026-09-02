@@ -1,4 +1,4 @@
-# Unidades de suplementos — Fase 1: `normalizeSupplementDose()`
+# Unidades de suplementos — Fase 1 y Fase 2
 
 > **Invariante central:** ninguna dosis se convierte "a ojo". Toda
 > combinación de cantidad/unidad/nutriente tiene una salida definida —
@@ -52,16 +52,36 @@ Los techos de plausibilidad viven en un único mapa con nombre,
 margen amplio sobre cualquier producto comercial conocido y verificados
 contra las 34 filas reales de producción para no generar falsos positivos.
 
-## Qué NO se ha tocado en esta fase (deliberado)
+## Qué se ha conectado en la Fase 2
 
-`supplementStore.ts` sigue sumando `dose_amount` sin convertir —
-`getTodayContributions()` no llama a `normalizeSupplementDose()` todavía.
-`SupplementEditor.tsx`, Dashboard, VeganScore, tendencias, Supabase, el
-esquema de `public.supplements` y la PWA no se han modificado. Eso es la
-Fase 2 (conectar `getTodayContributions()`/`getMicroTrends()`, con
-`needs_review` excluido del sumatorio hasta que el usuario revise la
-entrada) y la Fase 3 (UI: filtrado de unidades, conversión en vivo, bloqueo
-de combinaciones imposibles), pendientes de aprobación explícita.
+`supplementStore.getTodayContributions()` y `diaryStore.getMicroTrends()`
+—los dos únicos sitios de producción que sumaban `dose_amount` directamente—
+pasan ahora por `normalizeSupplementDose()`. Ninguno de los dos cambia su
+forma de salida (`Partial<Record<string, number>>` y `MicroTrendPoint`
+respectivamente): Dashboard, VeganScore y `MicroTrendsScreen` siguen
+consumiéndolos exactamente igual, sin saber que por debajo hay una
+conversión de unidades — cero cambios en esos tres ficheros.
+
+Regla aplicada en ambos sitios: sólo una dosis con `status: 'success'` entra
+en el total. `needs_review` y `unsupported` quedan excluidas de la
+contribución nutricional — nunca se convierten en un 0 silencioso ni se
+suman con la unidad equivocada. El detalle completo (incluidas las
+excluidas y por qué) no se pierde: `supplementStore.ts` lo expone en un
+getter nuevo, `getTodayContributionDetails()`, del que
+`getTodayContributions()` es una proyección filtrada — así una capa futura
+(Fase 3, UI) puede mostrar "esta dosis necesita revisión" sin tener que
+recalcular nada.
+
+No se ha añadido ninguna persistencia nueva (`canonicalAmount` sigue sin
+guardarse), ni se ha tocado `dose_amount`/`dose_unit` almacenados, ni el
+esquema de Supabase, ni `SupplementEditor.tsx`, ni la PWA.
+
+## Qué NO se ha tocado todavía (deliberado)
+
+`SupplementEditor.tsx` (Fase 3: filtrado de unidades, conversión en vivo,
+bloqueo de combinaciones imposibles, aviso de `needs_review` en la UI),
+Dashboard/VeganScore/`MicroTrendsScreen` (sin rediseño — sólo reciben datos
+ya correctos), Supabase, el esquema de `public.supplements` y la PWA.
 
 ## Tests
 
@@ -72,3 +92,14 @@ nutriente desconocidos, cantidad inválida), semántica de plausibilidad
 fixtures basados directamente en las 34 filas reales de producción —
 incluida la fila de calcio (150 g → `needs_review` a 150 000 mg, nunca un
 cálculo normal).
+
+`src/stores/__tests__/supplementStore.test.ts` (Fase 2) — los mismos casos
+pero a través de `getTodayContributions()`/`getTodayContributionDetails()`:
+confirma que sólo `success` entra en el total, que `needs_review` conserva
+`canonicalAmount`/`canonicalUnit`/`reviewReason`, y que un mismo día puede
+tener las tres puertas a la vez sin que se mezclen.
+
+`src/stores/__tests__/diaryStore.getMicroTrends.test.ts` (ampliado en la
+Fase 2) — confirma que la serie histórica de tendencias también pasa por
+`normalizeSupplementDose()`: una dosis en mg se convierte antes de sumarse,
+y una dosis `needs_review`/`unsupported` no aparece en la tendencia.

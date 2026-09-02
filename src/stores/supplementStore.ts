@@ -7,7 +7,23 @@ import { supabase } from '@/lib/supabase';
 import { kvGet, kvSet } from '@/db/database';
 import { uuidv4 } from '@/utils/uuid';
 import { todayISO } from '@/utils/dates';
+import { normalizeSupplementDose, type SupplementDoseResult } from '@/utils/supplementUnits';
 import type { Supplement, SupplementNutrientKey } from '@/types';
+
+/**
+ * Dosis de hoy de un suplemento con nutriente asociado, ya pasada por
+ * `normalizeSupplementDose()`. Distingue las tres puertas: `dose.status`
+ * 'success' (se cuenta), 'needs_review' (convertible pero implausible —
+ * conserva `canonicalAmount`/`canonicalUnit`/`reviewReason` para que una
+ * capa futura pueda mostrarla, pero NO entra en `getTodayContributions()`)
+ * y 'unsupported' (no convertible — tampoco entra). Ver
+ * docs/UNIDADES-SUPLEMENTOS.md.
+ */
+export interface SupplementContributionDetail {
+  supplementId: string;
+  nutrientKey: SupplementNutrientKey;
+  dose: SupplementDoseResult;
+}
 
 export interface SupplementPreset {
   name: string;
@@ -43,6 +59,7 @@ interface SupplementState {
   updateSupplement: (id: string, patch: Partial<Pick<Supplement, 'name' | 'dose_amount' | 'dose_unit' | 'nutrient_key' | 'emoji'>>) => Promise<{ error: string | null }>;
   deleteSupplement: (id: string) => Promise<{ error: string | null }>;
   toggleTaken: (userId: string, supplementId: string) => Promise<void>;
+  getTodayContributionDetails: () => SupplementContributionDetail[];
   getTodayContributions: () => Partial<Record<string, number>>;
 }
 
@@ -151,13 +168,40 @@ export const useSupplementStore = create<SupplementState>((set, get) => ({
     }
   },
 
-  /** Suma de nutrientes aportados por suplementos tomados hoy (para VeganScore). */
-  getTodayContributions: () => {
+  /**
+   * Dosis de hoy de cada suplemento con nutriente asociado, ya normalizadas
+   * a la unidad canónica vía `normalizeSupplementDose()` — nunca se asume
+   * que `dose_amount` ya está en esa unidad. Incluye success, needs_review
+   * y unsupported: es el punto donde se conserva el detalle completo antes
+   * de filtrar. `getTodayContributions()` se deriva de aquí.
+   */
+  getTodayContributionDetails: () => {
     const { supplements, takenToday } = get();
-    const contributions: Partial<Record<string, number>> = {};
+    const details: SupplementContributionDetail[] = [];
     for (const s of supplements) {
       if (!s.nutrient_key || !takenToday[s.id]) continue;
-      contributions[s.nutrient_key] = (contributions[s.nutrient_key] ?? 0) + s.dose_amount;
+      details.push({
+        supplementId: s.id,
+        nutrientKey: s.nutrient_key,
+        dose: normalizeSupplementDose({ amount: s.dose_amount, unit: s.dose_unit, nutrientKey: s.nutrient_key }),
+      });
+    }
+    return details;
+  },
+
+  /**
+   * Suma de nutrientes aportados por suplementos tomados hoy (para VeganScore
+   * y Dashboard). Sólo cuenta dosis con `status: 'success'` —
+   * `needs_review` y `unsupported` quedan excluidas de la contribución
+   * nutricional: nunca se convierten en un 0 silencioso ni se suman con la
+   * unidad equivocada. El detalle de por qué una dosis se excluyó está en
+   * `getTodayContributionDetails()`.
+   */
+  getTodayContributions: () => {
+    const contributions: Partial<Record<string, number>> = {};
+    for (const { nutrientKey, dose } of get().getTodayContributionDetails()) {
+      if (dose.status !== 'success') continue;
+      contributions[nutrientKey] = (contributions[nutrientKey] ?? 0) + dose.canonicalAmount;
     }
     return contributions;
   },

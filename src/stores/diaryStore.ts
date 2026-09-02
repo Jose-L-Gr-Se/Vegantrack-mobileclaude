@@ -19,6 +19,7 @@ import {
 } from '@/db/database';
 import { loadOverrides, type NutrientOverride } from '@/lib/nutrientOverrides';
 import { summarizeEntries, MICRO_RDA, ironRdaForSex, resolveMicroDisplay, type MicroConfidence } from '@/utils/nutrition';
+import { normalizeSupplementDose } from '@/utils/supplementUnits';
 import { addDays, todayISO } from '@/utils/dates';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
 import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
@@ -261,11 +262,11 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     // Mapa de suplementos (activos e inactivos, para registros históricos)
     const { data: suppRows } = await supabase
       .from('supplements')
-      .select('id, nutrient_key, dose_amount')
+      .select('id, nutrient_key, dose_amount, dose_unit')
       .eq('user_id', userId);
-    const suppMap = new Map<string, { key: string | null; dose: number }>();
-    for (const s of (suppRows ?? []) as { id: string; nutrient_key: string | null; dose_amount: number }[]) {
-      suppMap.set(s.id, { key: s.nutrient_key, dose: s.dose_amount });
+    const suppMap = new Map<string, { key: string | null; amount: number; unit: string }>();
+    for (const s of (suppRows ?? []) as { id: string; nutrient_key: string | null; dose_amount: number; dose_unit: string }[]) {
+      suppMap.set(s.id, { key: s.nutrient_key, amount: s.dose_amount, unit: s.dose_unit });
     }
 
     // Tomas de suplementos del periodo
@@ -284,13 +285,19 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       foodByDate.set(e.date, list);
     }
 
-    // Aportes de suplementos por fecha y nutriente
+    // Aportes de suplementos por fecha y nutriente. Misma puerta que
+    // supplementStore.getTodayContributions(): sólo se suman dosis
+    // normalizadas con status 'success' — needs_review/unsupported quedan
+    // excluidas, nunca se asume que dose_amount ya está en la unidad
+    // canónica (ver src/utils/supplementUnits.ts).
     const suppByDate = new Map<string, Record<string, number>>();
     for (const log of (logRows ?? []) as { supplement_id: string; date: string }[]) {
       const m = suppMap.get(log.supplement_id);
       if (!m || !m.key) continue;
+      const normalized = normalizeSupplementDose({ amount: m.amount, unit: m.unit, nutrientKey: m.key });
+      if (normalized.status !== 'success') continue;
       const day = suppByDate.get(log.date) ?? {};
-      day[m.key] = (day[m.key] ?? 0) + m.dose;
+      day[m.key] = (day[m.key] ?? 0) + normalized.canonicalAmount;
       suppByDate.set(log.date, day);
     }
 
