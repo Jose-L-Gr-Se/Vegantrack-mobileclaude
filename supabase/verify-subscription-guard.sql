@@ -122,9 +122,73 @@ where p.pronamespace = 'public'::regnamespace
   and p.proname = 'protect_subscription_fields';
 
 
+-- ═════════════════════════════════════════════════════════════════════════════
+-- A6-A10 · Verificación del cierre del vector de INSERT
+-- (supabase/migrations/20260901000003_close_insert_vector.sql)
+-- ═════════════════════════════════════════════════════════════════════════════
+
+-- A6. RLS sigue habilitada en profiles (esta migración no la toca).
+-- Esperado: relrowsecurity = true.
+select relrowsecurity, relforcerowsecurity
+from pg_class
+where oid = 'public.profiles'::regclass;
+
+
+-- A7. Ya no debe quedar ninguna policy de INSERT/ALL para roles de cliente.
+-- Esperado: 0 filas. Si aparece "Users can insert own profile" (o cualquier
+-- otra), la migración 000003 no se ha aplicado o no se aplicó del todo.
+select polname, polcmd, pg_get_expr(polwithcheck, polrelid) as with_check_expr
+from pg_policy
+where polrelid = 'public.profiles'::regclass
+  and polcmd in ('a', '*');
+
+
+-- A8. anon/authenticated ya no tienen privilegio de tabla INSERT.
+-- Esperado: 0 filas.
+select grantee, privilege_type
+from information_schema.table_privileges
+where table_schema   = 'public'
+  and table_name     = 'profiles'
+  and privilege_type = 'INSERT'
+  and grantee in ('anon', 'authenticated');
+
+
+-- A9. handle_new_user() sigue existiendo, SECURITY DEFINER, disparado por
+-- on_auth_user_created — la vía legítima de creación de perfiles no se toca.
+-- Esperado: 1 fila, security_definer = true.
+select
+  t.tgname                                as trigger_name,
+  p.proname                               as funcion,
+  p.prosecdef                             as security_definer,
+  pg_get_userbyid(p.proowner)             as propietario_funcion
+from pg_trigger t
+join pg_class c on c.oid = t.tgrelid
+join pg_namespace n on n.oid = c.relnamespace
+join pg_proc p on p.oid = t.tgfoid
+where n.nspname = 'auth'
+  and c.relname = 'users'
+  and not t.tgisinternal;
+
+
+-- A10. La premisa que hace segura la revocación: postgres (propietario de
+-- handle_new_user, I4) es superusuario o propietario de profiles, así que
+-- REVOKE/RLS no le afectan cuando la función se ejecuta con sus privilegios.
+-- Esperado: es_superusuario = true, o en su defecto es_propietario_profiles = true.
+-- Si AMBAS salen false, no des por sentado que handle_new_user seguirá
+-- pudiendo insertar — dilo aquí antes de aplicar nada más.
+select
+  r.rolname,
+  r.rolsuper                                                    as es_superusuario,
+  (c.relowner = r.oid)                                          as es_propietario_profiles
+from pg_roles r
+cross join pg_class c
+where r.rolname = 'postgres'
+  and c.oid = 'public.profiles'::regclass;
+
+
 -- ╔═══════════════════════════════════════════════════════════════════════════╗
 -- ║ PARTE B · Veredicto — ejecutar este bloque ENTERO de una vez              ║
--- ║           (selecciónalo y pulsa Run). Devuelve una tabla de 7 filas.      ║
+-- ║           (selecciónalo y pulsa Run). Devuelve una tabla de 9 filas.      ║
 -- ╚═══════════════════════════════════════════════════════════════════════════╝
 
 begin;
@@ -151,6 +215,7 @@ declare
   v_paso1    text;
   v_filas1   bigint;
   v_filas2   bigint;
+  v_new_id   uuid;
 begin
   if not exists (select 1 from public.profiles p where p.id = p_id) then
     raise exception 'No existe ningún perfil con id %. Usa: select id from public.profiles limit 1;', p_id;
@@ -383,6 +448,62 @@ begin
   observado := v_obs;
   veredicto := case when v_ok then 'PASA' else 'FALLA' end;
   return next;
+
+  -- ── 8 ─ authenticated intenta insertar directamente su propio perfil ──────
+  --        Vector confirmado por diagnose-insert-policy.sql: privilegio de
+  --        tabla + policy permisiva permitían INSERT ... VALUES (auth.uid(),
+  --        'pro'). Usa un id nuevo (gen_random_uuid()) para que el intento no
+  --        dependa de si el perfil de pruebas ya existe: debe fallar por
+  --        privilegios ANTES de llegar a comprobar ninguna fila.
+  begin
+    v_new_id := gen_random_uuid();
+    perform set_config(
+      'request.jwt.claims',
+      json_build_object('sub', v_new_id::text, 'role', 'authenticated')::text,
+      true
+    );
+    execute 'set local role authenticated';
+
+    insert into public.profiles (id, subscription_tier, subscription_expires_at)
+    values (v_new_id, 'pro', now() + interval '10 years');
+
+    execute 'reset role';
+    v_ok  := false;
+    v_obs := 'el INSERT se ejecutó sin error: el vector sigue abierto';
+    raise exception using errcode = 'VT001', message = 'fin del escenario';
+  exception
+    when sqlstate 'VT001' then null;
+    when insufficient_privilege then
+      v_ok  := true;
+      v_obs := format('bloqueado por privilegios · SQLSTATE 42501 · %s', sqlerrm);
+    when others then
+      v_ok  := false;
+      v_obs := format('error inesperado (no es un rechazo de privilegios) %s · %s', sqlstate, sqlerrm);
+  end;
+  n := 8;
+  escenario := 'authenticated intenta INSERT directo de su propio perfil (id nuevo)';
+  esperado  := 'la sentencia falla con 42501: sin privilegio de tabla INSERT';
+  observado := v_obs;
+  veredicto := case when v_ok then 'PASA' else 'FALLA' end;
+  return next;
+
+  -- ── 9 ─ No queda ninguna policy de INSERT/ALL para roles de cliente ───────
+  begin
+    v_ok := not exists (
+      select 1 from pg_policy
+      where polrelid = 'public.profiles'::regclass
+        and polcmd in ('a', '*')
+    );
+    v_obs := case when v_ok
+      then 'ninguna policy cubre INSERT/ALL: coherente con el privilegio revocado'
+      else 'SIGUE EXISTIENDO una policy de INSERT/ALL — código muerto o el vector no se cerró del todo' end;
+  end;
+  n := 9;
+  escenario := 'no queda ninguna policy de INSERT/ALL apuntando a profiles';
+  esperado  := '"Users can insert own profile" fue retirada';
+  observado := v_obs;
+  veredicto := case when v_ok then 'PASA' else 'FALLA' end;
+  return next;
 end;
 $fn$;
 
@@ -412,14 +533,22 @@ select id, display_name, subscription_tier, subscription_expires_at, stripe_cust
 from public.profiles
 where id = '<UUID_DE_PRUEBA>';
 
+-- C3. Confirma que el escenario 8 no dejó ningún perfil fantasma. El id era
+-- aleatorio y todo el bloque B termina en ROLLBACK, así que esto debe dar
+-- siempre 0 — es una comprobación de cinturón y tirantes, no se espera que
+-- falle nunca.
+select count(*) as perfiles_creados_ultimo_minuto
+from public.profiles
+where created_at > now() - interval '1 minute';
+
 
 -- ╔═══════════════════════════════════════════════════════════════════════════╗
--- ║ APÉNDICE · El ataque en crudo                                            ║
--- ║ Ejecútalo sólo si quieres leer el mensaje original de Postgres.          ║
--- ║ Mensaje esperado: ERROR 42501: permission denied for table profiles      ║
--- ║ IGNORA el HINT del editor ("GRANT UPDATE ... TO authenticated").         ║
+-- ║ APÉNDICE · Los ataques en crudo                                          ║
+-- ║ Ejecútalos sólo si quieres leer el mensaje original de Postgres.         ║
+-- ║ IGNORA el HINT del editor sugiriendo GRANT: es el agujero que se cierra. ║
 -- ╚═══════════════════════════════════════════════════════════════════════════╝
 
+-- UPDATE — mensaje esperado: ERROR 42501: permission denied for table profiles
 -- begin;
 --   select set_config(
 --     'request.jwt.claims',
@@ -428,4 +557,20 @@ where id = '<UUID_DE_PRUEBA>';
 --   );
 --   set local role authenticated;
 --   update public.profiles set subscription_tier = 'pro' where id = '<UUID_DE_PRUEBA>';
+-- rollback;
+
+-- INSERT — mismo mensaje esperado, misma causa: sin privilegio de tabla.
+-- El id es el mismo en el claim y en el INSERT a propósito (para que, si
+-- alguna vez se ejecuta esto ANTES de aplicar la migración 000003, el fallo
+-- que se vea sea el de privilegios y no un efecto lateral de que auth.uid()
+-- no coincida con la fila que se intenta crear).
+-- begin;
+--   select set_config(
+--     'request.jwt.claims',
+--     json_build_object('sub', '00000000-0000-0000-0000-000000000001', 'role', 'authenticated')::text,
+--     true
+--   );
+--   set local role authenticated;
+--   insert into public.profiles (id, subscription_tier)
+--   values ('00000000-0000-0000-0000-000000000001'::uuid, 'pro');
 -- rollback;

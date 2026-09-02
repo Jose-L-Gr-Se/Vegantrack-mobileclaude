@@ -1,14 +1,15 @@
 /**
- * Regresión de la migración de consolidación
- * (supabase/migrations/20260901000001_consolidate_subscription_guard.sql) y
- * de su reversión (…000002_rollback_consolidation.sql).
+ * Regresión de las migraciones de consolidación de entitlement
+ * (…000001_consolidate_subscription_guard.sql / …000002_rollback…) y de
+ * cierre del vector de INSERT (…000003_close_insert_vector.sql /
+ * …000004_rollback…).
  *
  * No ejecuta SQL: comprueba, sobre el texto de los ficheros, las propiedades
  * que hacen segura esta migración concreta — que no se puede verificar en
  * ejecución porque nadie debe aplicarla contra una base de datos de prueba
  * automatizada (habla de `service_role`, `auth.role()`, RLS real).
  *
- * Ver docs/SEGURIDAD-SUSCRIPCION.md §6-9.
+ * Ver docs/SEGURIDAD-SUSCRIPCION.md §6-10.
  */
 declare const __dirname: string;
 declare const require: (id: string) => any;
@@ -25,6 +26,18 @@ const CONSOLIDATE = fs.readFileSync(
 );
 const ROLLBACK = fs.readFileSync(
   path.join(MIGRATIONS, '20260901000002_rollback_consolidation.sql'),
+  'utf8'
+);
+const CLOSE_INSERT = fs.readFileSync(
+  path.join(MIGRATIONS, '20260901000003_close_insert_vector.sql'),
+  'utf8'
+);
+const ROLLBACK_INSERT = fs.readFileSync(
+  path.join(MIGRATIONS, '20260901000004_rollback_close_insert_vector.sql'),
+  'utf8'
+);
+const VERIFY = fs.readFileSync(
+  path.join(REPO, 'supabase', 'verify-subscription-guard.sql'),
   'utf8'
 );
 const DIAGNOSE_INSERT = fs.readFileSync(
@@ -195,5 +208,89 @@ describe('diagnose-insert-policy.sql', () => {
     expect(sinComentarios).not.toMatch(/\barray_agg\s*\(/);
     expect(sinComentarios).toContain('from pg_roles pr');
     expect(sinComentarios).toContain('pr.oid = any(pol.polroles)');
+  });
+});
+
+describe('20260901000003_close_insert_vector.sql', () => {
+  it('es transaccional: exactamente un begin y un commit, nunca un rollback', () => {
+    expect(count(CLOSE_INSERT, /^begin;/gim)).toBe(1);
+    expect(count(CLOSE_INSERT, /^commit;/gim)).toBe(1);
+    expect(count(CLOSE_INSERT, /^rollback;/gim)).toBe(0);
+  });
+
+  it('revoca INSERT a anon y authenticated', () => {
+    expect(CLOSE_INSERT).toContain('revoke insert on public.profiles from anon, authenticated');
+  });
+
+  it('retira la policy que permitía el INSERT del cliente', () => {
+    expect(CLOSE_INSERT).toContain('drop policy if exists "Users can insert own profile"');
+  });
+
+  it('no ejecuta ninguna sentencia DDL contra UPDATE, RLS, handle_new_user ni service_role', () => {
+    // El `comment on table` sí NOMBRA handle_new_user y service_role como
+    // documentación (es correcto, no algo que evitar); lo que no debe
+    // aparecer es una sentencia que los TOQUE.
+    const sinComentarios = CLOSE_INSERT.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toMatch(/\bgrant\s+update\b/i);
+    expect(sinComentarios).not.toMatch(/\brevoke\s+update\b/i);
+    expect(sinComentarios).not.toMatch(/\balter\s+function\s+.*handle_new_user/i);
+    expect(sinComentarios).not.toMatch(/\bdrop\s+function\s+.*handle_new_user/i);
+    expect(sinComentarios).not.toMatch(/\bcreate\s+or\s+replace\s+function\s+.*handle_new_user/i);
+    expect(sinComentarios).not.toMatch(/\bgrant\b.*\bservice_role\b/i);
+    expect(sinComentarios).not.toMatch(/\brevoke\b.*\bservice_role\b/i);
+    expect(sinComentarios).not.toMatch(/\benable\s+row\s+level\s+security\b/i);
+    expect(sinComentarios).not.toMatch(/\bdisable\s+row\s+level\s+security\b/i);
+  });
+
+  it('no borra filas: ningún DELETE ni TRUNCATE', () => {
+    const sinComentarios = CLOSE_INSERT.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toMatch(/\bdelete\s+from\b/i);
+    expect(sinComentarios).not.toMatch(/\btruncate\b/i);
+  });
+});
+
+describe('20260901000004_rollback_close_insert_vector.sql', () => {
+  it('es transaccional: exactamente un begin y un commit, nunca un rollback', () => {
+    expect(count(ROLLBACK_INSERT, /^begin;/gim)).toBe(1);
+    expect(count(ROLLBACK_INSERT, /^commit;/gim)).toBe(1);
+    expect(count(ROLLBACK_INSERT, /^rollback;/gim)).toBe(0);
+  });
+
+  it('recrea la policy con el with_check exacto capturado en el diagnóstico', () => {
+    expect(ROLLBACK_INSERT).toContain('create policy "Users can insert own profile"');
+    expect(ROLLBACK_INSERT).toContain('with check (auth.uid() = id)');
+  });
+
+  it('devuelve el privilegio de tabla a ambos roles', () => {
+    expect(ROLLBACK_INSERT).toContain('grant insert on public.profiles to anon, authenticated');
+  });
+});
+
+describe('verify-subscription-guard.sql · cobertura de INSERT (escenarios 8-9, A6-A10)', () => {
+  it('el título de la Parte B refleja las 9 filas, no las 7 de antes de esta ronda', () => {
+    expect(VERIFY).toContain('Devuelve una tabla de 9 filas');
+    expect(VERIFY).not.toContain('Devuelve una tabla de 7 filas');
+  });
+
+  it('el escenario 8 intenta un INSERT directo y exige 42501, no cualquier error', () => {
+    expect(VERIFY).toContain('insert into public.profiles (id, subscription_tier, subscription_expires_at)');
+    expect(VERIFY).toContain('when insufficient_privilege then');
+  });
+
+  it('el escenario 9 comprueba que no queda ninguna policy de INSERT/ALL', () => {
+    expect(VERIFY).toContain('no queda ninguna policy de INSERT/ALL apuntando a profiles');
+  });
+
+  it('A10 comprueba la premisa de que postgres puede seguir insertando (superusuario o propietario)', () => {
+    expect(VERIFY).toContain('es_superusuario');
+    expect(VERIFY).toContain('es_propietario_profiles');
+  });
+
+  it('el escenario 8 usa un id nuevo (gen_random_uuid), no el perfil de pruebas', () => {
+    expect(VERIFY).toContain('v_new_id := gen_random_uuid()');
   });
 });

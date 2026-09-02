@@ -593,10 +593,105 @@ Migraciones:
    `supabase/migrations/20260901000001_consolidate_subscription_guard.sql`
    entero. Termina en `COMMIT`: si no hay errores, queda aplicada.
 4. Ejecutar `supabase/verify-subscription-guard.sql` (versión actualizada para
-   la arquitectura consolidada): Parte A entera, luego Parte B seleccionada
-   entera de una vez, luego Parte C. Esperado: las 7 filas de la Parte B en
-   `PASA`.
+   la arquitectura consolidada y para el cierre del vector de INSERT, §10):
+   Parte A entera, luego Parte B seleccionada entera de una vez, luego Parte C.
+   Esperado: las 9 filas de la Parte B en `PASA`.
 5. Si algo falla: NO seguir depurando en producción. Aplicar
    `20260901000002_rollback_consolidation.sql` entero, confirmar con la Parte A
    del script de verificación (debe volver a verse `trg_profiles_entitlement_guard`),
    y traer el resultado aquí antes de reintentar.
+
+---
+
+## 10. Cierre del vector de INSERT
+
+`supabase/diagnose-insert-policy.sql`, ejecutado contra el proyecto real,
+confirmó un vector que §§1-9 no cerraban: sólo se había protegido `UPDATE`.
+
+| Consulta | Resultado |
+|---|---|
+| I1 | `relrowsecurity = true`, `relforcerowsecurity = false` |
+| I2 | Policy `"Users can insert own profile"`, comando `INSERT`, roles `public`, `with_check = (auth.uid() = id)` — sin restringir ninguna otra columna |
+| I3 | `anon` **y** `authenticated` tienen privilegio de tabla `INSERT` sobre `profiles` |
+| I4 | Trigger `on_auth_user_created` (`AFTER INSERT` sobre `auth.users`) → `handle_new_user()`, `SECURITY DEFINER`, propietario `postgres` |
+| I5 | `handle_new_user()` es literalmente `INSERT INTO public.profiles (id) VALUES (NEW.id) ON CONFLICT (id) DO NOTHING;` |
+
+Con privilegio de tabla y una policy que sólo mira el `id`, un cliente puede
+ejecutar `INSERT INTO profiles (id, subscription_tier) VALUES (auth.uid(),
+'pro')` para su propio `id`. Contra un usuario que ya tiene perfil —el caso
+normal, porque `handle_new_user` ya se lo creó de forma síncrona durante el
+propio `signUp()`— el intento choca con la clave primaria y no tiene efecto
+por sí solo. Pero depender de eso es **incidental, no estructural**: no
+protege cuentas antiguas sin perfil ni ningún caso límite futuro, y el cliente
+nunca necesita ese privilegio en absoluto.
+
+### 10.1 Por qué revocar INSERT es seguro para `handle_new_user()`
+
+`handle_new_user()` es `SECURITY DEFINER`: durante su ejecución, `current_user`
+pasa a ser su propietario —`postgres`—, no el rol que disparó el `INSERT` en
+`auth.users`. Los privilegios de tabla y las policies de RLS se evalúan contra
+ESE rol efectivo, nunca contra `anon`/`authenticated`. En el despliegue
+estándar de Supabase, `postgres` es superusuario (o como mínimo propietario de
+`public.profiles`), así que:
+
+- Los `GRANT`/`REVOKE` de esta migración no le afectan: un superusuario ignora
+  por completo las comprobaciones de privilegio.
+- `relforcerowsecurity = false` (I1) exime al propietario de la tabla de la
+  RLS por defecto — y un superusuario la salta igualmente.
+
+No se da esto por sentado sólo por convención: `verify-subscription-guard.sql`
+A10 comprueba explícitamente `rolsuper` de `postgres` y si es propietario de
+`profiles`, para confirmarlo contra el proyecto real en el momento de aplicar.
+
+**Otras rutas legítimas de INSERT, descartadas por inspección:** ninguna Edge
+Function de este repositorio inserta en `profiles` (comprobado); `I6` de
+`diagnose-insert-policy.sql` (búsqueda de cualquier otra función `SECURITY
+DEFINER` que inserte en `profiles`) no usa ningún agregado y no puede producir
+el error `42809` — si al ejecutarlo se ve ese error, es casi seguro una
+confusión con `diagnose-subscription-guard.sql` (D6 sigue teniendo el patrón
+`unnest`/`string_agg` sin corregir; fuera del alcance pedido en su momento).
+`delete-account` documenta explícitamente `ON DELETE CASCADE` en `profiles`:
+ni siquiera el borrado de cuenta deja una fila huérfana reutilizable.
+
+### 10.2 Qué hace la migración, y qué no toca
+
+`supabase/migrations/20260901000003_close_insert_vector.sql`:
+
+1. `revoke insert on public.profiles from anon, authenticated;`
+2. `drop policy if exists "Users can insert own profile" on public.profiles;`
+   — sin privilegio de tabla, la policy queda estructuralmente inalcanzable
+   (Postgres comprueba el privilegio de tabla **antes** de evaluar ninguna
+   policy de RLS), así que dejarla sería código muerto capaz de inducir a
+   error a quien lo lea después.
+
+No toca: RLS (sigue habilitada), las columnas de suscripción ni su protección
+de `UPDATE` (migración 000001, sin relación con `INSERT`), `handle_new_user()`
+ni su trigger, ni `service_role` (nunca tuvo revocado el privilegio de tabla).
+
+Migración independiente de 000001/000002: gobierna un vector distinto
+(`INSERT` vs. `UPDATE`) y puede aplicarse en cualquier orden respecto a ellas,
+aunque se recomienda el orden numérico por coherencia con el orden en que se
+descubrieron los problemas.
+
+Rollback: `supabase/migrations/20260901000004_rollback_close_insert_vector.sql`
+— recrea la policy con el `with_check` exacto capturado y vuelve a conceder el
+privilegio de tabla a ambos roles.
+
+### 10.3 Procedimiento de despliegue
+
+1. Aplicar `20260901000000` y `20260901000001` si aún no lo están (ver §4 y
+   §9.6).
+2. Supabase → SQL Editor → pegar y ejecutar entero
+   `20260901000003_close_insert_vector.sql`. Termina en `COMMIT`.
+3. Ejecutar `verify-subscription-guard.sql` completo: Parte A (incluye A6-A10,
+   nuevas) → Parte B seleccionada entera → Parte C. Esperado: **9 filas en
+   `PASA`**, con especial atención a A10 (`postgres` superusuario o
+   propietario de `profiles`) y a los escenarios 8-9.
+4. Verificación de extremo a extremo, fuera de SQL: registrar un usuario nuevo
+   de verdad a través de la app (no simulado en el editor — crear una fila en
+   `auth.users` desde SQL tiene efectos secundarios sobre los que no hay
+   control, como triggers de email; no se hace aquí) y confirmar que recibe su
+   `profiles` con `subscription_tier = 'free'`.
+5. Si algo falla: aplicar `20260901000004_rollback_close_insert_vector.sql`
+   entero, confirmar con la Parte A (debe reaparecer la policy y el privilegio
+   de tabla), y traer el resultado aquí antes de reintentar.
