@@ -8,6 +8,11 @@
  *
  * Es la forma "premium" de gestionar suplementos — la lista del Diario sólo
  * marca tomas, todo lo demás se ajusta aquí.
+ *
+ * Fase 3 del P0 de unidades de suplementos: el selector de unidad, su valor
+ * por defecto y la validación al guardar usan la única fuente de verdad de
+ * `@/utils/supplementUnits` — ver docs/UNIDADES-SUPLEMENTOS.md. Este
+ * fichero nunca reimplementa esa lógica ni la duplica.
  */
 import React, { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
@@ -15,6 +20,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
+import {
+  compatibleUnitsFor,
+  normalizeSupplementDose,
+  resolveUnitOnNutrientChange,
+  unitsMatch,
+  type SupplementDoseResult,
+  type SupplementDoseRejectionReason,
+} from '@/utils/supplementUnits';
 import type { Supplement, SupplementNutrientKey } from '@/types';
 
 const EMOJIS = ['💊', '☀️', '🌊', '🧂', '🩸', '⚡', '🦴', '🌙', '🛡️', '💪', '🌈', '🦠', '🌿', '✨'];
@@ -22,21 +35,58 @@ const EMOJIS = ['💊', '☀️', '🌊', '🧂', '🩸', '⚡', '🦴', '🌙',
 interface NutrientOption {
   value: SupplementNutrientKey | null;
   label: string;
-  defaultUnit: string;
 }
 
 const NUTRIENT_OPTIONS: NutrientOption[] = [
-  { value: null, label: 'No aporta micro registrado', defaultUnit: 'mg' },
-  { value: 'vitamin_b12_mcg', label: 'Vitamina B12', defaultUnit: 'mcg' },
-  { value: 'vitamin_d_mcg', label: 'Vitamina D', defaultUnit: 'mcg' },
-  { value: 'omega3_g', label: 'Omega-3 (DHA/EPA)', defaultUnit: 'g' },
-  { value: 'iron_mg', label: 'Hierro', defaultUnit: 'mg' },
-  { value: 'zinc_mg', label: 'Zinc', defaultUnit: 'mg' },
-  { value: 'calcium_mg', label: 'Calcio', defaultUnit: 'mg' },
-  { value: 'iodine_mcg', label: 'Yodo', defaultUnit: 'mcg' },
+  { value: null, label: 'No aporta micro registrado' },
+  { value: 'vitamin_b12_mcg', label: 'Vitamina B12' },
+  { value: 'vitamin_d_mcg', label: 'Vitamina D' },
+  { value: 'omega3_g', label: 'Omega-3 (DHA/EPA)' },
+  { value: 'iron_mg', label: 'Hierro' },
+  { value: 'zinc_mg', label: 'Zinc' },
+  { value: 'calcium_mg', label: 'Calcio' },
+  { value: 'iodine_mcg', label: 'Yodo' },
 ];
 
-const UNITS = ['mcg', 'mg', 'g', 'UI', 'cápsula', 'gota'];
+/**
+ * Mensajes comprensibles para cada motivo de rechazo de
+ * `normalizeSupplementDose()` — nunca se muestra el nombre interno del
+ * motivo (`unit_incompatible_with_nutrient`, etc.) directamente al usuario.
+ */
+const UNSUPPORTED_MESSAGES: Record<SupplementDoseRejectionReason, string> = {
+  invalid_amount: 'Introduce una cantidad válida, mayor que cero.',
+  unknown_unit: 'Esta unidad no se reconoce. Elige una de las opciones disponibles.',
+  unknown_nutrient:
+    'Este suplemento tiene un nutriente que la app no reconoce. Cambia el nutriente para poder guardarlo.',
+  unit_incompatible_with_nutrient: 'Esta unidad no es compatible con este nutriente.',
+  requires_amount_per_unit:
+    'Para registrar cápsulas o gotas con este nutriente necesitas indicar cuánto nutriente contiene cada una. Esta función aún no está disponible: elige mg, mcg o g, o quita el nutriente asociado.',
+};
+
+/** Redondea a 3 decimales para evitar artefactos de coma flotante antes de formatear. */
+function formatCanonicalAmount(n: number): string {
+  const rounded = Math.round(n * 1000) / 1000;
+  // useGrouping explícito: sin él, algunos motores JS omiten el separador de
+  // miles para números redondos (comprobado en este entorno de test).
+  return rounded.toLocaleString('es-ES', { maximumFractionDigits: 3, useGrouping: true });
+}
+
+/**
+ * Texto de equivalencia ("Equivale a 1.000 mcg de B12") a partir de un
+ * resultado YA calculado por `normalizeSupplementDose()` — nunca recalcula
+ * la conversión. `null` cuando no hay nada que mostrar: sin nutriente
+ * asociado (no hay unidad canónica) o combinación no soportada.
+ */
+export function formatDosePreview(dose: SupplementDoseResult, nutrientLabel: string): string | null {
+  if (dose.status === 'unsupported') return null;
+  if (dose.canonicalUnit === null) return null;
+  return `Equivale a ${formatCanonicalAmount(dose.canonicalAmount)} ${dose.canonicalUnit} de ${nutrientLabel}`;
+}
+
+/** Mensaje comprensible para un resultado `unsupported` — nunca expone el código interno. */
+export function unsupportedMessageFor(dose: SupplementDoseResult): string | null {
+  return dose.status === 'unsupported' ? UNSUPPORTED_MESSAGES[dose.reason] : null;
+}
 
 export interface SupplementDraft {
   name: string;
@@ -72,12 +122,22 @@ export function SupplementEditor({
 
   const onPickNutrient = (n: SupplementNutrientKey | null) => {
     setNutrient(n);
-    // Si la unidad actual no encaja con el nutriente, sugerimos la suya.
-    if (n) {
-      const opt = NUTRIENT_OPTIONS.find((o) => o.value === n);
-      if (opt && !['mcg', 'mg', 'g'].includes(unit)) setUnit(opt.defaultUnit);
-    }
+    // Conserva la unidad si sigue siendo compatible con el nuevo nutriente;
+    // si no, cae a la canónica. Un dato ya guardado incompatible con el
+    // nutriente ACTUAL no se toca aquí — sólo al cambiar de nutriente.
+    setUnit((current) => resolveUnitOnNutrientChange(n, current));
   };
+
+  // Se recalcula en cada tecla: es una llamada pura y barata a
+  // normalizeSupplementDose(), la única fuente de verdad de la conversión.
+  const parsedAmount = parseFloat(amount.replace(',', '.'));
+  const dose: SupplementDoseResult | null =
+    Number.isFinite(parsedAmount) && parsedAmount > 0
+      ? normalizeSupplementDose({ amount: parsedAmount, unit, nutrientKey: nutrient })
+      : null;
+  const nutrientLabel = NUTRIENT_OPTIONS.find((o) => o.value === nutrient)?.label ?? '';
+  const preview = dose ? formatDosePreview(dose, nutrientLabel) : null;
+  const inlineUnsupported = dose ? unsupportedMessageFor(dose) : null;
 
   const submit = async () => {
     const a = parseFloat(amount.replace(',', '.'));
@@ -89,6 +149,16 @@ export function SupplementEditor({
       setError('Introduce una cantidad válida.');
       return;
     }
+
+    const result = normalizeSupplementDose({ amount: a, unit, nutrientKey: nutrient });
+    if (result.status === 'unsupported') {
+      setError(UNSUPPORTED_MESSAGES[result.reason]);
+      return;
+    }
+    // 'success' o 'needs_review': se guarda SIEMPRE lo que escribió el
+    // usuario, tal cual — needs_review es sólo un aviso (§06), nunca se
+    // reescribe dose_amount/dose_unit con el valor canónico calculado.
+    setError(null);
     setSaving(true);
     const { error: err } = await onSave({
       name: name.trim(),
@@ -161,6 +231,7 @@ export function SupplementEditor({
               onChangeText={setName}
               placeholder="Vitamina B12 cianocobalamina"
               placeholderTextColor={t.textMuted}
+              accessibilityLabel="Nombre del suplemento"
               style={{
                 backgroundColor: t.inputBg,
                 borderColor: t.inputBorder,
@@ -186,6 +257,9 @@ export function SupplementEditor({
                 <Pressable
                   key={e}
                   onPress={() => setEmoji(e)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`Icono ${e}`}
                   style={{
                     width: 40,
                     height: 40,
@@ -207,16 +281,19 @@ export function SupplementEditor({
         {/* Nutriente */}
         <View style={{ gap: spacing.sm }}>
           <Text style={{ color: t.textSecondary, fontSize: 12, fontWeight: '600' }}>Aporta a</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
+          <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
             {NUTRIENT_OPTIONS.map((n) => {
               const active = n.value === nutrient;
               return (
                 <Pressable
                   key={n.label}
                   onPress={() => onPickNutrient(n.value)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={n.label}
                   style={{
                     paddingHorizontal: spacing.md,
-                    paddingVertical: 7,
+                    paddingVertical: 9,
                     borderRadius: radii.pill,
                     borderWidth: 1.5,
                     borderColor: active ? t.primary : t.cardBorder,
@@ -249,6 +326,7 @@ export function SupplementEditor({
               selectTextOnFocus
               placeholder="25"
               placeholderTextColor={t.textMuted}
+              accessibilityLabel="Cantidad"
               style={{
                 flex: 1,
                 backgroundColor: t.inputBg,
@@ -263,6 +341,8 @@ export function SupplementEditor({
               }}
             />
             <View
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Unidad"
               style={{
                 flexDirection: 'row',
                 backgroundColor: t.background,
@@ -273,15 +353,23 @@ export function SupplementEditor({
                 borderColor: t.cardBorder,
               }}
             >
-              {UNITS.map((u) => {
-                const active = unit === u;
+              {/* Sólo las unidades compatibles con el nutriente seleccionado
+                  (única fuente de verdad: compatibleUnitsFor). Se compara por
+                  alias (unitsMatch), no por texto exacto, para que una unidad
+                  heredada de datos antiguos (p. ej. 'μg') siga mostrándose
+                  como seleccionada en vez de parecer que no hay nada activo. */}
+              {compatibleUnitsFor(nutrient).map((u) => {
+                const active = unitsMatch(unit, u);
                 return (
                   <Pressable
                     key={u}
                     onPress={() => setUnit(u)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`Unidad ${u}`}
                     style={{
                       paddingHorizontal: 10,
-                      paddingVertical: 7,
+                      paddingVertical: 10,
                       borderRadius: radii.pill,
                       backgroundColor: active ? t.card : 'transparent',
                     }}
@@ -300,6 +388,29 @@ export function SupplementEditor({
               })}
             </View>
           </View>
+
+          {preview ? (
+            <Text style={{ color: t.textSecondary, fontSize: 12 }}>{preview}</Text>
+          ) : null}
+
+          {dose?.status === 'needs_review' ? (
+            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+              <Ionicons name={'alert-circle-outline' as never} size={15} color={semantic.warning} style={{ marginTop: 1 }} />
+              <Text style={{ color: semantic.warning, fontSize: 12, fontWeight: '600', flex: 1 }}>
+                Esta cantidad parece alta para esta unidad. Comprueba que la unidad sea correcta.
+              </Text>
+            </View>
+          ) : null}
+
+          {inlineUnsupported ? (
+            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+              <Ionicons name={'close-circle-outline' as never} size={15} color={semantic.danger} style={{ marginTop: 1 }} />
+              <Text style={{ color: semantic.danger, fontSize: 12, fontWeight: '600', flex: 1 }}>
+                No se puede guardar: {inlineUnsupported}
+              </Text>
+            </View>
+          ) : null}
+
           <Text style={{ color: t.textMuted, fontSize: 11 }}>
             Solo lo que tomas en una vez. Si tomas dos veces al día, añádelo como dos suplementos.
           </Text>

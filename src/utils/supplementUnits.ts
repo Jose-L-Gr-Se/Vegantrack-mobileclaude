@@ -73,7 +73,7 @@ export const SUPPLEMENT_CANONICAL_UNIT: Readonly<Record<SupplementNutrientKey, C
   iodine_mcg: 'mcg',
 };
 
-function isSupplementNutrientKey(key: string): key is SupplementNutrientKey {
+export function isSupplementNutrientKey(key: string): key is SupplementNutrientKey {
   return Object.prototype.hasOwnProperty.call(SUPPLEMENT_CANONICAL_UNIT, key);
 }
 
@@ -256,4 +256,83 @@ export function normalizeSupplementDose(input: SupplementDoseInput): SupplementD
   }
 
   return { status: 'success', canonicalAmount, canonicalUnit, plausible: true };
+}
+
+// ── Compatibilidad de unidades (Fase 3 — para el selector del editor) ───────
+//
+// Única fuente de verdad de "qué unidades tiene sentido ofrecer para este
+// nutriente". Se deriva de las mismas tablas que usa normalizeSupplementDose
+// (SUPPLEMENT_CANONICAL_UNIT, NUTRIENTS_WITH_IU_SUPPORT) — nunca las repite
+// a mano. Ningún componente debe mantener su propia lista de unidades por
+// nutriente. Nada de esto modifica normalizeSupplementDose(): son funciones
+// nuevas, puramente derivadas, que la UI usa para decidir qué mostrar y qué
+// permitir seleccionar — la validación real al guardar sigue siendo
+// exclusivamente normalizeSupplementDose().
+
+/** Unidades de recuento — nunca representan una cantidad nutricional (ver auditoría §05). */
+const COUNT_UNITS = ['cápsula', 'gota'] as const;
+
+/** Las tres unidades de masa, en un orden fijo — se antepone la canónica del nutriente cuando se conoce. */
+const ALL_MASS_UNITS: readonly CanonicalMassUnit[] = ['mcg', 'mg', 'g'];
+
+/**
+ * Unidades a ofrecer en el selector para este nutriente, con la canónica
+ * siempre primero.
+ *
+ * - `null` (sin nutriente asociado): unidades de masa + cápsula/gota — no
+ *   hay "unidad correcta" que calcular, sólo un recuento (Modelo A, ver
+ *   auditoría §05). IU se excluye a propósito: sin nutriente no tiene
+ *   ningún significado.
+ * - Un `nutrientKey` no reconocido (dato real posible: la columna
+ *   `nutrient_key` no tiene CHECK constraint en Supabase) no inventa nada:
+ *   cae a las tres unidades de masa, nunca cápsula/gota ni IU.
+ */
+export function compatibleUnitsFor(nutrientKey: string | null): readonly string[] {
+  if (nutrientKey === null) return [...ALL_MASS_UNITS, ...COUNT_UNITS];
+  if (!isSupplementNutrientKey(nutrientKey)) return ALL_MASS_UNITS;
+  const canonical = SUPPLEMENT_CANONICAL_UNIT[nutrientKey];
+  const otherMass = ALL_MASS_UNITS.filter((u) => u !== canonical);
+  const iu = NUTRIENTS_WITH_IU_SUPPORT.has(nutrientKey) ? (['IU'] as const) : [];
+  return [canonical, ...otherMass, ...iu];
+}
+
+/**
+ * La unidad habitual de este nutriente — la misma canónica que usa
+ * `normalizeSupplementDose()`. `null` o no reconocido → `'mg'` (sin
+ * nutriente al que aportar, 'mg' es la unidad de masa más común entre los
+ * presets existentes sin nutriente).
+ */
+export function defaultUnitFor(nutrientKey: string | null): string {
+  if (nutrientKey !== null && isSupplementNutrientKey(nutrientKey)) return SUPPLEMENT_CANONICAL_UNIT[nutrientKey];
+  return 'mg';
+}
+
+/** ¿`a` y `b` son la misma unidad, aceptando alias (p. ej. 'μg' y 'mcg')? */
+export function unitsMatch(a: string, b: string): boolean {
+  const tokenA = normalizeUnitToken(a);
+  return tokenA !== null && tokenA === normalizeUnitToken(b);
+}
+
+/**
+ * ¿Sigue siendo `unit` una opción válida para este nutriente? Compara por
+ * token normalizado, no por el texto exacto — una unidad heredada de datos
+ * antiguos (p. ej. 'μg') cuenta igual que si el usuario hubiera elegido
+ * 'mcg' en el selector actual.
+ */
+export function isUnitCompatible(unit: string, nutrientKey: string | null): boolean {
+  const token = normalizeUnitToken(unit);
+  if (token === null) return false;
+  return compatibleUnitsFor(nutrientKey).some((u) => normalizeUnitToken(u) === token);
+}
+
+/**
+ * La unidad a mostrar en el editor tras cambiar de nutriente: conserva la
+ * que ya había si sigue siendo compatible con el nuevo nutriente; si no,
+ * cae a la canónica del nuevo nutriente. Pensada para llamarse SÓLO cuando
+ * el usuario cambia el nutriente a mano — nunca al abrir el editor sobre un
+ * suplemento ya guardado: un dato heredado incompatible no se reescribe
+ * solo, es `normalizeSupplementDose()` al guardar quien lo protege.
+ */
+export function resolveUnitOnNutrientChange(nextNutrientKey: string | null, currentUnit: string): string {
+  return isUnitCompatible(currentUnit, nextNutrientKey) ? currentUnit : defaultUnitFor(nextNutrientKey);
 }

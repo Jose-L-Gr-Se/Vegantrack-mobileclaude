@@ -1,4 +1,4 @@
-# Unidades de suplementos — Fase 1 y Fase 2
+# Unidades de suplementos — Fases 1, 2 y 3
 
 > **Invariante central:** ninguna dosis se convierte "a ojo". Toda
 > combinación de cantidad/unidad/nutriente tiene una salida definida —
@@ -76,12 +76,44 @@ No se ha añadido ninguna persistencia nueva (`canonicalAmount` sigue sin
 guardarse), ni se ha tocado `dose_amount`/`dose_unit` almacenados, ni el
 esquema de Supabase, ni `SupplementEditor.tsx`, ni la PWA.
 
-## Qué NO se ha tocado todavía (deliberado)
+## Qué se ha construido en la Fase 3
 
-`SupplementEditor.tsx` (Fase 3: filtrado de unidades, conversión en vivo,
-bloqueo de combinaciones imposibles, aviso de `needs_review` en la UI),
+`SupplementEditor.tsx` ya no ofrece las seis unidades sin criterio: el
+selector, la unidad por defecto y la validación al guardar usan la misma
+fuente de verdad añadida a `supplementUnits.ts` — `compatibleUnitsFor()`,
+`defaultUnitFor()`, `isUnitCompatible()`, `unitsMatch()` y
+`resolveUnitOnNutrientChange()`. Todas son funciones nuevas, puramente
+derivadas de `SUPPLEMENT_CANONICAL_UNIT`/`NUTRIENTS_WITH_IU_SUPPORT` —
+`normalizeSupplementDose()` no se ha tocado ni una línea.
+
+- El selector sólo muestra las unidades compatibles con el nutriente
+  elegido, con la canónica primero. Cápsula/gota desaparecen en cuanto hay
+  un nutriente asociado.
+- Al cambiar de nutriente, la unidad se conserva si sigue siendo compatible
+  y sólo cae a la canónica si deja de serlo — nunca al abrir el editor
+  sobre un dato ya guardado, sólo al cambiar el nutriente a mano.
+- Debajo del campo se muestra en vivo, formateado con separador de miles,
+  la equivalencia calculada por `normalizeSupplementDose()` ("Equivale a
+  1.000 mcg de Vitamina B12") — nunca una fórmula reimplementada en el
+  componente.
+- `needs_review` muestra un aviso calmado ("Esta cantidad parece alta para
+  esta unidad...") y **deja guardar**: `dose_amount`/`dose_unit` se
+  guardan exactamente como los escribió el usuario, nunca se sustituyen
+  por `canonicalAmount`/`canonicalUnit`. Así se evita el caso "calcio
+  150 g" sin reescribir el dato: la app avisa, pero no decide por el
+  usuario ni inventa qué quiso decir.
+- `unsupported` bloquea el guardado con un mensaje comprensible por motivo
+  (nunca el nombre interno del `reason`) — incluido un nutriente
+  desconocido heredado de datos sin `CHECK constraint`, que no rompe el
+  editor: cae a mostrar sólo unidades de masa, nunca inventa cápsula/gota
+  ni IU para él.
+
+## Qué NO se ha tocado (deliberado)
+
 Dashboard/VeganScore/`MicroTrendsScreen` (sin rediseño — sólo reciben datos
-ya correctos), Supabase, el esquema de `public.supplements` y la PWA.
+ya correctos), Supabase, el esquema de `public.supplements`, la
+representación almacenada (`dose_amount`/`dose_unit`, sin nuevas columnas),
+`supplementStore.ts`, `diaryStore.ts` y la PWA.
 
 ## Tests
 
@@ -103,3 +135,15 @@ tener las tres puertas a la vez sin que se mezclen.
 Fase 2) — confirma que la serie histórica de tendencias también pasa por
 `normalizeSupplementDose()`: una dosis en mg se convierte antes de sumarse,
 y una dosis `needs_review`/`unsupported` no aparece en la tendencia.
+
+`src/utils/__tests__/supplementUnits.compat.test.ts` (Fase 3) — unidad por
+defecto por nutriente, qué unidades ofrece `compatibleUnitsFor()` para cada
+uno (IU sólo en vitamina D, cápsula/gota nunca con nutriente), y
+`resolveUnitOnNutrientChange()` conservando o reajustando la unidad al
+cambiar de nutriente.
+
+`src/components/__tests__/SupplementEditor.dosePresentation.test.ts` (Fase
+3) — `formatDosePreview()` y `unsupportedMessageFor()`, las dos funciones
+puras que el editor exporta para no atar la presentación al árbol de React
+(`@testing-library/react-native`/`renderHook` no son fiables en este
+entorno — mismo precedente que `proEntitlement.ts`).
