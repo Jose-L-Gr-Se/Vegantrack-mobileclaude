@@ -10,7 +10,8 @@
         "EXPO_PUBLIC_SUPABASE_URL": "https://hsxqwhsyqtdaenjxlhzo.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzeHF3aHN5cXRkYWVuanhsaHpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NjU3NTEsImV4cCI6MjA4OTM0MTc1MX0.Gz6_QG7ehy4db6j4Lf6WI5C_OE61qGgIyrAF1UAl7vo",
         "EXPO_PUBLIC_WEB_BASE_URL": "https://vegantrack.app",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://a1920900be8139c0051c14be99f37ed5@o4512017576099840.ingest.de.sentry.io/4512017580818512"
       }
     },
     "preview": {
@@ -22,7 +23,8 @@
         "EXPO_PUBLIC_SUPABASE_URL": "https://hsxqwhsyqtdaenjxlhzo.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzeHF3aHN5cXRkYWVuanhsaHpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NjU3NTEsImV4cCI6MjA4OTM0MTc1MX0.Gz6_QG7ehy4db6j4Lf6WI5C_OE61qGgIyrAF1UAl7vo",
         "EXPO_PUBLIC_WEB_BASE_URL": "https://vegantrack.app",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://a1920900be8139c0051c14be99f37ed5@o4512017576099840.ingest.de.sentry.io/4512017580818512"
       }
     },
     "production": {
@@ -33,7 +35,8 @@
         "EXPO_PUBLIC_SUPABASE_URL": "https://hsxqwhsyqtdaenjxlhzo.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzeHF3aHN5cXRkYWVuanhsaHpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NjU3NTEsImV4cCI6MjA4OTM0MTc1MX0.Gz6_QG7ehy4db6j4Lf6WI5C_OE61qGgIyrAF1UAl7vo",
         "EXPO_PUBLIC_WEB_BASE_URL": "https://vegantrack.app",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa"
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "goog_UoQHdmLHLVHPmKEHtNEyHBQPBXa",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://a1920900be8139c0051c14be99f37ed5@o4512017576099840.ingest.de.sentry.io/4512017580818512"
       }
     }
   },
