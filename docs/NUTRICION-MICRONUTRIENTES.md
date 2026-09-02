@@ -1,4 +1,4 @@
-# Micronutrientes conocidos/desconocidos — modelo y Fase 1
+# Micronutrientes conocidos/desconocidos — modelo, Fase 1 y Fase 2
 
 > **Invariante central:** `value` (el aporte de comida conocido de un
 > micronutriente) nunca se sustituye por `0` por baja cobertura. La ausencia
@@ -67,13 +67,12 @@ son inherentemente un recuento de alimentos.
 
 ### La regla `MIN_SCORE_CONFIDENCE`
 
-`veganScore.ts` no se toca en esta fase, pero cuando se conecte (Fase 2), el
-crédito completo de un micronutriente parcialmente conocido deberá exigir
-una confianza mínima —salvo que el objetivo ya se cubra con el suplemento
-solo—. Esa confianza mínima vive en una única constante con nombre,
-`MIN_SCORE_CONFIDENCE = 'medium'` (`src/utils/nutrition.ts`), comparada con
-`meetsMinConfidence()`, para que ningún archivo tenga que repetir su propio
-número mágico.
+`veganScore.ts` exige, desde la Fase 2 (§5), una confianza mínima para el
+crédito completo de un micronutriente parcialmente conocido —salvo que el
+objetivo ya se cubra con el suplemento solo—. Esa confianza mínima vive en
+una única constante con nombre, `MIN_SCORE_CONFIDENCE = 'medium'`
+(`src/utils/nutrition.ts`), comparada con `meetsMinConfidence()`, para que
+ningún archivo tenga que repetir su propio número mágico.
 
 ## 3. Lo que se ha construido en la Fase 1
 
@@ -93,9 +92,9 @@ número mágico.
 - `MicroDisplay`, `resolveMicroDisplay()` — función pura, sin React, que
   junta comida conocida + suplemento + RDA en una representación de
   presentación con `known`, `pct`, `coverage`, `coverageByGrams`,
-  `confidence`, `hasEntries` todos por separado. Es la pieza que sustituirá
-  a las tres copias de `coverage < 0.5 ? value : 0` cuando se conecten los
-  consumidores.
+  `confidence`, `hasEntries` todos por separado. Es la pieza que sustituye a
+  las tres copias de `coverage < 0.5 ? value : 0` — conectada en la Fase 2
+  (§5).
 
 **Recetas — `computeRecipeNutrients()` (sin cambios de código, sólo tests
 que documentan su comportamiento real)**: hallazgo confirmado por tests —
@@ -115,24 +114,102 @@ fraccional), fuera del alcance de este P0. La Fase 2 puede, sin tocar el
 esquema, exponer la cobertura de una receta en su propia pantalla (antes de
 loguearla) usando lo que `computeRecipeNutrients` ya calcula hoy.
 
-## 4. Qué NO se ha tocado en esta fase (deliberado)
+## 4. Qué NO se tocó en la Fase 1 (deliberado)
 
 `DashboardScreen`, `veganScore.ts`, `getMicroTrends`/`MicroTrendsScreen`,
-`RecipesScreen`, suplementos, diseño visual, nuevos micronutrientes. Ninguno
-de estos consumidores usa todavía `resolveMicroDisplay` ni
-`MIN_SCORE_CONFIDENCE`. El test de `veganScore.ts` que documenta el bug
-conocido (`"cobertura < 50% ignora el valor de comida"`) sigue en verde
-porque describe el comportamiento **actual, sin cambios** de ese archivo —
-se actualizará cuando se conecte en la Fase 2.
+`RecipesScreen`, suplementos, diseño visual, nuevos micronutrientes. Este
+alcance quedó cerrado por la Fase 2 (§5) para los tres primeros; el resto
+sigue fuera de alcance (§6).
 
-## 5. Fase 2 (pendiente, no iniciada)
+## 5. Fase 2 (implementada): conectar los consumidores
 
-- Conectar `DashboardScreen`, `veganScore.ts` y `getMicroTrends` a
-  `resolveMicroDisplay`, retirando las tres copias del gate antiguo.
-- Aplicar `MIN_SCORE_CONFIDENCE` en `veganScore.ts` para el crédito completo
-  de un micronutriente parcialmente conocido.
-- Nuevos textos de UI en `DashboardScreen` basados en `confidence`, sin
-  alarmismo.
-- Decidir si merece la pena exponer cobertura de receta en `RecipesScreen`
-  (no exige migración) o abordar la migración de cobertura fraccional
-  persistida (si se decide, requiere su propia revisión de esquema).
+Los tres consumidores llaman ahora a `resolveMicroDisplay` — la única cadena
+conceptual es `summarizeEntries() → resolveMicroDisplay() →
+Dashboard / VeganScore / Tendencias`. Un test de repositorio
+(`src/__tests__/noMicroCoverageGate.test.ts`, mismo patrón que
+`noClientEntitlementWrites.test.ts`) escanea el código de producción para
+que nadie reintroduzca una copia del gate antiguo.
+
+### DashboardScreen
+
+La tarjeta "Micronutrientes (RDA)" usa `resolveMicroDisplay(agg, fromSupp,
+rda)` para cada nutriente. La barra de progreso sigue coloreándose SÓLO por
+`pct` (progreso real hacia la RDA: verde ≥90%, ámbar ≥50%, rojo por debajo) —
+nunca por la confianza del dato. Antes esto ya "parecía" funcionar así, pero
+el `pct` se calculaba sobre un `value` que el gate antiguo podía haber
+puesto a 0; con el gate retirado, `pct` refleja el conocido real y deja de
+mostrar rojo únicamente por baja cobertura. La confianza se comunica aparte,
+en un texto corto junto a la cifra, derivado de `confidence`:
+
+| `confidence` | Texto |
+|---|---|
+| `none` (día sin registros) | " · sin datos suficientes" (o " · solo suplemento" si hay aporte de suplemento) |
+| `low` | " · datos incompletos" |
+| `medium` | " · cobertura de datos: N%" |
+| `high` | (sin texto adicional) |
+
+### VeganScore
+
+Ver el comentario en `src/utils/veganScore.ts` (regla documentada en el
+propio código, CLAUDE.md §8). Resumen:
+
+- **Antes**: `foodVal = coverage >= 0.5 ? value : 0`. Cobertura < 50% → el
+  valor conocido se descartaba a 0 pts, aunque `value` fuera real.
+- **Ahora**: `ratio = resolveMicroDisplay(...).pct` (nunca se descarta).
+  El crédito **completo** (`ratio >= 0.9`) exige además que
+  `meetsMinConfidence(confidence, MIN_SCORE_CONFIDENCE)` — salvo que el
+  suplemento por sí solo ya cubra la RDA (`fromSupp >= rda`), caso en que la
+  cobertura de comida es irrelevante. El medio crédito
+  (`0.5 <= ratio < 0.9`) no exige esa confianza — ya era una franja de "en
+  progreso", no de certeza.
+- Ejemplo comparado: hierro con `value=20mg`, `coverage=0.25` (por
+  entradas), `coverageByGrams=0.25` (`confidence='low'`), RDA=8mg (♂).
+  Antes: `foodVal=0` → 0 pts. Ahora: `ratio=2.5` (≥0.9), pero `low` no
+  alcanza `MIN_SCORE_CONFIDENCE='medium'` → medio crédito, nunca 0 pts.
+- Tests: `src/utils/__tests__/veganScore.test.ts`, describe `Fase 2 —
+  MIN_SCORE_CONFIDENCE y crédito completo` (5 casos: cobertura baja no da
+  crédito completo, cobertura media sí, cobertura alta sí, suplemento cubre
+  el objetivo con cobertura de comida baja → crédito completo, día vacío no
+  se trata como un cero de comida "conocido").
+- Paridad con la PWA: la PWA aplica el mismo gate binario `coverage >= 0.5`
+  que aquí se retira (código compartido histórico, no un requisito de
+  paridad exacta de fórmula — CLAUDE.md §8 pide documentar la comparación,
+  no bloquear la corrección de un bug de datos por paridad). No se ha
+  modificado el repo de la PWA en esta sesión.
+
+### Tendencias (`getMicroTrends` / `MicroTrendsScreen`)
+
+`MicroTrendPoint.micros[key]` gana dos campos aditivos —
+`hasEntries: boolean` y `confidence: MicroConfidence` — sin tocar el
+significado de `value`/`pct` (siguen siendo el conocido total y su % de la
+RDA; ya no se calculan con el gate, sino con `resolveMicroDisplay`).
+
+En `MicroTrendsScreen`, la media del periodo (arriba y en "Media por
+nutriente") excluye los días sin ningún registro relevante para ese
+nutriente (`hasEntries=false` y sin aporte de suplemento): un día así ya no
+cuenta como un 0 confirmado en la media, y se muestra "Sin datos" en vez de
+"0%". El trazado del gráfico (línea de evolución) sigue dibujando todos los
+días tal cual — separar visualmente los huecos de una serie continua exige
+un gráfico más complejo, fuera de alcance de esta fase; queda documentado
+aquí como limitación conocida, no como un vector nuevo de "0 disfrazado" (la
+media, que es el número que más se lee, sí es honesta).
+
+### Qué no cambió en la Fase 2 (deliberado)
+
+- `food_log` no cambia de esquema; no hay cobertura fraccional persistida.
+- `supplementStore.ts` no se toca. El aporte de suplemento sigue siendo un
+  parámetro aparte (`suppAmount`) que `resolveMicroDisplay` nunca mezcla
+  dentro del `MicroAggregate` de comida — verificado con test
+  (`microConsumerConsistency.test.ts`).
+- `RecipesScreen`, iodo, colina, nuevos micronutrientes, ni ningún
+  componente de diseño nuevo.
+- No se rediseña visualmente ninguna pantalla: los cambios de UI son sólo
+  los necesarios para representar conocido/confianza/incompleto/sin datos.
+
+## 6. Fuera de alcance (pendiente, no iniciado)
+
+- Exponer cobertura de receta en `RecipesScreen` antes de loguearla (no
+  exige migración) o abordar la migración de cobertura fraccional
+  persistida en `food_log` (si se decide, requiere su propia revisión de
+  esquema).
+- Iodo, colina y otros micronutrientes nuevos.

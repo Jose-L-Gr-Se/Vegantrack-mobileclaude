@@ -1,4 +1,11 @@
 /** Paridad del VeganScore con la PWA: mismos umbrales, mismos puntos. */
+// Fase 2 del P0 de micronutrientes: veganScore.ts ahora importa
+// resolveMicroDisplay de '@/utils/nutrition', que a su vez carga
+// '@/lib/nutrientOverrides' → '@/db/database' (expo-sqlite). Mismo mock que
+// ya usa nutrition.test.ts — no se ejecuta SQLite real en tests.
+jest.mock('@/lib/supabase', () => ({ supabase: {} }));
+jest.mock('@/db/database', () => ({ kvGet: jest.fn(), kvSet: jest.fn() }));
+
 import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
 import type { NutrientSummary } from '@/types';
 
@@ -88,20 +95,88 @@ describe('computeVeganScore', () => {
     expect(male.micros.score).toBeGreaterThan(female.micros.score);
   });
 
-  it('cobertura < 50% ignora el valor de comida (comportamiento actual de veganScore.ts, sin cambios en Fase 1)', () => {
-    // Documenta el bug conocido (docs/NUTRICION-MICRONUTRIENTES.md): la Fase 1
-    // sólo construye el núcleo de datos (MicroAggregate, summarizeEntries,
-    // resolveMicroDisplay); veganScore.ts se conecta en una fase posterior.
-    // Cuando eso ocurra, este test deberá actualizarse para reflejar que
-    // value=20 SÍ debe contar (con confianza baja), no descartarse a 0.
+  it('cobertura baja YA NO descarta el valor de comida a 0 (Fase 2 conectada)', () => {
+    // Antes (bug documentado en docs/NUTRICION-MICRONUTRIENTES.md): value=20
+    // con coverage=0.25 se descartaba a 0 → 0 pts. Ahora: value=20 sí cuenta
+    // (hierro ♂ RDA=8 → ratio=2.5, sobra para el 90%), pero coverageByGrams
+    // = 0.25 da confidence='low' (< MIN_SCORE_CONFIDENCE='medium'), así que
+    // sólo se otorga medio crédito, nunca 0 pts por un valor conocido real.
     const s: NutrientSummary = summary();
     s.micros.iron_mg = {
       value: 20, knownEntries: 1, totalEntries: 4, coverage: 0.25,
       knownGrams: 100, totalGrams: 400, coverageByGrams: 0.25, hasEntries: true,
     };
     const result = computeVeganScore({ ...base, summary: s });
-    // hierro no cuenta pese a value=20 — bug pendiente de Fase 2, no de esta.
+    // Ya no es "0/3 cubiertos": hay medio crédito de hierro (no cuenta como
+    // "cubierto" porque el crédito completo exige confianza media).
     expect(result.micros.label).toBe('0/3 cubiertos');
+    expect(result.micros.score).toBeGreaterThan(0);
+  });
+
+  describe('Fase 2 — MIN_SCORE_CONFIDENCE y crédito completo', () => {
+    // Helper: fija sólo el agregado de hierro (♂, RDA=8) del resto de la fixture.
+    function withIron(agg: NutrientSummary['micros']['iron_mg']): NutrientSummary {
+      const s = summary();
+      s.micros.iron_mg = agg;
+      return s;
+    }
+
+    it('1. cobertura baja + ratio alto → NO crédito completo (no "cubierto")', () => {
+      const s = withIron({
+        value: 20, knownEntries: 1, totalEntries: 5, coverage: 0.2,
+        knownGrams: 80, totalGrams: 400, coverageByGrams: 0.2, hasEntries: true,
+      });
+      const result = computeVeganScore({ ...base, summary: s });
+      // ratio = 20/8 = 2.5 (≥0.9), pero confidence='low' → no cuenta como cubierto.
+      expect(result.micros.label).toBe('0/3 cubiertos');
+    });
+
+    it('2. cobertura media + ratio alto → SÍ crédito completo (medium alcanza el mínimo)', () => {
+      const s = withIron({
+        value: 20, knownEntries: 1, totalEntries: 2, coverage: 0.5,
+        knownGrams: 200, totalGrams: 400, coverageByGrams: 0.5, hasEntries: true,
+      });
+      const result = computeVeganScore({ ...base, summary: s });
+      // coverageByGrams=0.5 → confidence='medium' === MIN_SCORE_CONFIDENCE → cubre.
+      expect(result.micros.label).toBe('1/3 cubiertos');
+    });
+
+    it('3. cobertura alta + ratio alto → crédito completo', () => {
+      const s = withIron({
+        value: 20, knownEntries: 1, totalEntries: 1, coverage: 1,
+        knownGrams: 400, totalGrams: 400, coverageByGrams: 1, hasEntries: true,
+      });
+      const result = computeVeganScore({ ...base, summary: s });
+      expect(result.micros.label).toBe('1/3 cubiertos');
+    });
+
+    it('4. cobertura baja de comida, pero el suplemento por sí solo cubre el objetivo → crédito completo', () => {
+      const s = withIron({
+        value: 0, knownEntries: 0, totalEntries: 3, coverage: 0,
+        knownGrams: 0, totalGrams: 300, coverageByGrams: 0, hasEntries: true,
+      });
+      const result = computeVeganScore({
+        ...base,
+        suppContributions: { iron_mg: 8 }, // = RDA masculino
+        summary: s,
+      });
+      // confidence='low' (coverageByGrams=0), pero fromSupp(8) >= rda(8):
+      // la baja cobertura de comida no debe bloquear el crédito.
+      expect(result.micros.label).toBe('1/3 cubiertos');
+    });
+
+    it('5. día vacío (sin registros) no se trata como un cero de comida "conocido"', () => {
+      const s = withIron({
+        value: 0, knownEntries: 0, totalEntries: 0, coverage: 0,
+        knownGrams: 0, totalGrams: 0, coverageByGrams: 0, hasEntries: false,
+      });
+      const result = computeVeganScore({ ...base, summary: s });
+      // hasEntries=false → confidence='none', que no alcanza MIN_SCORE_CONFIDENCE
+      // ni por asomo (ratio=0 de por sí no llega a 0.9 tampoco): no cubierto,
+      // pero tampoco debe romperse ni tratarse como si "confirmase" 0 mg.
+      expect(result.micros.label).toBe('0/3 cubiertos');
+      expect(Number.isFinite(result.micros.score)).toBe(true);
+    });
   });
 });
 

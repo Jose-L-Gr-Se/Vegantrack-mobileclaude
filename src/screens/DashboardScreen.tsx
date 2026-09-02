@@ -14,7 +14,7 @@ import { useDiaryStore, type WeekDay } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
 import { usePro } from '@/hooks/usePro';
 import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
-import { ironRdaForSex, MICRO_RDA } from '@/utils/nutrition';
+import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay } from '@/utils/nutrition';
 import type { RootStackParamList } from '@/navigation/types';
 
 export function DashboardScreen() {
@@ -167,21 +167,37 @@ export function DashboardScreen() {
         {(Object.keys(MICRO_RDA) as (keyof typeof MICRO_RDA)[]).map((key) => {
           const info = MICRO_RDA[key];
           const rda = key === 'iron_mg' ? ironRdaForSex(profile?.sex) : info.rda;
-          const m = summary.micros[key];
-          const fromFood = m.coverage >= 0.5 ? m.value : 0;
+          const agg = summary.micros[key];
           const fromSupp = (suppContrib[key] as number | undefined) ?? 0;
-          const total = fromFood + fromSupp;
-          const pct = rda > 0 ? Math.min(1, total / rda) : 0;
+          const display = resolveMicroDisplay(agg, fromSupp, rda);
+          // pct siempre viene del conocido real (comida + suplemento): la
+          // barra refleja progreso real hacia la RDA, nunca se recorta por
+          // baja cobertura. El color de la barra depende SÓLO de pct — la
+          // confianza es una señal aparte, en el texto de abajo.
+          const pct = rda > 0 ? Math.min(1, display.pct) : 0;
+
+          // Nota de confianza, separada del progreso. `confidence` ya
+          // distingue día sin registros ('none') de registrado-pero-sin-dato
+          // (coverageByGrams=0 con hasEntries=true, que cae en 'low').
+          let note = '';
+          if (display.confidence === 'none') {
+            note = display.supplement > 0 ? ' · solo suplemento' : ' · sin datos suficientes';
+          } else if (display.confidence === 'low') {
+            note = ' · datos incompletos';
+          } else if (display.confidence === 'medium') {
+            note = ` · cobertura de datos: ${Math.round(display.coverageByGrams * 100)}%`;
+          }
+
           return (
             <View key={key} style={{ gap: 4 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600' }}>
                   {info.label}
-                  {fromSupp > 0 ? ' 💊' : ''}
+                  {display.supplement > 0 ? ' 💊' : ''}
                 </Text>
                 <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                  {Math.round(total * 100) / 100}/{rda} {info.unit}
-                  {m.totalEntries > 0 && m.coverage < 0.5 ? ' · datos incompletos' : ''}
+                  {Math.round(display.known * 100) / 100}/{rda} {info.unit}
+                  {note}
                 </Text>
               </View>
               <View style={{ height: 6, borderRadius: 3, backgroundColor: t.separator, overflow: 'hidden' }}>

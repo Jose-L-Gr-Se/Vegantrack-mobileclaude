@@ -3,6 +3,7 @@
  * Portado 1:1 de la PWA (vegantrack/src/utils/veganScore.ts).
  */
 import type { NutrientSummary, Sex, VeganScoreBreakdown } from '@/types';
+import { MIN_SCORE_CONFIDENCE, meetsMinConfidence, resolveMicroDisplay } from '@/utils/nutrition';
 
 interface VeganScoreInput {
   summary: NutrientSummary;
@@ -58,7 +59,22 @@ export function computeVeganScore({
   }
 
   // 3. Micros clave (20 pts): B12, Vit D, Hierro.
-  //    El valor de comida solo cuenta si la cobertura de datos es >= 50%.
+  //    Fase 2 del P0 de micronutrientes (docs/NUTRICION-MICRONUTRIENTES.md):
+  //    el valor de comida YA NO se descarta a 0 por baja cobertura —
+  //    resolveMicroDisplay siempre expone el conocido real (comida +
+  //    suplemento). Lo que antes era la puerta binaria `coverage >= 0.5`
+  //    ahora sólo decide el crédito COMPLETO (ratio >= 0.9): exige una
+  //    confianza mínima en el dato de comida (MIN_SCORE_CONFIDENCE), salvo
+  //    que el suplemento por sí solo ya cubra el objetivo — ahí la cobertura
+  //    de comida es irrelevante para el crédito. El medio crédito
+  //    (0.5 <= ratio < 0.9) no exige esa confianza: ya era una franja de
+  //    "en progreso", no de certeza total.
+  //
+  //    Antes: día con hierro=20mg pero cobertura=25% → foodVal=0 → 0 pts.
+  //    Ahora: mismo caso → ratio real ≈ 20/8=2.5 → sí llega a ratio>=0.9,
+  //    pero como la confianza es 'low' (< MIN_SCORE_CONFIDENCE) y no hay
+  //    suplemento que cubra el objetivo, se otorga medio crédito, no
+  //    completo — nunca 0 pts por un valor conocido real.
   const ironRda = sex === 'male' ? 8 : 18;
   const keyMicros = [
     { key: 'vitamin_b12_mcg', rda: 2.4 },
@@ -72,9 +88,11 @@ export function computeVeganScore({
   for (const { key, rda } of keyMicros) {
     const microData = summary.micros[key as keyof typeof summary.micros];
     const fromSupp = suppContributions[key] ?? 0;
-    const foodVal = (microData?.coverage ?? 0) >= 0.5 ? (microData?.value ?? 0) : 0;
-    const ratio = rda > 0 ? (foodVal + fromSupp) / rda : 0;
-    if (ratio >= 0.9) { microScore += ptsEach; coveredCount++; }
+    const display = resolveMicroDisplay(microData, fromSupp, rda);
+    const ratio = display.pct;
+    const supplementCoversTarget = rda > 0 && fromSupp >= rda;
+    const confidentEnough = supplementCoversTarget || meetsMinConfidence(display.confidence, MIN_SCORE_CONFIDENCE);
+    if (ratio >= 0.9 && confidentEnough) { microScore += ptsEach; coveredCount++; }
     else if (ratio >= 0.5) { microScore += ptsEach * 0.5; }
   }
   const microLabel = `${coveredCount}/3 cubiertos`;

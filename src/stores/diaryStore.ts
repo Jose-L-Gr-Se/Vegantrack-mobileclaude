@@ -18,7 +18,7 @@ import {
   mirrorUpsert,
 } from '@/db/database';
 import { loadOverrides, type NutrientOverride } from '@/lib/nutrientOverrides';
-import { summarizeEntries, MICRO_RDA, ironRdaForSex } from '@/utils/nutrition';
+import { summarizeEntries, MICRO_RDA, ironRdaForSex, resolveMicroDisplay, type MicroConfidence } from '@/utils/nutrition';
 import { addDays, todayISO } from '@/utils/dates';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
 import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
@@ -33,10 +33,18 @@ export interface WeekDay {
 
 export type MicroKey = keyof NutrientSummary['micros'];
 
-/** Un día de la serie de tendencias de micros: valor total (comida + suplementos) y % de la RDA. */
+/**
+ * Un día de la serie de tendencias de micros: valor total (comida +
+ * suplementos) y % de la RDA. `value`/`pct` no cambian de significado
+ * (consumidores existentes siguen funcionando sin tocarlos); `hasEntries` y
+ * `confidence` son campos aditivos de la Fase 2 del P0 de micronutrientes
+ * (docs/NUTRICION-MICRONUTRIENTES.md) para que un día sin ningún registro de
+ * comida para ese nutriente (`hasEntries=false`) se pueda distinguir de un
+ * día con un 0 confirmado — antes ambos eran indistinguibles en la serie.
+ */
 export interface MicroTrendPoint {
   date: string;
-  micros: Record<MicroKey, { value: number; pct: number }>;
+  micros: Record<MicroKey, { value: number; pct: number; hasEntries: boolean; confidence: MicroConfidence }>;
 }
 
 interface DiaryState {
@@ -299,11 +307,16 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       for (const key of microKeys) {
         const rda = key === 'iron_mg' ? ironRdaForSex(sex) : MICRO_RDA[key].rda;
         const agg = summary.micros[key];
-        // Misma semántica que el dashboard: la comida solo cuenta con cobertura ≥ 50 %
-        const fromFood = agg.coverage >= 0.5 ? agg.value : 0;
         const fromSupp = suppContrib[key] ?? 0;
-        const total = fromFood + fromSupp;
-        micros[key] = { value: total, pct: rda > 0 ? total / rda : 0 };
+        // Misma cadena que el dashboard y VeganScore: resolveMicroDisplay es
+        // la única fuente de esta decisión (docs/NUTRICION-MICRONUTRIENTES.md).
+        const display = resolveMicroDisplay(agg, fromSupp, rda);
+        micros[key] = {
+          value: display.known,
+          pct: display.pct,
+          hasEntries: display.hasEntries,
+          confidence: display.confidence,
+        };
       }
       points.push({ date, micros });
     }

@@ -106,11 +106,17 @@ export function MicroTrendsScreen() {
     );
   }
 
-  // Serie del micro seleccionado
-  const series = (data ?? []).map((p) => p.micros[micro].pct);
-  const hasData = series.some((v) => v > 0);
+  // Serie del micro seleccionado. El trazado sigue mostrando todos los días
+  // (una serie con huecos exige un gráfico más complejo, fuera de alcance de
+  // esta fase), pero la MEDIA excluye los días sin ningún registro relevante
+  // (`hasEntries=false` y sin aporte de suplemento): un día sin datos no debe
+  // contarse como un 0 confirmado (docs/NUTRICION-MICRONUTRIENTES.md).
+  const seriesPoints = (data ?? []).map((p) => p.micros[micro]);
+  const series = seriesPoints.map((m) => m.pct);
+  const knownPoints = seriesPoints.filter((m) => m.hasEntries || m.value > 0);
+  const hasData = knownPoints.length > 0;
   const avgPct =
-    series.length > 0 ? series.reduce((s, v) => s + v, 0) / series.length : 0;
+    knownPoints.length > 0 ? knownPoints.reduce((s, m) => s + m.pct, 0) / knownPoints.length : 0;
   const capY = Math.max(1.2, ...series, 0.1);
 
   const W = 300;
@@ -186,10 +192,18 @@ export function MicroTrendsScreen() {
                   {selected.label} · media del periodo
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                  <Text style={{ fontSize: 40, fontWeight: '800', color: coverageColor(avgPct) }}>
-                    {Math.round(avgPct * 100)}%
-                  </Text>
-                  <Text style={{ color: t.textMuted, fontSize: 13 }}>de la RDA</Text>
+                  {hasData ? (
+                    <>
+                      <Text style={{ fontSize: 40, fontWeight: '800', color: coverageColor(avgPct) }}>
+                        {Math.round(avgPct * 100)}%
+                      </Text>
+                      <Text style={{ color: t.textMuted, fontSize: 13 }}>de la RDA</Text>
+                    </>
+                  ) : (
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: t.textMuted }}>
+                      Sin datos en este periodo
+                    </Text>
+                  )}
                 </View>
               </View>
 
@@ -227,8 +241,10 @@ export function MicroTrendsScreen() {
                 Media por nutriente · {days} días
               </Text>
               {MICROS.map((m) => {
-                const vals = (data ?? []).map((p) => p.micros[m.key].pct);
-                const avg = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+                const points = (data ?? []).map((p) => p.micros[m.key]);
+                const known = points.filter((v) => v.hasEntries || v.value > 0);
+                const hasAvg = known.length > 0;
+                const avg = hasAvg ? known.reduce((s, v) => s + v.pct, 0) / known.length : 0;
                 const pctClamped = Math.min(1, avg);
                 return (
                   <Pressable key={m.key} onPress={() => setMicro(m.key)} style={{ gap: 6 }}>
@@ -236,10 +252,18 @@ export function MicroTrendsScreen() {
                       <Text style={{ color: m.key === micro ? t.primary : t.textSecondary, fontSize: 13, fontWeight: '600' }}>
                         {m.label}
                       </Text>
-                      <Text style={{ color: t.textMuted, fontSize: 12 }}>{Math.round(avg * 100)}%</Text>
+                      <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                        {hasAvg ? `${Math.round(avg * 100)}%` : 'Sin datos'}
+                      </Text>
                     </View>
                     <View style={{ height: 6, borderRadius: 3, backgroundColor: t.separator, overflow: 'hidden' }}>
-                      <View style={{ width: `${pctClamped * 100}%`, height: 6, backgroundColor: coverageColor(avg) }} />
+                      <View
+                        style={{
+                          width: `${pctClamped * 100}%`,
+                          height: 6,
+                          backgroundColor: hasAvg ? coverageColor(avg) : t.separator,
+                        }}
+                      />
                     </View>
                   </Pressable>
                 );
