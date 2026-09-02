@@ -1,4 +1,4 @@
-# Unidades de suplementos — Fases 1, 2 y 3
+# Unidades de suplementos — Fases 1 a 5
 
 > **Invariante central:** ninguna dosis se convierte "a ojo". Toda
 > combinación de cantidad/unidad/nutriente tiene una salida definida —
@@ -147,3 +147,74 @@ cambiar de nutriente.
 puras que el editor exporta para no atar la presentación al árbol de React
 (`@testing-library/react-native`/`renderHook` no son fiables en este
 entorno — mismo precedente que `proEntitlement.ts`).
+
+## Fase 5 — hacer visible `needs_review` fuera del editor
+
+Antes de esta fase, un suplemento `needs_review` desaparecía en silencio:
+`getTodayContributions()` y `getMicroTrends()` (Fase 2) ya lo excluían
+correctamente del cálculo, pero nada en la app le decía al usuario que
+existía una dosis pendiente de revisar salvo que abriera ese suplemento
+concreto a editar.
+
+**Qué significa `needs_review`:** la dosis SÍ se pudo convertir a la unidad
+canónica del nutriente, pero el resultado supera el techo de plausibilidad
+de `SUPPLEMENT_PLAUSIBILITY_CEILING` — probablemente una unidad
+equivocada (el caso central: calcio `150 g`, que se interpretaría como
+150 000 mg). No es un error de guardado ni una unidad incompatible
+(`unsupported`, fuera de esta fase): es una cifra calculable pero
+sospechosa.
+
+**Dónde se muestra:**
+- **Diario y Perfil** (listado de suplementos): un icono discreto
+  (`alert-circle-outline`, `semantic.warning`) junto a la dosis de cada
+  suplemento **configurado** — tomado hoy o no. `supplementsNeedingReview()`
+  evalúa todos los suplementos con `nutrient_key`, no sólo los de hoy: es
+  una propiedad de cómo está configurado el suplemento, no de un evento de
+  toma. Tocar el icono (o la fila, en Perfil) abre el editor existente de
+  ese suplemento — ninguna pantalla nueva.
+- **Dashboard**: una única tarjeta agregada, sólo si hay ≥1 suplemento
+  `needs_review` **tomado hoy** (`getTodayContributionDetails()` filtrado a
+  `needs_review`) — nunca un aviso por micronutriente, nunca en VeganScore,
+  nunca en Tendencias. Tocable: con un único suplemento abre directamente su
+  editor; con varios, abre la pantalla de gestión de suplementos existente
+  (Perfil).
+
+**No modifica los datos originales:** `dose_amount`/`dose_unit` siguen
+siendo la única fuente de verdad, sin persistir ningún flag de "needs
+review" ni "visto" — el estado se deriva en cada lectura llamando a
+`normalizeSupplementDose()`/`supplementsNeedingReview()`, exactamente como
+en las fases anteriores. Nada nuevo en Supabase.
+
+**Se excluye del cálculo hasta corregirse:** sigue sin contar en
+`getTodayContributions()`/`getMicroTrends()` (comportamiento de la Fase 2,
+sin cambios). Corregir la unidad en el editor y guardar es lo único que lo
+reincorpora — no hay manera de "confirmarlo tal cual" sin cambiar la unidad
+o la cantidad, limitación conocida y documentada, no resuelta aquí.
+
+**`unsupported` queda fuera de esta fase:** no se activa ningún aviso nuevo
+para suplementos `unsupported` (unidad desconocida, incompatible, o
+cápsula/gota con nutriente) en Diario, Perfil o Dashboard — sólo el editor
+los bloquea, como ya hacía desde la Fase 3. El código está escrito
+dirigido por `dose.status`, no por heurísticas propias, para que una fase
+futura pueda añadir su propio tratamiento sin rediseñar nada.
+
+**Copy único:** `src/utils/supplementDoseCopy.ts` — `NEEDS_REVIEW_WARNING_TEXT`
+(editor), `NEEDS_REVIEW_ACCESSIBILITY_LABEL` (icono de listado) y
+`describeNeedsReviewBanner()` (tarjeta de Dashboard). Ningún componente
+reescribe estos textos a mano — verificado por un test estático
+(`noDuplicateSupplementCopy.test.ts`, mismo patrón que
+`noMicroCoverageGate.test.ts`).
+
+**Navegación:** un único añadido, mínimo y aditivo — `MainTabParamList.Profile`
+gana `{ openSupplementId?, openSupplements? }` (mismo patrón que ya usaba
+`Search`), consumido una vez por `ProfileScreen` y limpiado con
+`setParams()`. Ninguna pantalla ni ruta nueva.
+
+**Tests:** `supplementUnits.needsReview.test.ts` (`supplementsNeedingReview()`),
+`supplementDoseCopy.test.ts` (`describeNeedsReviewBanner()` y las
+constantes), ampliación de `supplementStore.test.ts` (el banner de
+Dashboard sólo cuenta lo tomado hoy) y `noDuplicateSupplementCopy.test.ts`
+(guardia estática). La interacción de navegación (tocar el icono/tarjeta y
+llegar al editor correcto) no tiene test automatizado — mismo límite de
+entorno que en fases anteriores (`@testing-library/react-native`/`renderHook`
+no fiables aquí) — queda como validación manual.

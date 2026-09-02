@@ -20,6 +20,8 @@ import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
+import { supplementsNeedingReview } from '@/utils/supplementUnits';
+import { NEEDS_REVIEW_ACCESSIBILITY_LABEL } from '@/utils/supplementDoseCopy';
 import { useMealPhoto } from '@/hooks/useMealPhoto';
 import { track, trackAppOpenOnce } from '@/lib/analytics';
 import { FREE_HISTORY_DAYS, FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
@@ -41,6 +43,14 @@ export function DiaryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<FoodLogEntry | null>(null);
   const [mealSheetMode, setMealSheetMode] = useState<MealSheetMode | null>(null);
+
+  // Fase 5 del P0 de unidades: suplementos configurados (tomados hoy o no)
+  // cuya dosis normaliza a 'needs_review'. Misma función pura que usa
+  // ProfileScreen — nunca se reimplementa el filtro por pantalla.
+  const needsReviewIds = useMemo(
+    () => new Set(supplementsNeedingReview(supplements.supplements).map((s) => s.id)),
+    [supplements.supplements]
+  );
 
   // Abre el paywall cuando se agota la cuota gratuita de fotos.
   useEffect(() => {
@@ -437,9 +447,21 @@ export function DiaryScreen() {
                     >
                       {s.name}
                     </Text>
-                    <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                      {s.dose_amount} {s.dose_unit}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                        {s.dose_amount} {s.dose_unit}
+                      </Text>
+                      {needsReviewIds.has(s.id) ? (
+                        <Pressable
+                          onPress={() => setSuppEditor(s)}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={NEEDS_REVIEW_ACCESSIBILITY_LABEL}
+                        >
+                          <Ionicons name={'alert-circle-outline' as any} size={14} color={semantic.warning} />
+                        </Pressable>
+                      ) : null}
+                    </View>
                   </View>
 
                   {/* Botón para abrir el editor sin esperar al long-press */}

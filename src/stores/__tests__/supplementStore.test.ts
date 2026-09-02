@@ -11,6 +11,7 @@ jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 jest.mock('@/db/database', () => ({ kvGet: jest.fn(), kvSet: jest.fn() }));
 
 import { useSupplementStore } from '@/stores/supplementStore';
+import { describeNeedsReviewBanner } from '@/utils/supplementDoseCopy';
 import type { Supplement, SupplementNutrientKey } from '@/types';
 
 function makeSupplement(over: Partial<Supplement> & { id: string }): Supplement {
@@ -186,5 +187,45 @@ describe('getTodayContributionDetails() · distingue success / needs_review / un
     const detail = useSupplementStore.getState().getTodayContributionDetails()[0];
     expect(detail.dose.status).toBe('unsupported');
     expect('canonicalAmount' in detail.dose).toBe(false);
+  });
+});
+
+describe('Fase 5 — aviso agregado de Dashboard (getTodayContributionDetails + describeNeedsReviewBanner)', () => {
+  it('12. calcio 150 g configurado pero NO tomado hoy → no cuenta para el banner de hoy', () => {
+    setSupplements([{ id: 's-calcio', nutrient_key: 'calcium_mg', dose_amount: 150, dose_unit: 'g', taken: false }]);
+    const todayNeedsReview = useSupplementStore
+      .getState()
+      .getTodayContributionDetails()
+      .filter((d) => d.dose.status === 'needs_review');
+    expect(todayNeedsReview).toEqual([]);
+    expect(describeNeedsReviewBanner(todayNeedsReview.length)).toBeNull();
+  });
+
+  it('13. calcio 150 g configurado y SÍ tomado hoy → aparece y cuenta 1 para el banner', () => {
+    setSupplements([{ id: 's-calcio', nutrient_key: 'calcium_mg', dose_amount: 150, dose_unit: 'g', taken: true }]);
+    const todayNeedsReview = useSupplementStore
+      .getState()
+      .getTodayContributionDetails()
+      .filter((d) => d.dose.status === 'needs_review');
+    expect(todayNeedsReview).toHaveLength(1);
+    expect(todayNeedsReview[0].supplementId).toBe('s-calcio');
+    expect(describeNeedsReviewBanner(todayNeedsReview.length)).toBe(
+      '1 suplemento no se está contando hoy — revisa su unidad'
+    );
+  });
+
+  it('un suplemento needs_review no tomado no afecta a otro sí tomado el mismo día (recuento exacto, no contamina)', () => {
+    setSupplements([
+      { id: 's-no-tomado', nutrient_key: 'calcium_mg', dose_amount: 150, dose_unit: 'g', taken: false },
+      { id: 's-tomado', nutrient_key: 'zinc_mg', dose_amount: 93_402, dose_unit: 'mg', taken: true },
+    ]);
+    const todayNeedsReview = useSupplementStore
+      .getState()
+      .getTodayContributionDetails()
+      .filter((d) => d.dose.status === 'needs_review');
+    expect(todayNeedsReview.map((d) => d.supplementId)).toEqual(['s-tomado']);
+    expect(describeNeedsReviewBanner(todayNeedsReview.length)).toBe(
+      '1 suplemento no se está contando hoy — revisa su unidad'
+    );
   });
 });

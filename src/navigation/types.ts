@@ -6,7 +6,14 @@ export type MainTabParamList = {
   Search: { mealType?: MealType; barcode?: string } | undefined;
   Dashboard: undefined;
   Progress: undefined;
-  Profile: undefined;
+  /**
+   * `openSupplementId`/`openSupplements` (Fase 5 del P0 de unidades de
+   * suplementos): abren la pantalla de gestión de suplementos existente al
+   * llegar, opcionalmente con un suplemento concreto ya seleccionado para
+   * editar — usado desde el aviso de Dashboard. Se consumen una sola vez
+   * (ProfileScreen los limpia con `setParams` tras leerlos).
+   */
+  Profile: { openSupplementId?: string; openSupplements?: boolean } | undefined;
 };
 
 export type RootStackParamList = {

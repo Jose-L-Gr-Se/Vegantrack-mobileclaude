@@ -28,6 +28,7 @@ import {
   type SupplementDoseResult,
   type SupplementDoseRejectionReason,
 } from '@/utils/supplementUnits';
+import { NEEDS_REVIEW_WARNING_TEXT } from '@/utils/supplementDoseCopy';
 import type { Supplement, SupplementNutrientKey } from '@/types';
 
 const EMOJIS = ['💊', '☀️', '🌊', '🧂', '🩸', '⚡', '🦴', '🌙', '🛡️', '💪', '🌈', '🦠', '🌿', '✨'];
@@ -397,7 +398,7 @@ export function SupplementEditor({
             <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
               <Ionicons name={'alert-circle-outline' as never} size={15} color={semantic.warning} style={{ marginTop: 1 }} />
               <Text style={{ color: semantic.warning, fontSize: 12, fontWeight: '600', flex: 1 }}>
-                Esta cantidad parece alta para esta unidad. Comprueba que la unidad sea correcta.
+                {NEEDS_REVIEW_WARNING_TEXT}
               </Text>
             </View>
           ) : null}

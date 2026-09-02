@@ -5,8 +5,9 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input, Pill, SectionHeader } from '@/components/ui';
 import { radii, semantic, spacing, useTheme } from '@/theme';
@@ -17,6 +18,8 @@ import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
 import { calculateTargets } from '@/utils/nutrition';
 import { exportDiaryCsv } from '@/utils/exportCsv';
+import { supplementsNeedingReview } from '@/utils/supplementUnits';
+import { NEEDS_REVIEW_ACCESSIBILITY_LABEL } from '@/utils/supplementDoseCopy';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import {
   cancelDailyReminder,
@@ -28,7 +31,7 @@ import { ProModal } from '@/components/ProModal';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SupplementEditor } from '@/components/SupplementEditor';
 import type { ActivityLevel, CustomFood, Goal, Supplement } from '@/types';
-import type { RootStackParamList } from '@/navigation/types';
+import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
   sedentary: 'Sedentario',
@@ -127,6 +130,7 @@ export function ProfileScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Profile'>>();
   const { user, profile, updateProfile, signOut, deleteAccount } = useAuthStore();
   const supplementStore = useSupplementStore();
   const customFoods = useCustomFoodStore();
@@ -134,6 +138,7 @@ export function ProfileScreen() {
 
   const [editing, setEditing] = useState(false);
   const [showSupplements, setShowSupplements] = useState(false);
+  const [pendingSupplementId, setPendingSupplementId] = useState<string | undefined>(undefined);
   const [showCustomFood, setShowCustomFood] = useState(false);
   const [reminderHour, setReminderHour] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -147,6 +152,18 @@ export function ProfileScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  // Fase 5 del P0 de unidades de suplementos: si se llega desde el aviso de
+  // Dashboard, abre la pantalla de gestión de suplementos (y, si venía un
+  // suplemento concreto, su editor) — se consume una sola vez.
+  useEffect(() => {
+    const { openSupplementId, openSupplements } = route.params ?? {};
+    if (!openSupplementId && !openSupplements) return;
+    setPendingSupplementId(openSupplementId);
+    setShowSupplements(true);
+    navigation.setParams({ openSupplementId: undefined, openSupplements: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.openSupplementId, route.params?.openSupplements]);
 
   const toggleReminder = async (enabled: boolean) => {
     if (enabled) {
@@ -520,7 +537,15 @@ export function ProfileScreen() {
 
       {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
       {editing && <EditProfileModal onClose={() => setEditing(false)} />}
-      {showSupplements && <SupplementsModal onClose={() => setShowSupplements(false)} />}
+      {showSupplements && (
+        <SupplementsModal
+          onClose={() => {
+            setShowSupplements(false);
+            setPendingSupplementId(undefined);
+          }}
+          initialEditId={pendingSupplementId}
+        />
+      )}
       {showCustomFood && <CustomFoodModal onClose={() => setShowCustomFood(false)} />}
     </ScrollView>
   );
@@ -707,13 +732,31 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SupplementsModal({ onClose }: { onClose: () => void }) {
+function SupplementsModal({
+  onClose,
+  initialEditId,
+}: {
+  onClose: () => void;
+  /** Fase 5: si viene del aviso de Dashboard con un único suplemento needs_review, lo abre directamente. */
+  initialEditId?: string;
+}) {
   const t = useTheme();
   const { user } = useAuthStore();
   const store = useSupplementStore();
   const { isPro } = usePro();
 
   const [editing, setEditing] = React.useState<Supplement | 'new' | { preset: number } | null>(null);
+
+  const needsReviewIds = React.useMemo(
+    () => new Set(supplementsNeedingReview(store.supplements).map((s) => s.id)),
+    [store.supplements]
+  );
+
+  React.useEffect(() => {
+    if (!initialEditId) return;
+    const match = store.supplements.find((s) => s.id === initialEditId);
+    if (match) setEditing(match);
+  }, [initialEditId, store.supplements]);
 
   const tryAdd = (open: () => void) => {
     if (!isPro && store.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
@@ -842,9 +885,16 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                   <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
                     {s.name}
                   </Text>
-                  <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                    {s.dose_amount} {s.dose_unit}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                      {s.dose_amount} {s.dose_unit}
+                    </Text>
+                    {needsReviewIds.has(s.id) ? (
+                      <View accessible accessibilityLabel={NEEDS_REVIEW_ACCESSIBILITY_LABEL}>
+                        <Ionicons name={'alert-circle-outline' as any} size={14} color={semantic.warning} />
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
                 <Ionicons name={'pencil-outline' as any} size={16} color={t.textMuted} />
               </Pressable>

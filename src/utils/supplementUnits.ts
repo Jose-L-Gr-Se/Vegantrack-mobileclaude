@@ -15,7 +15,7 @@
  *
  * No depende de React, no lee stores, no accede a Supabase. Determinista.
  */
-import type { SupplementNutrientKey } from '@/types';
+import type { Supplement, SupplementNutrientKey } from '@/types';
 
 // ── Unidades y alias ────────────────────────────────────────────────────────
 //
@@ -335,4 +335,29 @@ export function isUnitCompatible(unit: string, nutrientKey: string | null): bool
  */
 export function resolveUnitOnNutrientChange(nextNutrientKey: string | null, currentUnit: string): string {
   return isUnitCompatible(currentUnit, nextNutrientKey) ? currentUnit : defaultUnitFor(nextNutrientKey);
+}
+
+// ── Fase 5 — suplementos con dosis a revisar ─────────────────────────────────
+
+/**
+ * Suplementos CONFIGURADOS (no sólo los tomados hoy) cuya dosis normaliza a
+ * `status: 'needs_review'` — convertible, pero por encima del techo de
+ * plausibilidad de su nutriente. Es una propiedad de cómo está configurado
+ * el suplemento (`dose_amount`/`dose_unit`/`nutrient_key`), no de un evento
+ * de toma — por eso NO recibe ni consulta `takenToday`: un suplemento con
+ * una dosis sospechosa lo sigue siendo el día que no se toma, y el usuario
+ * necesita verlo para poder corregirlo antes de la próxima vez.
+ *
+ * Pura: no depende del store, de React ni de la navegación. Reutilizada tal
+ * cual por DiaryScreen y ProfileScreen — ningún componente reimplementa
+ * este filtro por su cuenta.
+ */
+export function supplementsNeedingReview(supplements: readonly Supplement[]): Supplement[] {
+  return supplements.filter((s) => {
+    if (!s.nutrient_key) return false;
+    return (
+      normalizeSupplementDose({ amount: s.dose_amount, unit: s.dose_unit, nutrientKey: s.nutrient_key }).status ===
+      'needs_review'
+    );
+  });
 }
