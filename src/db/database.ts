@@ -159,6 +159,23 @@ export async function mirrorUpsert(
   row: { id: string; user_id: string; date: string; meal_type?: string; payload: unknown },
   synced: boolean
 ): Promise<void> {
+  // Una tombstone local (borrado pendiente aún no confirmado por el
+  // servidor: deleted=1, synced=0) nunca debe sobrescribirse con lo que
+  // llega de un mirror remoto. Si el DELETE real no ha llegado todavía a
+  // Supabase (p. ej. por falta de red), el remoto sigue devolviendo la
+  // fila, y sin este guard el INSERT OR REPLACE de abajo la resucitaría —
+  // el borrado pendiente desaparecería con ella, sin reintentarse nunca
+  // (P0 de sincronización, ver mirrorReplaceDay). Sólo protege
+  // deleted=1 AND synced=0: un alta pendiente (synced=0, deleted=0) debe
+  // poder converger a synced=1 con total normalidad, así que no se toca.
+  const existing = await getDb().getFirstAsync<{ deleted: number; synced: number }>(
+    `SELECT deleted, synced FROM ${table} WHERE id = ?`,
+    row.id
+  );
+  if (existing && existing.deleted === 1 && existing.synced === 0) {
+    return;
+  }
+
   if (table === 'food_log') {
     await getDb().runAsync(
       `INSERT OR REPLACE INTO food_log (id, user_id, date, meal_type, payload, synced, deleted)
