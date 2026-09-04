@@ -63,4 +63,37 @@ describe('flujo entry → resumen', () => {
     expect(s.micros.iron_mg.coverage).toBe(1);
     expect(s.micros.iron_mg.value).toBeCloseTo(9.9); // 6.6 + 3.3
   });
+
+  it('P0 plausibilidad: un hierro impossible (14 g/100g → 14.000 mg) no llega a summarizeEntries/VeganScore/tendencias', () => {
+    // Mismo caso histórico de la auditoría, de punta a punta: producto OFF
+    // con la unidad de hierro equivocada → buildEntry() → summarizeEntries().
+    // Ni summarizeEntries ni veganScore.ts se han tocado para esto: el
+    // guard vive en buildEntry, así que el 14.000 nunca llega a food_log.
+    const contaminado = productToFoodPer100g(
+      normalizeProduct({
+        code: '999',
+        product_name: 'Producto con dato erróneo',
+        nutriments: { 'energy-kcal_100g': 100, proteins_100g: 5, carbohydrates_100g: 10, fat_100g: 2, iron_100g: 14 },
+      })
+    );
+    expect(contaminado.iron_mg).toBe(14000); // FoodPer100g conserva el valor crudo, sin corregirlo
+
+    const now = new Date().toISOString();
+    const entry = { ...buildEntry(contaminado, 100, 'lunch', '2026-06-11', 'u'), created_at: now };
+
+    // El guard actúa exactamente como "OFF no lo reportó": null + known=false,
+    // nunca 0 — el mismo mecanismo que ya usa el resto del motor nutricional.
+    expect(entry.iron_mg).toBeNull();
+    expect(entry.iron_known).toBe(false);
+
+    const s = summarizeEntries([entry]);
+    expect(s.micros.iron_mg.coverage).toBe(0);
+    expect(s.micros.iron_mg.value).toBe(0);
+    expect(s.micros.iron_mg.knownEntries).toBe(0);
+
+    // El resto de macros de esa misma entry, no afectadas por el guard de
+    // hierro, se guardan con total normalidad — el fix es quirúrgico.
+    expect(entry.calories).toBe(100);
+    expect(entry.protein_g).toBe(5);
+  });
 });

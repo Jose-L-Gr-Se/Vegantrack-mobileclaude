@@ -24,6 +24,11 @@ import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBad
 import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
+import {
+  NUTRITION_QUALITY_IMPOSSIBLE_TEXT,
+  NUTRITION_QUALITY_SUSPICIOUS_TEXT,
+  validateProductNutrition,
+} from '@/utils/productNutritionValidation';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
@@ -254,6 +259,11 @@ export function ProductDetailSheet({
   }, [baseFood]);
 
   if (!food) return null;
+
+  // Cálculo puro y barato (comparaciones numéricas, sin red ni estado) — no
+  // necesita memoización; se recalcula con cada render igual que `cal`/`prot`
+  // más abajo, que ya siguen el mismo patrón.
+  const nutritionQuality = validateProductNutrition(food);
 
   const g = parseFloat(grams.replace(',', '.')) || 0;
   const scale = g / 100;
@@ -512,6 +522,33 @@ export function ProductDetailSheet({
             </View>
             <Text style={{ color: t.textMuted, fontSize: 11, paddingHorizontal: 2 }}>
               Toca cualquier indicador para entender qué significa.
+            </Text>
+          </View>
+        ) : null}
+
+        {/* ── Aviso de plausibilidad de datos OFF (P0) ────────────────
+            Señal mínima y honesta: nunca "0 mg de hierro" cuando el dato es
+            impossible/desconocido — sólo un aviso genérico. Mismo patrón
+            visual que "needs_review"/"unsupported" en SupplementEditor. */}
+        {nutritionQuality.overall !== 'clean' ? (
+          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+            <Ionicons
+              name={(nutritionQuality.overall === 'has_impossible' ? 'close-circle-outline' : 'alert-circle-outline') as never}
+              size={15}
+              color={nutritionQuality.overall === 'has_impossible' ? semantic.danger : semantic.warning}
+              style={{ marginTop: 1 }}
+            />
+            <Text
+              style={{
+                color: nutritionQuality.overall === 'has_impossible' ? semantic.danger : semantic.warning,
+                fontSize: 12,
+                fontWeight: '600',
+                flex: 1,
+              }}
+            >
+              {nutritionQuality.overall === 'has_impossible'
+                ? NUTRITION_QUALITY_IMPOSSIBLE_TEXT
+                : NUTRITION_QUALITY_SUSPICIOUS_TEXT}
             </Text>
           </View>
         ) : null}
