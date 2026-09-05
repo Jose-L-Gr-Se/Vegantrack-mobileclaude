@@ -18,13 +18,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Button, Pill, ProgressRing } from '@/components/ui';
+import { Button, Input, Pill, ProgressRing } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
 import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBadges';
 import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { buildEntry } from '@/utils/foodEntry';
 import {
+  FIELDS_WITHOUT_UNKNOWN_REPRESENTATION,
   NUTRITION_QUALITY_IMPOSSIBLE_TEXT,
   NUTRITION_QUALITY_SUSPICIOUS_TEXT,
   isSafeToPersist,
@@ -50,6 +51,23 @@ import type {
 
 const SERVING_PRESETS = [50, 100, 150, 200];
 const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+type MacroFieldName = (typeof FIELDS_WITHOUT_UNKNOWN_REPRESENTATION)[number];
+
+/** Sólo para foto-IA: cuando una macro/energía/sodio estimada por la IA es
+ *  'impossible', se ofrece edición manual de ese campo concreto — nunca se
+ *  corrige sola. Misma lista de campos que el guard de guardado, importada,
+ *  no reinventada. */
+const MACRO_FIELD_LABELS: Record<MacroFieldName, string> = {
+  calories: 'Calorías (kcal) por 100 g',
+  protein_g: 'Proteína (g) por 100 g',
+  carbs_g: 'Carbohidratos (g) por 100 g',
+  fat_g: 'Grasa (g) por 100 g',
+  fiber_g: 'Fibra (g) por 100 g',
+  sugar_g: 'Azúcares (g) por 100 g',
+  saturated_fat_g: 'Grasa saturada (g) por 100 g',
+  sodium_mg: 'Sodio (mg) por 100 g',
+};
 
 /** Convierte una entry del diario a su forma per-100g para reusar la ficha. */
 function entryToPer100g(e: FoodLogEntry): FoodPer100g {
@@ -192,6 +210,13 @@ export function ProductDetailSheet({
   const [imageBroken, setImageBroken] = useState(false);
   const [infoKind, setInfoKind] = useState<ScoreKind | null>(null);
 
+  // Ediciones manuales de macros — sólo relevantes cuando la estimación de
+  // foto-IA resulta 'impossible' (ver más abajo). Se guarda el texto tal
+  // cual lo escribe el usuario (nunca el número ya parseado) para no pelear
+  // con decimales a medio escribir, igual que ya hace `grams` en esta misma
+  // pantalla. Nunca corrige nada sola: sólo aplica lo que el usuario tecleó.
+  const [macroEdits, setMacroEdits] = useState<Partial<Record<MacroFieldName, string>>>({});
+
   // — Edición del nombre y opción "guardar como habitual" —
   // Sólo activo cuando el alimento viene de la IA por foto: así el usuario
   // puede corregir un fallo de etiquetado ("carne" → "seitán con verduras") y
@@ -225,11 +250,13 @@ export function ProductDetailSheet({
     setFood((prev) => ({ ...analysisToFood(res.analysis), ...(prev?.image_url ? { image_url: prev.image_url } : {}) }));
     setEditedName(res.analysis.food_name);
     setConfidence(res.analysis.vegan_confidence);
+    setMacroEdits({}); // nueva estimación de la IA: las ediciones de la anterior ya no aplican
   };
 
   useEffect(() => {
     setFood(baseFood);
     setEditedName(baseFood?.food_name ?? '');
+    setMacroEdits({});
     if (!baseFood) return;
     const needsRich =
       !baseFood.nutriscore_grade && !baseFood.ecoscore_grade && !baseFood.nova_group && !baseFood.ingredients_text;
@@ -261,29 +288,47 @@ export function ProductDetailSheet({
 
   if (!food) return null;
 
+  // Aplica las ediciones manuales de macros (sólo relevantes en foto-IA,
+  // ver `macroEdits` más arriba) sobre `food` SIN mutarlo ni tocar
+  // normalizeProduct/FoodPer100g — `food` conserva siempre la estimación
+  // original de la IA; `effectiveFood` es lo que se valida y, si procede,
+  // lo que se guarda. Se ignora en silencio cualquier texto no parseable
+  // (p. ej. a medio escribir) en vez de "corregirlo": simplemente no se
+  // aplica todavía, se sigue mostrando el valor anterior.
+  const effectiveFood: FoodPer100g = { ...food };
+  for (const field of FIELDS_WITHOUT_UNKNOWN_REPRESENTATION) {
+    const raw = macroEdits[field];
+    if (raw === undefined) continue;
+    const parsed = parseFloat(raw.replace(',', '.'));
+    if (Number.isFinite(parsed)) effectiveFood[field] = parsed;
+  }
+
   // Cálculo puro y barato (comparaciones numéricas, sin red ni estado) — no
   // necesita memoización; se recalcula con cada render igual que `cal`/`prot`
   // más abajo, que ya siguen el mismo patrón.
-  const nutritionQuality = validateProductNutrition(food);
+  const nutritionQuality = validateProductNutrition(effectiveFood);
+  const impossibleMacroFields = isAiPhoto
+    ? FIELDS_WITHOUT_UNKNOWN_REPRESENTATION.filter((f) => nutritionQuality.fields[f].status === 'impossible')
+    : [];
 
   const g = parseFloat(grams.replace(',', '.')) || 0;
   const scale = g / 100;
 
-  const cal = Math.round(food.calories * scale);
-  const prot = Math.round(food.protein_g * scale * 10) / 10;
-  const carb = Math.round(food.carbs_g * scale * 10) / 10;
-  const fat = Math.round(food.fat_g * scale * 10) / 10;
+  const cal = Math.round(effectiveFood.calories * scale);
+  const prot = Math.round(effectiveFood.protein_g * scale * 10) / 10;
+  const carb = Math.round(effectiveFood.carbs_g * scale * 10) / 10;
+  const fat = Math.round(effectiveFood.fat_g * scale * 10) / 10;
 
   const calTarget = profile?.calorie_target ?? 0;
   const protTarget = profile?.protein_target_g ?? 0;
   const carbTarget = profile?.carbs_target_g ?? 0;
   const fatTarget = profile?.fat_target_g ?? 0;
 
-  const sugars = Math.round(food.sugar_g * scale * 10) / 10;
-  const satFat = Math.round(food.saturated_fat_g * scale * 10) / 10;
-  const fiber = Math.round(food.fiber_g * scale * 10) / 10;
+  const sugars = Math.round(effectiveFood.sugar_g * scale * 10) / 10;
+  const satFat = Math.round(effectiveFood.saturated_fat_g * scale * 10) / 10;
+  const fiber = Math.round(effectiveFood.fiber_g * scale * 10) / 10;
   const salt = food.salt_g != null ? Math.round(food.salt_g * scale * 100) / 100 : null;
-  const sodium = Math.round(food.sodium_mg * scale);
+  const sodium = Math.round(effectiveFood.sodium_mg * scale);
 
   const commit = async () => {
     const parsed = parseFloat(grams.replace(',', '.'));
@@ -298,9 +343,12 @@ export function ProductDetailSheet({
     }
     if (!user) return;
 
-    // En modo foto-IA, sustituimos el nombre por el corregido por el usuario.
-    const finalName = isAiPhoto ? editedName.trim() || food.food_name : food.food_name;
-    const finalFood: FoodPer100g = { ...food, food_name: finalName };
+    // En modo foto-IA, sustituimos el nombre por el corregido por el usuario,
+    // y usamos effectiveFood (con las correcciones manuales de macros ya
+    // aplicadas, si las hubo) en vez de food — es lo único que puede volver
+    // 'impossible' un dato en 'valid'/'suspicious': nunca se corrige solo.
+    const finalName = isAiPhoto ? editedName.trim() || effectiveFood.food_name : effectiveFood.food_name;
+    const finalFood: FoodPer100g = { ...effectiveFood, food_name: finalName };
 
     // P0 plausibilidad: un producto con una MACRO (o energía/sodio)
     // 'impossible' no debe poder convertirse en entry — a diferencia de los
@@ -313,7 +361,11 @@ export function ProductDetailSheet({
     // siempre. 'suspicious' nunca bloquea, en ningún campo (el banner de
     // arriba ya avisa).
     if (!isSafeToPersist(nutritionQuality)) {
-      setError('No se puede guardar: algunos datos nutricionales de este producto parecen incorrectos.');
+      setError(
+        isAiPhoto
+          ? 'Corrige los valores marcados arriba antes de guardar.'
+          : 'No se puede guardar: algunos datos nutricionales de este producto parecen incorrectos.'
+      );
       return;
     }
 
@@ -542,11 +594,33 @@ export function ProductDetailSheet({
           </View>
         ) : null}
 
-        {/* ── Aviso de plausibilidad de datos OFF (P0) ────────────────
+        {/* ── Aviso de plausibilidad nutricional (P0) ─────────────────
             Señal mínima y honesta: nunca "0 mg de hierro" cuando el dato es
-            impossible/desconocido — sólo un aviso genérico. Mismo patrón
-            visual que "needs_review"/"unsupported" en SupplementEditor. */}
-        {nutritionQuality.overall !== 'clean' ? (
+            impossible/desconocido — sólo un aviso genérico, salvo en
+            foto-IA con una macro impossible, donde además se ofrece
+            corregirla a mano (única fuente que puede producir ese error:
+            la estimación de la IA, no un dato de terceros como OFF). Mismo
+            patrón visual que "needs_review"/"unsupported" en
+            SupplementEditor. */}
+        {impossibleMacroFields.length > 0 ? (
+          <View style={{ gap: spacing.sm }}>
+            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+              <Ionicons name={'close-circle-outline' as never} size={15} color={semantic.danger} style={{ marginTop: 1 }} />
+              <Text style={{ color: semantic.danger, fontSize: 12, fontWeight: '600', flex: 1 }}>
+                La IA estimó algunos valores de forma poco fiable. Corrígelos para poder guardar esta comida.
+              </Text>
+            </View>
+            {impossibleMacroFields.map((fieldName) => (
+              <Input
+                key={fieldName}
+                label={MACRO_FIELD_LABELS[fieldName]}
+                keyboardType="decimal-pad"
+                value={macroEdits[fieldName] ?? String(food[fieldName])}
+                onChangeText={(text) => setMacroEdits((prev) => ({ ...prev, [fieldName]: text }))}
+              />
+            ))}
+          </View>
+        ) : nutritionQuality.overall !== 'clean' ? (
           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
             <Ionicons
               name={(nutritionQuality.overall === 'has_impossible' ? 'close-circle-outline' : 'alert-circle-outline') as never}

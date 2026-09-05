@@ -75,8 +75,12 @@ export interface ProductNutritionValidation {
  * el resto de la entry. Por eso SÓLO estos campos pueden bloquear el
  * guardado completo: es la única forma de no persistir un valor imposible
  * cuando no existe manera de "guardar la entry sin ese campo".
+ *
+ * Exportado (no sólo interno) porque `ProductDetailSheet` necesita esta
+ * misma lista para saber qué campos ofrecer como editables cuando una foto-IA
+ * produce un valor 'impossible' — única fuente, nunca una segunda lista.
  */
-const FIELDS_WITHOUT_UNKNOWN_REPRESENTATION: readonly ValidatedNutrientField[] = [
+export const FIELDS_WITHOUT_UNKNOWN_REPRESENTATION = [
   'calories',
   'protein_g',
   'carbs_g',
@@ -85,7 +89,7 @@ const FIELDS_WITHOUT_UNKNOWN_REPRESENTATION: readonly ValidatedNutrientField[] =
   'sugar_g',
   'saturated_fat_g',
   'sodium_mg',
-];
+] as const satisfies readonly ValidatedNutrientField[];
 
 /**
  * ¿Puede este producto convertirse en una entry y persistirse?
