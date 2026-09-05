@@ -24,6 +24,10 @@ jest.mock('@/db/database', () => ({
 
 const mockFrom = jest.fn();
 jest.mock('@/lib/supabase', () => ({ supabase: { from: (...args: unknown[]) => mockFrom(...args) } }));
+// diaryStore.ts importa @/lib/errorReporting desde el P1 de sync (Fase 1) →
+// @sentry/react-native, que Jest no puede parsear sin mock (mismo motivo que
+// en ErrorBoundary.test.tsx). getMicroTrends no pasa por esa ruta.
+jest.mock('@/lib/errorReporting', () => ({ reportError: jest.fn(), addBreadcrumb: jest.fn() }));
 
 /** Query builder falso: encadenable y "thenable" como el real de supabase-js. */
 function makeBuilder(payload: { data: unknown[] }) {

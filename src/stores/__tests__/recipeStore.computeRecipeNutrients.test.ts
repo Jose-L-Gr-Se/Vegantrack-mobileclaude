@@ -20,6 +20,12 @@ import type { Recipe, RecipeIngredient } from '@/types';
 
 jest.mock('@/lib/supabase', () => ({ supabase: {} }));
 jest.mock('@/db/database', () => ({ kvGet: jest.fn(), kvSet: jest.fn() }));
+// recipeStore.ts importa useDiaryStore de diaryStore.ts, que desde el P1 de
+// sync (Fase 1) importa @/lib/errorReporting → @sentry/react-native, que
+// Jest no puede parsear sin mock (mismo motivo que en ErrorBoundary.test.tsx).
+// Este fichero no ejercita ninguna ruta de observabilidad, así que un mock
+// vacío es seguro.
+jest.mock('@/lib/errorReporting', () => ({ reportError: jest.fn(), addBreadcrumb: jest.fn() }));
 
 function makeIngredient(over: Partial<RecipeIngredient>): RecipeIngredient {
   return {

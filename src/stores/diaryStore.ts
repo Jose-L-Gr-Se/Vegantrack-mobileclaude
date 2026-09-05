@@ -21,6 +21,8 @@ import { loadOverrides, type NutrientOverride } from '@/lib/nutrientOverrides';
 import { summarizeEntries, MICRO_RDA, ironRdaForSex, resolveMicroDisplay, type MicroConfidence } from '@/utils/nutrition';
 import { normalizeSupplementDose } from '@/utils/supplementUnits';
 import { addDays, todayISO } from '@/utils/dates';
+import { isTransientSyncError, type SyncOpError } from '@/utils/syncError';
+import { reportError } from '@/lib/errorReporting';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
 import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
 
@@ -73,12 +75,25 @@ function entryToRow(e: FoodLogEntry | NewFoodLogEntry) {
   return { id: e.id, user_id: e.user_id, date: e.date, meal_type: e.meal_type, payload: e };
 }
 
-async function insertRemote(entry: NewFoodLogEntry): Promise<boolean> {
+async function insertRemote(entry: NewFoodLogEntry): Promise<{ ok: boolean; error: SyncOpError | null }> {
   const { error } = await supabase.from('food_log').insert(entry);
   // 23505 = clave duplicada: ya se sincronizó en un intento anterior
-  if (error && error.code !== '23505') return false;
-  return true;
+  if (error && error.code !== '23505') return { ok: false, error };
+  return { ok: true, error: null };
 }
+
+// Guard de concurrencia de `flushPending` (Fase 1 del P1 de sync, ver
+// auditoría): dos disparos casi simultáneos (p. ej. `AppState` pasando a
+// activo justo cuando también llega un evento de auth) no deben ejecutar dos
+// pasadas a la vez sobre el mismo lote de pendientes. Module-level a
+// propósito (no en el store de Zustand): es un lock de ejecución, no estado
+// de UI, y así no dispara ningún render al cambiar. Una única variable para
+// toda la app es correcta aquí porque sólo hay un usuario autenticado a la
+// vez; si se llama con un userId distinto mientras hay un flush en curso,
+// ese segundo flush no se pierde de verdad — simplemente se retoma en el
+// próximo disparo (arranque, foco, o el próximo evento de auth), igual que
+// ya ocurre hoy con cualquier pendiente no sincronizado.
+let flushInFlight = false;
 
 export const useDiaryStore = create<DiaryState>((set, get) => ({
   entries: [],
@@ -137,7 +152,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     }
 
     // Intento remoto
-    const ok = await insertRemote(entry);
+    const { ok } = await insertRemote(entry);
     if (ok) {
       await mirrorMarkSynced('food_log', entry.id);
       // Racha en segundo plano (la PWA usa la RPC update_streak)
@@ -344,17 +359,37 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   },
 
   flushPending: async (userId) => {
-    const pending = await mirrorPending<FoodLogEntry>('food_log', userId);
-    for (const row of pending) {
-      if (row.deleted) {
-        const { error } = await supabase.from('food_log').delete().eq('id', row.id);
-        if (!error) await mirrorRemove('food_log', row.id);
-      } else {
-        const { created_at, updated_at, ...insertable } = row.payload;
-        if (await insertRemote(insertable as NewFoodLogEntry)) {
-          await mirrorMarkSynced('food_log', row.id);
+    // Sólo una pasada efectiva a la vez (ver `flushInFlight` arriba). Un
+    // segundo disparo mientras hay uno en curso no hace nada — no es un
+    // error, sólo redundante: el lote pendiente que traería sería el mismo
+    // (o un subconjunto) del que ya está procesando la pasada en curso.
+    if (flushInFlight) return;
+    flushInFlight = true;
+    try {
+      const pending = await mirrorPending<FoodLogEntry>('food_log', userId);
+      for (const row of pending) {
+        if (row.deleted) {
+          const { error } = await supabase.from('food_log').delete().eq('id', row.id);
+          if (!error) {
+            await mirrorRemove('food_log', row.id);
+          } else if (!isTransientSyncError(error)) {
+            // Sin red no se reporta (es el caso esperado, no un bug); un
+            // error con código de servidor sí lo es — nunca cambia si se
+            // reintenta: la tombstone sigue synced=0 en ambos casos.
+            reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'delete', code: error.code || 'unknown' } });
+          }
+        } else {
+          const { created_at, updated_at, ...insertable } = row.payload;
+          const { ok, error } = await insertRemote(insertable as NewFoodLogEntry);
+          if (ok) {
+            await mirrorMarkSynced('food_log', row.id);
+          } else if (error && !isTransientSyncError(error)) {
+            reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'insert', code: error.code || 'unknown' } });
+          }
         }
       }
+    } finally {
+      flushInFlight = false;
     }
   },
 }));

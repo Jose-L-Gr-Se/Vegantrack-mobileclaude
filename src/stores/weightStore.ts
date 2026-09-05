@@ -14,6 +14,8 @@ import {
 } from '@/db/database';
 import { uuidv4 } from '@/utils/uuid';
 import { useAuthStore } from '@/stores/authStore';
+import { isTransientSyncError } from '@/utils/syncError';
+import { reportError } from '@/lib/errorReporting';
 import type { WeightLog } from '@/types';
 
 export interface WeightChartPoint {
@@ -34,6 +36,11 @@ interface WeightState {
 }
 
 const sortByDate = (logs: WeightLog[]) => [...logs].sort((a, b) => a.date.localeCompare(b.date));
+
+// Mismo guard que diaryStore.ts — ver el comentario allí. Variable propia
+// (no compartida) porque protege una pasada sobre `weight_logs`, una tabla
+// independiente de `food_log`.
+let flushInFlight = false;
 
 export const useWeightStore = create<WeightState>((set, get) => ({
   logs: [],
@@ -143,21 +150,35 @@ export const useWeightStore = create<WeightState>((set, get) => ({
   },
 
   flushPending: async (userId) => {
-    const pending = await mirrorPending<WeightLog>('weight_logs', userId);
-    for (const row of pending) {
-      if (row.deleted) {
-        const { error } = await supabase.from('weight_logs').delete().eq('id', row.id);
-        if (!error) await mirrorRemove('weight_logs', row.id);
-      } else {
-        const p = row.payload;
-        const { error } = await supabase
-          .from('weight_logs')
-          .upsert(
-            { id: p.id, user_id: p.user_id, date: p.date, weight_kg: p.weight_kg, note: p.note },
-            { onConflict: 'user_id,date' }
-          );
-        if (!error) await mirrorMarkSynced('weight_logs', row.id);
+    if (flushInFlight) return;
+    flushInFlight = true;
+    try {
+      const pending = await mirrorPending<WeightLog>('weight_logs', userId);
+      for (const row of pending) {
+        if (row.deleted) {
+          const { error } = await supabase.from('weight_logs').delete().eq('id', row.id);
+          if (!error) {
+            await mirrorRemove('weight_logs', row.id);
+          } else if (!isTransientSyncError(error)) {
+            reportError(error, { tag: 'sync_flush_weight_logs', extra: { op: 'delete', code: error.code || 'unknown' } });
+          }
+        } else {
+          const p = row.payload;
+          const { error } = await supabase
+            .from('weight_logs')
+            .upsert(
+              { id: p.id, user_id: p.user_id, date: p.date, weight_kg: p.weight_kg, note: p.note },
+              { onConflict: 'user_id,date' }
+            );
+          if (!error) {
+            await mirrorMarkSynced('weight_logs', row.id);
+          } else if (!isTransientSyncError(error)) {
+            reportError(error, { tag: 'sync_flush_weight_logs', extra: { op: 'upsert', code: error.code || 'unknown' } });
+          }
+        }
       }
+    } finally {
+      flushInFlight = false;
     }
   },
 }));
