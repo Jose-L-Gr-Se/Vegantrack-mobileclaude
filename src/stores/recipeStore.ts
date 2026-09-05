@@ -9,6 +9,7 @@ import { uuidv4 } from '@/utils/uuid';
 import { useDiaryStore } from '@/stores/diaryStore';
 import type { FoodPer100g, MealType, Recipe, RecipeIngredient, RecipeNutrients } from '@/types';
 import { buildEntry } from '@/utils/foodEntry';
+import { isSafeToPersist, validateProductNutrition } from '@/utils/productNutritionValidation';
 
 interface RecipeState {
   recipes: Recipe[];
@@ -231,6 +232,17 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
       omega3_known: totals.omega3_known,
       vitamin_d_known: totals.vitamin_d_known,
     };
+
+    // P0 plausibilidad (mismo guard que ProductDetailSheet.commit(), mismas
+    // funciones, sin duplicar thresholds): una macro/energía/sodio
+    // 'impossible' agregada de los ingredientes no debe poder persistirse
+    // como entry — no hay forma de "guardar sin ese campo" en food_log
+    // (NOT NULL). Un micronutriente 'impossible' por sí solo NO bloquea:
+    // buildEntry() ya lo excluye campo a campo (null + *_known=false) sin
+    // tocar el resto, exactamente igual que para un producto OFF suelto.
+    if (!isSafeToPersist(validateProductNutrition(per100))) {
+      return { error: 'No se puede guardar: algunos datos nutricionales de esta receta parecen incorrectos.' };
+    }
 
     const entry = buildEntry(per100, Math.round(gramsLogged), mealType, date, userId);
     return useDiaryStore.getState().addEntry(entry);

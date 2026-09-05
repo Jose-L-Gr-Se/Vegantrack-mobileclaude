@@ -27,6 +27,7 @@ import { buildEntry } from '@/utils/foodEntry';
 import {
   NUTRITION_QUALITY_IMPOSSIBLE_TEXT,
   NUTRITION_QUALITY_SUSPICIOUS_TEXT,
+  isSafeToPersist,
   validateProductNutrition,
 } from '@/utils/productNutritionValidation';
 import { useAuthStore } from '@/stores/authStore';
@@ -300,6 +301,21 @@ export function ProductDetailSheet({
     // En modo foto-IA, sustituimos el nombre por el corregido por el usuario.
     const finalName = isAiPhoto ? editedName.trim() || food.food_name : food.food_name;
     const finalFood: FoodPer100g = { ...food, food_name: finalName };
+
+    // P0 plausibilidad: un producto con una MACRO (o energía/sodio)
+    // 'impossible' no debe poder convertirse en entry — a diferencia de los
+    // 6 micronutrientes (que buildEntry() ya excluye campo a campo,
+    // persistiéndolos como "desconocido" sin tocar el resto), las macros
+    // son NOT NULL en food_log hoy: no hay forma de "guardar sin ese
+    // campo", así que aquí, antes de llegar a buildEntry()/addEntry(), se
+    // bloquea el guardado entero. Un micronutriente impossible por sí solo
+    // NO bloquea (isSafeToPersist lo distingue) — sigue el mismo camino de
+    // siempre. 'suspicious' nunca bloquea, en ningún campo (el banner de
+    // arriba ya avisa).
+    if (!isSafeToPersist(nutritionQuality)) {
+      setError('No se puede guardar: algunos datos nutricionales de este producto parecen incorrectos.');
+      return;
+    }
 
     setBusy(true);
 

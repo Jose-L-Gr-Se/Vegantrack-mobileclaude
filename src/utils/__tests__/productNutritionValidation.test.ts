@@ -7,7 +7,7 @@
  * no como una aproximación.
  */
 import { normalizeProduct, productToFoodPer100g } from '@/lib/openfoodfacts';
-import { validateProductNutrition } from '@/utils/productNutritionValidation';
+import { isSafeToPersist, validateProductNutrition } from '@/utils/productNutritionValidation';
 import type { FoodPer100g } from '@/types';
 
 jest.mock('@/db/database', () => ({
@@ -155,6 +155,53 @@ describe('validateProductNutrition — micronutrientes (D): nunca la RDA como te
   it('B12 de una bebida vegetal fortificada (2 mcg/100g, caso real de la auditoría) → valid', () => {
     const f = food({ 'energy-kcal_100g': 40, 'vitamin-b12_100g': 2e-6 }); // 2 mcg/100g
     expect(validateProductNutrition(f).fields.vitamin_b12_mcg.status).toBe('valid');
+  });
+});
+
+describe('isSafeToPersist — decisión de bloqueo de guardado (gap de ProductDetailSheet)', () => {
+  it('1. macro impossible (protein 40 + carbs 40 + fat 40 = 120) → NO se puede guardar', () => {
+    const f = food({ 'energy-kcal_100g': 400, proteins_100g: 40, carbohydrates_100g: 40, fat_100g: 40 });
+    const validation = validateProductNutrition(f);
+    expect(validation.overall).toBe('has_impossible');
+    expect(isSafeToPersist(validation)).toBe(false);
+  });
+
+  it('1b. energía físicamente absurda (2000 kcal/100g) → NO se puede guardar, aunque las macros por separado sean razonables', () => {
+    const f = food({ 'energy-kcal_100g': 2000, proteins_100g: 5, carbohydrates_100g: 10, fat_100g: 2 });
+    expect(isSafeToPersist(validateProductNutrition(f))).toBe(false);
+  });
+
+  it('2. macro suspicious → SÍ se puede guardar', () => {
+    // sodium_mg es de los campos "sin representación de desconocido" (está
+    // en la lista que sí puede bloquear si fuera impossible) — aquí se usa
+    // en su tramo 'suspicious' (45.000 mg: por encima de la sal de mesa
+    // pura ~39.300 mg, pero por debajo de la conservación de masa a
+    // 100.000 mg) para probar que 'suspicious' nunca bloquea, ni siquiera
+    // en un campo que si fuera 'impossible' sí lo haría.
+    const f = food({ 'energy-kcal_100g': 0, sodium_100g: 45 }); // 45.000 mg
+    const validation = validateProductNutrition(f);
+    expect(validation.fields.sodium_mg.status).toBe('suspicious');
+    expect(validation.overall).toBe('has_suspicious');
+    expect(isSafeToPersist(validation)).toBe(true);
+  });
+
+  it('2b. producto totalmente válido → SÍ se puede guardar', () => {
+    const f = food({ 'energy-kcal_100g': 116, proteins_100g: 9, carbohydrates_100g: 20, fat_100g: 0.4 });
+    expect(isSafeToPersist(validateProductNutrition(f))).toBe(true);
+  });
+
+  it('3. un micronutriente impossible por sí solo NO bloquea el guardado — sigue sin contaminar cálculos, pero el resto de la entry se guarda', () => {
+    // Distingue a propósito de los tests 1/1b: un macro/energía impossible
+    // bloquea TODO el guardado (no hay forma de "guardar sin ese campo" en
+    // food_log); un micronutriente impossible no necesita bloquear nada
+    // porque buildEntry() ya sabe excluirlo campo a campo (null +
+    // *_known=false) sin tocar el resto — exactamente el comportamiento
+    // que ya existía antes de este cambio, que no debe regresar.
+    const f = food({ 'energy-kcal_100g': 100, proteins_100g: 5, carbohydrates_100g: 10, fat_100g: 2, iron_100g: 14 });
+    const validation = validateProductNutrition(f);
+    expect(validation.fields.iron_mg.status).toBe('impossible');
+    expect(validation.overall).toBe('has_impossible'); // 'overall' sigue sin distinguir macro/micro...
+    expect(isSafeToPersist(validation)).toBe(true); // ...pero isSafeToPersist() sí lo hace: esto se puede guardar.
   });
 });
 

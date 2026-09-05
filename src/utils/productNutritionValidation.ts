@@ -65,6 +65,46 @@ export interface ProductNutritionValidation {
   fields: Record<ValidatedNutrientField, NutrientCheck>;
 }
 
+/**
+ * Campos sin representación de "desconocido" en `food_log` hoy:
+ * `calories`/`protein_g`/`carbs_g`/`fat_g`/`fiber_g`/`sugar_g`/
+ * `saturated_fat_g`/`sodium_mg` son `NOT NULL` en el esquema — a diferencia
+ * de los 6 micronutrientes (`vitamin_b12_mcg`, `iron_mg`, `zinc_mg`,
+ * `calcium_mg`, `vitamin_d_mcg`, `omega3_g`), que sí admiten `null` +
+ * `*_known=false` y que `buildEntry()` ya excluye campo a campo sin tocar
+ * el resto de la entry. Por eso SÓLO estos campos pueden bloquear el
+ * guardado completo: es la única forma de no persistir un valor imposible
+ * cuando no existe manera de "guardar la entry sin ese campo".
+ */
+const FIELDS_WITHOUT_UNKNOWN_REPRESENTATION: readonly ValidatedNutrientField[] = [
+  'calories',
+  'protein_g',
+  'carbs_g',
+  'fat_g',
+  'fiber_g',
+  'sugar_g',
+  'saturated_fat_g',
+  'sodium_mg',
+];
+
+/**
+ * ¿Puede este producto convertirse en una entry y persistirse?
+ *
+ * Bloquea únicamente si una MACRO (o energía/sodio) es 'impossible' — el
+ * caso que hoy no tiene ninguna otra salida. Un micronutriente 'impossible'
+ * por sí solo NUNCA bloquea aquí: `buildEntry()` ya lo excluye campo a
+ * campo (null + *_known=false) sin necesidad de impedir el resto del
+ * guardado — bloquear también por eso sería una regresión respecto al
+ * comportamiento ya existente (el micronutriente "sigue sin contaminar
+ * cálculos", pero el resto de la entry se sigue pudiendo guardar).
+ * 'suspicious' nunca bloquea, sea cual sea el campo.
+ */
+export function isSafeToPersist(validation: ProductNutritionValidation): boolean {
+  return FIELDS_WITHOUT_UNKNOWN_REPRESENTATION.every(
+    (field) => validation.fields[field].status !== 'impossible'
+  );
+}
+
 // ── Wording mínimo, honesto, para la señal de UI (fase actual: sólo esto,
 // sin rediseño — ver ProductDetailSheet). Nunca dice "0 mg": ni siquiera
 // menciona un número, porque el número en sí es justo lo que no nos fiamos.
