@@ -54,6 +54,45 @@ describe('calculateTDEE', () => {
   });
 });
 
+/**
+ * Auditoría de onboarding, cierre del Bug B1: defensa adicional dentro de
+ * calculateTDEE/calculateTargets, para que ningún llamador (presente o
+ * futuro) pueda producir un target a partir de un perfil físicamente
+ * implausible, aunque se salte la validación de la UI. Límites documentados
+ * en profileValidation.ts.
+ */
+describe('calculateTDEE / calculateTargets · protegidos frente a inputs absurdos', () => {
+  it('altura fuera de rango plausible → null, aunque el resto del perfil sea válido', () => {
+    expect(calculateTDEE({ ...profile, height_cm: 1 })).toBeNull();
+    expect(calculateTargets({ ...profile, height_cm: 1 })).toBeNull();
+  });
+
+  it('peso fuera de rango plausible → null', () => {
+    expect(calculateTDEE({ ...profile, weight_kg: 999999 })).toBeNull();
+    expect(calculateTargets({ ...profile, weight_kg: 999999 })).toBeNull();
+  });
+
+  it('fecha de nacimiento futura (edad negativa) → null, no un BMR/calorías negativos', () => {
+    const futureBirthDate = (() => {
+      const d = new Date();
+      d.setFullYear(d.getFullYear() + 1);
+      return d.toISOString().split('T')[0];
+    })();
+    expect(calculateTDEE({ ...profile, birth_date: futureBirthDate })).toBeNull();
+    expect(calculateTargets({ ...profile, birth_date: futureBirthDate })).toBeNull();
+  });
+
+  it('edad absurdamente alta → null', () => {
+    expect(calculateTDEE({ ...profile, birth_date: birthDateYearsAgo(150) })).toBeNull();
+  });
+
+  it('el perfil de referencia (dentro de rango) no se ve afectado por la nueva guarda', () => {
+    // Regresión de no-ruptura: mismos resultados que el resto de esta suite.
+    expect(calculateTDEE(profile)).toBe(2759);
+    expect(calculateTargets(profile)!.calories).toBe(2759);
+  });
+});
+
 describe('calculateTargets', () => {
   it('mantener: TDEE sin ajuste, proteína 1.8 g/kg, grasa 25% kcal', () => {
     const t = calculateTargets(profile)!;

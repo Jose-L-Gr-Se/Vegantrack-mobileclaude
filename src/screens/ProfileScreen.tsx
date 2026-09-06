@@ -17,6 +17,14 @@ import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore
 import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
 import { calculateTargets } from '@/utils/nutrition';
+import {
+  HEIGHT_CM_RANGE,
+  numericFieldMessage,
+  validateHeightCm,
+  validateWeightKg,
+  WEIGHT_KG_RANGE,
+} from '@/utils/profileValidation';
+import { toUserFacingError } from '@/utils/userFacingError';
 import { exportDiaryCsv } from '@/utils/exportCsv';
 import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
@@ -588,7 +596,10 @@ function OptionRow({
   );
 }
 
-function EditProfileModal({ onClose }: { onClose: () => void }) {
+// Exportado sólo para poder testear la validación de altura/peso en
+// aislamiento (auditoría de onboarding, Bugs B2/B4) sin montar el resto de
+// ProfileScreen (suplementos, alimentos propios, recordatorios, Pro...).
+export function EditProfileModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { profile, updateProfile } = useAuthStore();
@@ -600,12 +611,36 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
+    // Auditoría de onboarding, Bugs B2/B4: mismo validador y mismo criterio
+    // de coma/punto que el onboarding — un valor no numérico o fuera de
+    // rango nunca se guarda en silencio ni cae de vuelta al valor anterior;
+    // se avisa y no se hace ningún UPDATE.
+    const heightValidation = validateHeightCm(height);
+    const weightValidation = validateWeightKg(weight);
+    if (heightValidation.status !== 'empty' && heightValidation.status !== 'valid') {
+      Alert.alert(
+        'Altura no válida',
+        numericFieldMessage(heightValidation.status, 'Altura', HEIGHT_CM_RANGE)
+      );
+      return;
+    }
+    if (weightValidation.status !== 'empty' && weightValidation.status !== 'valid') {
+      Alert.alert(
+        'Peso no válido',
+        numericFieldMessage(weightValidation.status, 'Peso', WEIGHT_KG_RANGE)
+      );
+      return;
+    }
+
     setSaving(true);
     const base = {
       ...profile,
       display_name: name.trim() || null,
-      height_cm: parseFloat(height.replace(',', '.')) || profile?.height_cm || null,
-      weight_kg: parseFloat(weight.replace(',', '.')) || profile?.weight_kg || null,
+      // Campo vacío = el usuario lo ha borrado a propósito: se persiste como
+      // "sin dato" (null), nunca se revierte en silencio al valor anterior
+      // (antes: `parseFloat(...) || profile?.height_cm || null`).
+      height_cm: heightValidation.status === 'valid' ? heightValidation.value : null,
+      weight_kg: weightValidation.status === 'valid' ? weightValidation.value : null,
       activity_level: activity,
       goal,
     };
@@ -626,8 +661,14 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
         : {}),
     });
     setSaving(false);
-    if (error) Alert.alert('Error', error);
-    else onClose();
+    if (error) {
+      // Detalle técnico sólo en consola de desarrollo — nunca en la UI
+      // (CLAUDE.md §5, auditoría de onboarding Bug B3).
+      if (__DEV__) console.warn('[EditProfileModal] updateProfile error:', error);
+      Alert.alert('Error', toUserFacingError(error));
+      return;
+    }
+    onClose();
   };
 
   return (

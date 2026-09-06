@@ -5,6 +5,12 @@
  */
 import type { FoodLogEntry, MicroAggregate, NutrientSummary, Profile, Sex } from '@/types';
 import { applyOverrides, type NutrientOverride } from '@/lib/nutrientOverrides';
+import { getAge, isPlausibleAnthropometrics } from '@/utils/profileValidation';
+
+// `getAge` vivía aquí; se movió a profileValidation.ts (que la necesita para
+// validar birth_date) y se re-exporta para no romper a quien la importe de
+// este módulo (auditoría de onboarding, cierre de Bug B1).
+export { getAge };
 
 const ACTIVITY_MULTIPLIERS = {
   sedentary: 1.2,
@@ -40,21 +46,18 @@ function calculateBMR(weightKg: number, heightCm: number, ageYears: number, sex:
   return sex === 'male' ? base + 5 : base - 161;
 }
 
-export function getAge(birthDate: string, ref: Date = new Date()): number {
-  const birth = new Date(birthDate);
-  let age = ref.getFullYear() - birth.getFullYear();
-  const monthDiff = ref.getMonth() - birth.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && ref.getDate() < birth.getDate())) {
-    age--;
-  }
-  return age;
-}
-
 export function calculateTDEE(profile: Partial<Profile>): number | null {
   const { weight_kg, height_cm, birth_date, sex, activity_level } = profile;
   if (!weight_kg || !height_cm || !birth_date || !sex || !activity_level) return null;
 
   const age = getAge(birth_date);
+  // Defensa adicional (auditoría de onboarding, Bug B1): ningún llamador,
+  // presente o futuro, puede producir un TDEE a partir de una altura, peso o
+  // edad fuera de los rangos de plausibilidad física — sea cual sea la
+  // validación (o falta de ella) que haya hecho la UI que llame aquí. No es
+  // lógica de UI: sólo comprueba los valores numéricos ya resueltos.
+  if (!isPlausibleAnthropometrics({ height_cm, weight_kg, ageYears: age })) return null;
+
   const bmr = calculateBMR(weight_kg, height_cm, age, sex);
   return Math.round(bmr * ACTIVITY_MULTIPLIERS[activity_level]);
 }

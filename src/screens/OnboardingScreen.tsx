@@ -11,6 +11,16 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 import { calculateTargets, formatNumber } from '@/utils/nutrition';
+import {
+  birthDateMessage,
+  HEIGHT_CM_RANGE,
+  numericFieldMessage,
+  validateBirthDate,
+  validateHeightCm,
+  validateWeightKg,
+  WEIGHT_KG_RANGE,
+} from '@/utils/profileValidation';
+import { toUserFacingError } from '@/utils/userFacingError';
 import type { ActivityLevel, Goal, Sex } from '@/types';
 
 const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; desc: string; icon: string }[] = [
@@ -101,33 +111,55 @@ export function OnboardingScreen() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Validación de plausibilidad (auditoría de onboarding, Bugs B1/B5):
+  // altura/peso deben ser numéricos y estar en rango, y la fecha de
+  // nacimiento no puede ser futura ni implicar una edad absurda — no basta
+  // con que los campos no estén vacíos.
+  const heightValidation = useMemo(() => validateHeightCm(height), [height]);
+  const weightValidation = useMemo(() => validateWeightKg(weight), [weight]);
+  const birthDateValidation = useMemo(() => validateBirthDate(birthDate), [birthDate]);
+
   const step1Valid =
-    height.trim() !== '' &&
-    weight.trim() !== '' &&
-    /^\d{4}-\d{2}-\d{2}$/.test(birthDate) &&
+    heightValidation.status === 'valid' &&
+    weightValidation.status === 'valid' &&
+    birthDateValidation.status === 'valid' &&
     sex !== null;
 
   // Vista previa en vivo de los objetivos (se actualiza al cambiar actividad/objetivo).
+  // Sólo se calcula con valores ya validados — nunca con un parseFloat crudo.
   const preview = useMemo(
     () =>
       calculateTargets({
-        height_cm: parseFloat(height) || null,
-        weight_kg: parseFloat(weight) || null,
-        birth_date: birthDate || null,
+        height_cm: heightValidation.status === 'valid' ? heightValidation.value : null,
+        weight_kg: weightValidation.status === 'valid' ? weightValidation.value : null,
+        birth_date: birthDateValidation.status === 'valid' ? birthDate : null,
         sex,
         activity_level: activity,
         goal,
       }),
-    [height, weight, birthDate, sex, activity, goal]
+    [heightValidation, weightValidation, birthDateValidation, birthDate, sex, activity, goal]
   );
 
   const finish = async () => {
-    setSaving(true);
     setError(null);
+    // Defensa adicional: hoy step1Valid ya impide llegar aquí con datos
+    // inválidos (el botón "Siguiente" está deshabilitado), pero un valor no
+    // válido nunca debe alcanzar updateProfile pase lo que pase con la
+    // navegación (auditoría de onboarding, Bug B1).
+    if (
+      heightValidation.status !== 'valid' ||
+      weightValidation.status !== 'valid' ||
+      birthDateValidation.status !== 'valid' ||
+      sex === null
+    ) {
+      setError('Revisa los datos del paso 1: hay algún valor no válido.');
+      return;
+    }
+    setSaving(true);
     const base = {
       display_name: name.trim() || null,
-      height_cm: parseFloat(height),
-      weight_kg: parseFloat(weight),
+      height_cm: heightValidation.value,
+      weight_kg: weightValidation.value,
       birth_date: birthDate,
       sex,
       activity_level: activity,
@@ -148,7 +180,10 @@ export function OnboardingScreen() {
     });
     setSaving(false);
     if (err) {
-      setError(err);
+      // Detalle técnico sólo en consola de desarrollo — la UI nunca muestra
+      // el mensaje crudo de Supabase/red (CLAUDE.md §5, auditoría Bug B3).
+      if (__DEV__) console.warn('[OnboardingScreen] updateProfile error:', err);
+      setError(toUserFacingError(err));
       return;
     }
     // Fire-and-forget: welcome email with personalized targets
@@ -241,7 +276,7 @@ export function OnboardingScreen() {
               placeholder="¿Cómo te llamas?"
             />
             <View style={{ flexDirection: 'row', gap: spacing.md }}>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, gap: 4 }}>
                 <Input
                   label="Altura (cm)"
                   value={height}
@@ -249,8 +284,13 @@ export function OnboardingScreen() {
                   keyboardType="numeric"
                   placeholder="170"
                 />
+                {heightValidation.status !== 'empty' && heightValidation.status !== 'valid' ? (
+                  <Text style={{ color: '#ef4444', fontSize: 12 }}>
+                    {numericFieldMessage(heightValidation.status, 'Altura', HEIGHT_CM_RANGE)}
+                  </Text>
+                ) : null}
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, gap: 4 }}>
                 <Input
                   label="Peso (kg)"
                   value={weight}
@@ -258,13 +298,25 @@ export function OnboardingScreen() {
                   keyboardType="numeric"
                   placeholder="65"
                 />
+                {weightValidation.status !== 'empty' && weightValidation.status !== 'valid' ? (
+                  <Text style={{ color: '#ef4444', fontSize: 12 }}>
+                    {numericFieldMessage(weightValidation.status, 'Peso', WEIGHT_KG_RANGE)}
+                  </Text>
+                ) : null}
               </View>
             </View>
-            <DateField
-              label="Fecha de nacimiento"
-              value={birthDate}
-              onChange={setBirthDate}
-            />
+            <View style={{ gap: 4 }}>
+              <DateField
+                label="Fecha de nacimiento"
+                value={birthDate}
+                onChange={setBirthDate}
+              />
+              {birthDateValidation.status !== 'empty' && birthDateValidation.status !== 'valid' ? (
+                <Text style={{ color: '#ef4444', fontSize: 12 }}>
+                  {birthDateMessage(birthDateValidation.status)}
+                </Text>
+              ) : null}
+            </View>
             <View style={{ gap: spacing.sm }}>
               <Text
                 style={{
