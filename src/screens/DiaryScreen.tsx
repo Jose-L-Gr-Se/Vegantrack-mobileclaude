@@ -40,6 +40,10 @@ export function DiaryScreen() {
   const { isPro } = usePro();
   const photo = useMealPhoto();
   const [refreshing, setRefreshing] = useState(false);
+  // Protección mínima contra doble tap mientras una copia está en curso
+  // (auditoría del Diario, Bugs D/E) — estado local de esta pantalla, no un
+  // sistema global nuevo.
+  const [copying, setCopying] = useState(false);
   const [editing, setEditing] = useState<FoodLogEntry | null>(null);
   const [mealSheetMode, setMealSheetMode] = useState<MealSheetMode | null>(null);
 
@@ -173,15 +177,24 @@ export function DiaryScreen() {
   };
 
   const copyFromYesterday = (mealType?: MealType) => {
-    if (!user) return;
+    if (!user || copying) return; // doble tap mientras hay una copia en curso: ignorado
+    setCopying(true);
     const from = addDays(selectedDate, -1);
     const action = mealType
       ? copyMealEntries(user.id, from, selectedDate, mealType)
       : copyDayEntries(user.id, from, selectedDate);
-    void action.then(({ count, error }) => {
-      if (error) Alert.alert('Error', error);
-      else if (count === 0) Alert.alert('Nada que copiar', 'Ayer no hay registros para copiar.');
-    });
+    void action
+      .then(({ count, error }) => {
+        if (error) Alert.alert('Error', error);
+        else if (count === 0) Alert.alert('Nada que copiar', 'Ayer no hay registros para copiar.');
+      })
+      .catch(() => {
+        // Red de seguridad: nunca dejar la promesa sin capturar (no debería
+        // ocurrir en circunstancias normales tras el rediseño de
+        // copyEntries, pero antes un fallo local aquí quedaba en silencio).
+        Alert.alert('Error', 'No se ha podido completar la copia.');
+      })
+      .finally(() => setCopying(false));
   };
 
   const onRefresh = async () => {
@@ -317,7 +330,7 @@ export function DiaryScreen() {
               }
             />
             {mealEntries.length === 0 ? (
-              <Pressable onLongPress={() => copyFromYesterday(type)}>
+              <Pressable onLongPress={() => copyFromYesterday(type)} disabled={copying}>
                 <Text style={{ color: t.textMuted, fontSize: 13 }}>
                   Sin registros · mantén pulsado para copiar de ayer
                 </Text>
@@ -508,7 +521,12 @@ export function DiaryScreen() {
         )}
       </Card>
 
-      <Button title="Copiar todo el día de ayer" variant="secondary" onPress={() => copyFromYesterday()} />
+      <Button
+        title="Copiar todo el día de ayer"
+        variant="secondary"
+        onPress={() => copyFromYesterday()}
+        loading={copying}
+      />
 
       {entries.length === 0 && <EmptyState emoji="🥗" text="Aún no has registrado nada hoy. Toca ＋ en una comida para buscar alimentos." />}
 

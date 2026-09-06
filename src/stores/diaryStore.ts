@@ -23,6 +23,7 @@ import { normalizeSupplementDose } from '@/utils/supplementUnits';
 import { addDays, todayISO } from '@/utils/dates';
 import { isTransientSyncError, type SyncOpError } from '@/utils/syncError';
 import { reportError } from '@/lib/errorReporting';
+import { uuidv4 } from '@/utils/uuid';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
 import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
 
@@ -444,11 +445,11 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   },
 
   copyDayEntries: async (userId, fromDate, toDate) => {
-    return copyEntries(userId, fromDate, toDate, null, get(), set);
+    return copyEntries(userId, fromDate, toDate, null, get(), set, get().addEntry);
   },
 
   copyMealEntries: async (userId, fromDate, toDate, mealType) => {
-    return copyEntries(userId, fromDate, toDate, mealType, get(), set);
+    return copyEntries(userId, fromDate, toDate, mealType, get(), set, get().addEntry);
   },
 
   loadOverrides: async () => {
@@ -503,37 +504,88 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   },
 }));
 
+/**
+ * Copia comidas de un día (o de una comida concreta) a otro día — Diseño 1
+ * de la auditoría del Diario (Bugs D y E). Cada copia se procesa como una
+ * alta normal, reutilizando `addEntry()` tal cual: local primero,
+ * `synced=0` si el intento remoto no confirma, coordinado con
+ * `fetchEntries`/`flushPending` vía `withFoodLogLock` (ya integrado en
+ * `addEntry`, sin tocarlo). Cero infraestructura de sync nueva aquí: sólo
+ * generamos el id de cada copia, UNA vez, antes de cualquier intento de red
+ * — igual que cualquier alta manual.
+ *
+ * Idempotencia sin idempotency-key: un reintento AUTOMÁTICO (flushPending)
+ * nunca vuelve a pasar por esta función — opera directamente sobre las
+ * filas ya persistidas en SQLite con su id ya fijado, y el upsert por PK
+ * que ya usa `addEntry` las hace convergentes sin duplicar. Una segunda
+ * pulsación DELIBERADA del usuario sí vuelve a ejecutar esta función desde
+ * cero y genera un lote de ids nuevo — comportamiento correcto, no un bug
+ * (ver auditoría).
+ *
+ * Secuencial a propósito (no Promise.all): mantiene el orden predecible y,
+ * sobre todo, si una copia falla de forma no-transitoria a mitad del lote,
+ * las anteriores ya quedaron creadas y las siguientes se siguen intentando
+ * — nunca se aborta el resto en silencio.
+ */
 async function copyEntries(
   userId: string,
   fromDate: string,
   toDate: string,
   mealType: string | null,
   state: DiaryState,
-  set: (partial: Partial<DiaryState>) => void
+  set: (partial: Partial<DiaryState>) => void,
+  addEntry: DiaryState['addEntry']
 ): Promise<{ count: number; error: string | null }> {
   let query = supabase.from('food_log').select('*').eq('user_id', userId).eq('date', fromDate);
   if (mealType) query = query.eq('meal_type', mealType);
   const { data, error } = await query;
-  if (error) return { count: 0, error: error.message };
+  if (error) {
+    // Nunca el mensaje crudo de Postgrest/fetch (auditoría del Diario) — el
+    // SELECT de origen sigue siendo remoto-primero en esta ronda (fuera de
+    // alcance hacerlo offline-first), así que un fallo aquí no crea nada.
+    return {
+      count: 0,
+      error: isTransientSyncError(error)
+        ? 'Sin conexión. Comprueba tu conexión e inténtalo de nuevo.'
+        : 'No se han podido leer las comidas a copiar.',
+    };
+  }
   const source = (data ?? []) as FoodLogEntry[];
   if (source.length === 0) return { count: 0, error: null };
 
-  const { uuidv4 } = await import('@/utils/uuid');
-  const now = new Date().toISOString();
-  const copies = source.map((e) => {
-    const { created_at, updated_at, ...rest } = e;
-    return { ...rest, id: uuidv4(), date: toDate };
-  });
+  let count = 0;
+  let hadNonTransientError = false;
 
-  const { error: insErr } = await supabase.from('food_log').insert(copies);
-  if (insErr) return { count: 0, error: insErr.message };
-
-  for (const c of copies) {
-    await mirrorUpsert('food_log', entryToRow({ ...c, created_at: now } as FoodLogEntry), true);
+  for (const sourceEntry of source) {
+    const { id: _sourceId, date: _sourceDate, created_at, updated_at, ...rest } = sourceEntry;
+    const copy: NewFoodLogEntry = { ...rest, id: uuidv4(), date: toDate };
+    try {
+      const { error: entryError } = await addEntry(copy);
+      // addEntry() escribe SIEMPRE en local antes de cualquier intento
+      // remoto — la copia queda registrada aunque su sincronización remota
+      // falle o quede pendiente. `count` refleja exactamente eso: cuántas
+      // quedaron registradas, no cuántas confirmaron ya en el servidor.
+      count += 1;
+      if (entryError) hadNonTransientError = true;
+    } catch (err) {
+      // No debería ocurrir en circunstancias normales (addEntry no lanza
+      // hoy salvo un fallo local excepcional de SQLite) — pero si ocurriera,
+      // no debe abortar el resto del lote: se reporta y se sigue con la
+      // siguiente copia, conservando las que ya se crearon.
+      hadNonTransientError = true;
+      reportError(err, { tag: 'copy_entries', extra: { op: 'addEntry' } });
+    }
   }
+
   if (state.selectedDate === toDate) {
     const local = await mirrorList<FoodLogEntry>('food_log', userId, toDate);
     set({ entries: local.map((r) => r.payload) });
   }
-  return { count: copies.length, error: null };
+
+  return {
+    count,
+    error: hadNonTransientError
+      ? 'Algunas comidas no se han podido sincronizar del todo; se reintentará automáticamente cuando haya conexión.'
+      : null,
+  };
 }
