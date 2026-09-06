@@ -563,6 +563,7 @@ export function DiaryScreen() {
           isPro={isPro}
           analysis={photo.analysis}
           onCorrected={(analysis) => photo.applyCorrection(analysis)}
+          onVeganCorrected={(isVegan) => photo.applyManualVeganCorrection(isVegan)}
           onClose={photo.reset}
           onAdded={() => {
             track('photo_entry_saved', {});

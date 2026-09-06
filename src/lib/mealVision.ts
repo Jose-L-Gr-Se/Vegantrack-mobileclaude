@@ -136,6 +136,46 @@ export async function correctMealAnalysis(
   }
 }
 
+/**
+ * Aplica una corrección manual (gratis, sin IA) de si un plato ya analizado
+ * es vegano. Pura y sin estado — vive aquí (no dentro de `useMealPhoto`)
+ * para poder testearla directamente: en este repo, `@testing-library/
+ * react-native`/`renderHook` no son fiables (React 19 + RNTL 14, ver
+ * precedente en ErrorBoundary.test.tsx / SupplementEditor.dosePresentation.test.ts).
+ *
+ * Auditoría del paywall de foto-IA (P1): `is_vegan`/`vegan_confidence` no
+ * tenían ninguna vía de corrección sin Pro, a diferencia de las macros
+ * (que ya se podían corregir a mano si la IA las estimaba mal). Distinta de
+ * `correctMealAnalysis`: nunca llama a Gemini, no cuesta nada, y sólo toca
+ * estos tres campos — el resto del análisis (nombre, macros) no cambia.
+ *
+ * 'high'/'low' son las mismas categorías que ya usa la UI para "muy
+ * probablemente vegano"/"no vegano" (ver Pill en ProductDetailSheet) — no
+ * un número inventado: una afirmación directa del usuario es al menos tan
+ * fiable como cualquier heurística de IA/OFF que ya dispara esas mismas
+ * etiquetas. Al marcar vegano se limpia `non_vegan_ingredients`: ya no hay
+ * ningún ingrediente no vegano que listar.
+ */
+export function correctVeganManually(analysis: MealAnalysis, isVegan: boolean): MealAnalysis {
+  return {
+    ...analysis,
+    is_vegan: isVegan,
+    vegan_confidence: manualVeganConfidence(isVegan),
+    non_vegan_ingredients: isVegan ? [] : analysis.non_vegan_ingredients,
+  };
+}
+
+/**
+ * `vegan_confidence` que corresponde a una corrección manual del usuario
+ * (ver `correctVeganManually`) — única fuente de verdad de este mapeo, para
+ * que `ProductDetailSheet` (que no maneja un `MealAnalysis` completo al
+ * corregir un producto sin `analysis`, sólo `is_vegan`) use exactamente el
+ * mismo criterio sin repetirlo.
+ */
+export function manualVeganConfidence(isVegan: boolean): VeganConfidence {
+  return isVegan ? 'high' : 'low';
+}
+
 /** Normaliza la estimación de la IA al formato común por-100g. */
 export function analysisToFood(a: MealAnalysis): FoodPer100g {
   const p = a.per_100g;

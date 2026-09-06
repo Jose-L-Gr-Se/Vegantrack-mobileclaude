@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { analyzeMealPhoto, analysisToFood, type MealAnalysis, type ScanPeriod } from '@/lib/mealVision';
+import { analyzeMealPhoto, analysisToFood, correctVeganManually, type MealAnalysis, type ScanPeriod } from '@/lib/mealVision';
 import { track } from '@/lib/analytics';
 import type { FoodPer100g, VeganConfidence } from '@/types';
 
@@ -145,5 +145,22 @@ export function useMealPhoto() {
     }));
   }, []);
 
-  return { ...state, capture, reset, clearQuota, clearError, applyCorrection };
+  /**
+   * Corrección manual (gratis, sin IA) de si el plato es vegano — auditoría
+   * del paywall de foto-IA, cierre del P1. A diferencia de `applyCorrection`
+   * (que sustituye TODO el análisis tras un recálculo Pro), esto sólo toca
+   * is_vegan/vegan_confidence/non_vegan_ingredients (ver `correctVeganManually`),
+   * y nunca llama a Gemini. Limpiar `non_vegan_ingredients` al marcar vegano
+   * evita que el aviso de "posibles ingredientes de origen animal" (derivado
+   * de este mismo campo en DiaryScreen) contradiga la corrección del usuario.
+   */
+  const applyManualVeganCorrection = useCallback((isVegan: boolean) => {
+    setState((s) => {
+      if (!s.analysis) return s;
+      const analysis = correctVeganManually(s.analysis, isVegan);
+      return { ...s, analysis, food: analysisToFood(analysis), confidence: analysis.vegan_confidence };
+    });
+  }, []);
+
+  return { ...state, capture, reset, clearQuota, clearError, applyCorrection, applyManualVeganCorrection };
 }

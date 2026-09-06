@@ -39,7 +39,7 @@ import {
   getProductByBarcode,
   getVeganConfidence,
 } from '@/lib/openfoodfacts';
-import { analysisToFood, correctMealAnalysis, type MealAnalysis } from '@/lib/mealVision';
+import { analysisToFood, correctMealAnalysis, manualVeganConfidence, type MealAnalysis } from '@/lib/mealVision';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import type {
   FoodLogEntry,
@@ -162,6 +162,7 @@ export function ProductDetailSheet({
   isPro,
   analysis,
   onCorrected,
+  onVeganCorrected,
 }: {
   food?: FoodPer100g | null;
   editEntry?: FoodLogEntry | null;
@@ -185,6 +186,8 @@ export function ProductDetailSheet({
   isPro?: boolean;
   analysis?: MealAnalysis | null;
   onCorrected?: (analysis: MealAnalysis) => void;
+  /** Corrección manual (gratis) de si el plato es vegano — auditoría del paywall de foto-IA, P1. */
+  onVeganCorrected?: (isVegan: boolean) => void;
 }) {
   const t = useTheme();
   const user = useAuthStore((s) => s.user);
@@ -216,6 +219,12 @@ export function ProductDetailSheet({
   // con decimales a medio escribir, igual que ya hace `grams` en esta misma
   // pantalla. Nunca corrige nada sola: sólo aplica lo que el usuario tecleó.
   const [macroEdits, setMacroEdits] = useState<Partial<Record<MacroFieldName, string>>>({});
+
+  // Corrección manual (gratis) de si el plato es vegano — auditoría del
+  // paywall de foto-IA, cierre del P1: `is_vegan`/`vegan_confidence` no
+  // tenían ninguna vía de corrección sin Pro, a diferencia de las macros.
+  // Mismo patrón que `macroEdits`: null = sin corrección, no se toca `food`.
+  const [veganOverride, setVeganOverride] = useState<boolean | null>(null);
 
   // — Edición del nombre y opción "guardar como habitual" —
   // Sólo activo cuando el alimento viene de la IA por foto: así el usuario
@@ -251,12 +260,23 @@ export function ProductDetailSheet({
     setEditedName(res.analysis.food_name);
     setConfidence(res.analysis.vegan_confidence);
     setMacroEdits({}); // nueva estimación de la IA: las ediciones de la anterior ya no aplican
+    // El recálculo trae su propio veredicto de veganismo — sustituye a
+    // cualquier corrección manual previa, no se acumulan (auditoría, test 4).
+    setVeganOverride(null);
+  };
+
+  /** Corrección manual, gratis, de si el plato es vegano — nunca llama a Gemini. */
+  const handleSetVegan = (isVegan: boolean) => {
+    setVeganOverride(isVegan);
+    setConfidence(manualVeganConfidence(isVegan));
+    onVeganCorrected?.(isVegan);
   };
 
   useEffect(() => {
     setFood(baseFood);
     setEditedName(baseFood?.food_name ?? '');
     setMacroEdits({});
+    setVeganOverride(null);
     if (!baseFood) return;
     const needsRich =
       !baseFood.nutriscore_grade && !baseFood.ecoscore_grade && !baseFood.nova_group && !baseFood.ingredients_text;
@@ -302,6 +322,9 @@ export function ProductDetailSheet({
     const parsed = parseFloat(raw.replace(',', '.'));
     if (Number.isFinite(parsed)) effectiveFood[field] = parsed;
   }
+  // Corrección manual de veganismo (ver `veganOverride` más arriba): mismo
+  // criterio que las macros — sólo se aplica si el usuario la ha tocado.
+  if (veganOverride !== null) effectiveFood.is_vegan = veganOverride;
 
   // Cálculo puro y barato (comparaciones numéricas, sin red ni estado) — no
   // necesita memoización; se recalcula con cada render igual que `cal`/`prot`
@@ -533,15 +556,69 @@ export function ProductDetailSheet({
             )}
             {food.brand ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
             <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 4 }}>
-              {food.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
+              {effectiveFood.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
               {confidence === 'medium' ? (
                 <Pill text="Parece vegano" color={semantic.warning} />
               ) : confidence === 'low' ? (
                 <Pill text="No vegano" color={semantic.danger} />
-              ) : confidence === 'unknown' && !food.is_vegan ? (
+              ) : confidence === 'unknown' && !effectiveFood.is_vegan ? (
                 <Pill text="Sin datos vegano" color={t.textMuted} />
               ) : null}
             </View>
+            {isAiPhoto ? (
+              <View style={{ gap: 2, marginTop: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' }}>
+                  <Text style={{ color: t.textSecondary, fontSize: 11, fontWeight: '700' }}>
+                    ¿Es vegano?
+                  </Text>
+                  <Pressable
+                    onPress={() => handleSetVegan(true)}
+                    style={{
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: 3,
+                      borderRadius: radii.pill,
+                      borderWidth: 1.5,
+                      borderColor: effectiveFood.is_vegan ? semantic.success : t.cardBorder,
+                      backgroundColor: effectiveFood.is_vegan ? t.primarySoft : 'transparent',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '700',
+                        color: effectiveFood.is_vegan ? semantic.success : t.textSecondary,
+                      }}
+                    >
+                      Sí
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleSetVegan(false)}
+                    style={{
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: 3,
+                      borderRadius: radii.pill,
+                      borderWidth: 1.5,
+                      borderColor: !effectiveFood.is_vegan ? semantic.danger : t.cardBorder,
+                      backgroundColor: !effectiveFood.is_vegan ? t.card : 'transparent',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '700',
+                        color: !effectiveFood.is_vegan ? semantic.danger : t.textSecondary,
+                      }}
+                    >
+                      No
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text style={{ color: t.textMuted, fontSize: 10 }}>
+                  Corrige aquí si crees que la IA se ha equivocado — es tu corrección, no una verificación.
+                </Text>
+              </View>
+            ) : null}
             {isAiPhoto ? (
               <Text style={{ color: t.textMuted, fontSize: 11, marginTop: 2 }}>
                 Toca para corregir el nombre si la IA se ha confundido.
