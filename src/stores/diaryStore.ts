@@ -75,10 +75,17 @@ function entryToRow(e: FoodLogEntry | NewFoodLogEntry) {
   return { id: e.id, user_id: e.user_id, date: e.date, meal_type: e.meal_type, payload: e };
 }
 
-async function insertRemote(entry: NewFoodLogEntry): Promise<{ ok: boolean; error: SyncOpError | null }> {
-  const { error } = await supabase.from('food_log').insert(entry);
-  // 23505 = clave duplicada: ya se sincronizó en un intento anterior
-  if (error && error.code !== '23505') return { ok: false, error };
+// Upsert por PK `id` (no insert): el mismo id puede llegar aquí tanto para
+// un alta nueva (id nunca visto) como para una edición que reutiliza el id
+// de la entry original (auditoría del Diario, Bug A — ver
+// ProductDetailSheet.commit()). PostgREST resuelve el conflicto por la
+// clave primaria por defecto sin necesitar `onConflict` explícito: si el id
+// no existe, inserta; si ya existe, actualiza — exactamente lo que hacía
+// antes la tolerancia a `23505` para un reintento del MISMO contenido, pero
+// ahora también correcto cuando el contenido cambia de verdad (una edición).
+async function upsertRemote(entry: NewFoodLogEntry): Promise<{ ok: boolean; error: SyncOpError | null }> {
+  const { error } = await supabase.from('food_log').upsert(entry);
+  if (error) return { ok: false, error };
   return { ok: true, error: null };
 }
 
@@ -206,17 +213,35 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       set({ entries: [...get().entries, full] });
     }
 
-    // Intento remoto
-    const { ok } = await insertRemote(entry);
+    // Intento remoto + marca de sincronizado como una única sección crítica
+    // frente a fetchEntries (ver withFoodLogLock arriba, auditoría del
+    // Diario Bug B) — cierra la misma carrera que ya protegía flushPending:
+    // sin esto, una entry que confirma justo cuando un fetchEntries
+    // concurrente ya capturó una instantánea sin ella podría desaparecer
+    // del espejo local al converger (mirrorReplaceDay borraría una fila
+    // synced=1 que su SELECT obsoleto no incluía).
+    const { ok, error } = await withFoodLogLock(async () => {
+      const result = await upsertRemote(entry);
+      if (result.ok) await mirrorMarkSynced('food_log', entry.id);
+      return result;
+    });
+
     if (ok) {
-      await mirrorMarkSynced('food_log', entry.id);
       // Racha en segundo plano (la PWA usa la RPC update_streak)
       void supabase.rpc('update_streak', { p_user_id: entry.user_id }).then(
         () => undefined,
         () => undefined
       );
+      return { error: null };
     }
-    // Sin red no es error: la entry queda pendiente de sincronizar
+    if (error && !isTransientSyncError(error)) {
+      // Error real del servidor (no de red, auditoría del Diario Bug C): la
+      // entry queda pendiente en local — nunca se pierde, flushPending
+      // seguirá reintentándola — pero el llamador (ProductDetailSheet)
+      // debe saberlo para no dar por bueno un guardado que no ocurrió.
+      return { error: error.message || 'No se pudo guardar el cambio en el servidor.' };
+    }
+    // Sin red: no es error, la entry queda pendiente de sincronizar.
     return { error: null };
   },
 
@@ -224,8 +249,26 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     set({ entries: get().entries.filter((e) => e.id !== id) });
     await mirrorMarkDeleted('food_log', id);
 
-    const { error } = await supabase.from('food_log').delete().eq('id', id);
-    if (!error) await mirrorRemove('food_log', id);
+    // Igual que en addEntry: el borrado remoto + mirrorRemove como una
+    // única sección crítica frente a fetchEntries (Bug B). Sin esto, un
+    // delete que confirma justo cuando un fetchEntries concurrente ya
+    // capturó una instantánea CON esta fila podría resucitarla: al borrarse
+    // localmente (mirrorRemove) ya no queda tombstone que el guard de
+    // mirrorUpsert pueda proteger, y el mirrorReplaceDay de ese fetchEntries
+    // la reinsertaría como si nunca se hubiera borrado.
+    const { error } = await withFoodLogLock(async () => {
+      const { error } = await supabase.from('food_log').delete().eq('id', id);
+      if (!error) await mirrorRemove('food_log', id);
+      return { error };
+    });
+
+    if (!error) return { error: null };
+    if (!isTransientSyncError(error)) {
+      // Error real (Bug C): la tombstone queda pendiente en local —
+      // flushPending la reintentará — pero el llamador debe saberlo.
+      return { error: error.message || 'No se pudo eliminar en el servidor.' };
+    }
+    // Sin red: no es error, la tombstone queda pendiente de sincronizar.
     return { error: null };
   },
 
@@ -436,11 +479,11 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
             }
           } else {
             const { created_at, updated_at, ...insertable } = row.payload;
-            const { ok, error } = await insertRemote(insertable as NewFoodLogEntry);
+            const { ok, error } = await upsertRemote(insertable as NewFoodLogEntry);
             if (ok) {
               await mirrorMarkSynced('food_log', row.id);
             } else if (error && !isTransientSyncError(error)) {
-              reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'insert', code: error.code || 'unknown' } });
+              reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'upsert', code: error.code || 'unknown' } });
             }
           }
         }

@@ -24,7 +24,13 @@ export function buildEntry(
   grams: number,
   mealType: MealType,
   date: string,
-  userId: string
+  userId: string,
+  // Opcional: reutiliza un id existente en vez de generar uno nuevo — lo usa
+  // la edición de entradas (ProductDetailSheet.commit()) para actualizar in
+  // situ en vez de borrar y volver a crear (auditoría del Diario, Bug A).
+  // Todas las demás llamadas (alta nueva, recetas, AddFoodModal) lo omiten
+  // y siguen generando un uuidv4() nuevo exactamente como siempre.
+  existingId?: string
 ): NewFoodLogEntry {
   const ratio = grams / 100;
 
@@ -49,7 +55,7 @@ export function buildEntry(
   const vitD = scaleOrNull(food.vitamin_d_known && isUsable('vitamin_d_mcg') ? food.vitamin_d_mcg : null, ratio, 2);
 
   return {
-    id: uuidv4(),
+    id: existingId ?? uuidv4(),
     user_id: userId,
     date,
     meal_type: mealType,

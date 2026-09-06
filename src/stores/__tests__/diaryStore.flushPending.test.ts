@@ -41,7 +41,7 @@ const DATE = '2026-09-05';
 
 type SupaResult = { error: { code: string; message: string } | null };
 
-/** Builder de `food_log` controlable: éxito/fallo de insert y delete por id de fila. */
+/** Builder de `food_log` controlable: éxito/fallo de upsert y delete por id de fila. */
 function mockFoodLogTable() {
   const insertResults = new Map<string, SupaResult>();
   const deleteResults = new Map<string, SupaResult>();
@@ -49,7 +49,9 @@ function mockFoodLogTable() {
   const deleteCalls: string[] = [];
 
   mockFrom.mockImplementation(() => ({
-    insert: (payload: { id: string }) => {
+    // La producción usa upsert() (auditoría del Diario, Bug A) — mismo
+    // contrato {error} que antes, sólo cambia el nombre del método.
+    upsert: (payload: { id: string }) => {
       insertCalls.push(payload.id);
       return Promise.resolve(insertResults.get(payload.id) ?? { error: null });
     },
@@ -129,7 +131,7 @@ describe('diaryStore.flushPending — food_log (P1 sync, Fase 1)', () => {
     expect(mockReportError).toHaveBeenCalledTimes(1);
     const [reportedError, context] = mockReportError.mock.calls[0];
     expect(reportedError).toMatchObject({ code: '42501' });
-    expect(context).toMatchObject({ tag: 'sync_flush_food_log', extra: { op: 'insert', code: '42501' } });
+    expect(context).toMatchObject({ tag: 'sync_flush_food_log', extra: { op: 'upsert', code: '42501' } });
   });
 
   it('4. varias operaciones pendientes → cada una se procesa de forma independiente', async () => {

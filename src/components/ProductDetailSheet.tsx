@@ -188,7 +188,7 @@ export function ProductDetailSheet({
 }) {
   const t = useTheme();
   const user = useAuthStore((s) => s.user);
-  const { addEntry, deleteEntry, selectedDate } = useDiaryStore();
+  const { addEntry, selectedDate } = useDiaryStore();
   const createCustomFood = useCustomFoodStore((s) => s.createCustomFood);
 
   const isEdit = !!editEntry;
@@ -372,8 +372,14 @@ export function ProductDetailSheet({
     setBusy(true);
 
     if (isEdit && editEntry) {
-      await deleteEntry(editEntry.id);
-      const next = buildEntry(finalFood, parsed, target, editEntry.date, user.id);
+      // Edición atómica (auditoría del Diario, Bug A): reutiliza el MISMO
+      // id de la entry original en vez de borrarla y crear una nueva — sin
+      // esto, un fallo permanente justo entre el delete y el insert podía
+      // perder la entrada por completo (ni la vieja ni la nueva llegaban a
+      // Supabase). addEntry() ahora hace un upsert remoto por id: si el id
+      // ya existe en el servidor lo actualiza, si no (p. ej. nunca llegó a
+      // sincronizar estando offline) lo crea — un único intento, atómico.
+      const next = buildEntry(finalFood, parsed, target, editEntry.date, user.id, editEntry.id);
       const { error: err } = await addEntry(next);
       setBusy(false);
       if (err) setError(err);

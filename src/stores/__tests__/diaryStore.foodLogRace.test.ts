@@ -61,7 +61,9 @@ function mockFoodLogServer(options: { deleteSucceeds?: boolean } = {}) {
   const pendingSelects: Array<() => void> = [];
 
   mockFrom.mockImplementation(() => ({
-    insert: (payload: ReturnType<typeof foodPayload>) => {
+    // La producción usa upsert() (auditoría del Diario, Bug A) — mismo
+    // contrato {error} que antes, sólo cambia el nombre del método.
+    upsert: (payload: ReturnType<typeof foodPayload>) => {
       insertCalls.push(payload.id);
       return new Promise((resolve) => {
         pendingInserts.push(() => {

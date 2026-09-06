@@ -48,6 +48,13 @@ describe('buildEntry', () => {
     const b = buildEntry(lentejas, 100, 'dinner', '2026-06-11', 'u');
     expect(a.id).not.toBe(b.id);
   });
+
+  it('con un 6º argumento (existingId), reutiliza ese id en vez de generar uno nuevo — edición atómica (auditoría del Diario, Bug A)', () => {
+    const e = buildEntry(lentejas, 150, 'lunch', '2026-06-11', 'user-1', 'entry-existente-1');
+    expect(e.id).toBe('entry-existente-1');
+    // El resto del cálculo no cambia por reutilizar el id.
+    expect(e.calories).toBe(174);
+  });
 });
 
 describe('flujo entry → resumen', () => {

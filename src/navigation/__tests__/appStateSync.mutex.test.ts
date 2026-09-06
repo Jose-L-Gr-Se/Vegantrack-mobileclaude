@@ -101,7 +101,9 @@ it('dos eventos "active" mientras flushPending sigue en curso → sólo una pasa
   const insertCalls: string[] = [];
   let resolveInsert!: (v: { error: null }) => void;
   mockFrom.mockImplementation(() => ({
-    insert: (payload: { id: string }) => {
+    // La producción usa upsert() (auditoría del Diario, Bug A) — mismo
+    // contrato {error} que antes, sólo cambia el nombre del método.
+    upsert: (payload: { id: string }) => {
       insertCalls.push(payload.id);
       return new Promise((resolve) => {
         resolveInsert = resolve;
