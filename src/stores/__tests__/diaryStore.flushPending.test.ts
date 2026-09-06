@@ -195,4 +195,33 @@ describe('diaryStore.flushPending — food_log (P1 sync, Fase 1)', () => {
     await db.mirrorReplaceDay('food_log', USER_ID, DATE, [{ id, meal_type: 'lunch', payload: foodPayload(id) }]);
     expect((await db.mirrorList('food_log', USER_ID, DATE)).some((r) => r.id === id)).toBe(false);
   });
+
+  it('7. red de seguridad: una excepción local inesperada llega a reportError, no marca nada como sincronizado, y libera el mutex para el siguiente flush', async () => {
+    const { db, diaryStore } = freshModules();
+    const { insertCalls } = mockFoodLogTable(); // el insert remoto "tendría éxito"...
+    const id = 'entry-7';
+    await db.mirrorUpsert('food_log', { id, user_id: USER_ID, date: DATE, payload: foodPayload(id) }, false);
+
+    // ...pero el paso LOCAL posterior (mirrorMarkSynced) lanza — simula un
+    // fallo de SQLite (disco lleno, DB bloqueada), no un {error} de red ya
+    // clasificado por isTransientSyncError.
+    const throwSpy = jest.spyOn(db, 'mirrorMarkSynced').mockImplementation(() => {
+      throw new Error('disco lleno');
+    });
+
+    await diaryStore.useDiaryStore.getState().flushPending(USER_ID);
+
+    expect(insertCalls).toEqual([id]); // el intento remoto sí llegó a hacerse...
+    expect(mockReportError).toHaveBeenCalledTimes(1);
+    expect(mockReportError.mock.calls[0][1]).toMatchObject({ tag: 'sync_flush_food_log', extra: { op: 'unexpected' } });
+    // ...pero la fila NO quedó marcada como sincronizada: sigue pendiente,
+    // se reintentará (el insert real ya toleraría un 23505 si se repitiera).
+    expect(await db.mirrorPending('food_log', USER_ID)).toEqual([expect.objectContaining({ id })]);
+
+    // El mutex (flushInFlight Y el nuevo foodLogLock) quedó libre pese a la
+    // excepción: un siguiente flush normal completa sin problema.
+    throwSpy.mockRestore();
+    await diaryStore.useDiaryStore.getState().flushPending(USER_ID);
+    expect(await db.mirrorPending('food_log', USER_ID)).toHaveLength(0);
+  });
 });

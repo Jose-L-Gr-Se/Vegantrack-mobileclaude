@@ -180,4 +180,26 @@ describe('weightStore.flushPending — weight_logs (P1 sync, Fase 1)', () => {
     await db.mirrorUpsert('weight_logs', { id, user_id: USER_ID, date: DATE, payload: weightPayload(id) }, true);
     expect((await db.mirrorList('weight_logs', USER_ID, DATE)).some((r) => r.id === id)).toBe(false);
   });
+
+  it('7. red de seguridad: una excepción local inesperada llega a reportError, no marca nada como sincronizado, y libera el mutex para el siguiente flush', async () => {
+    const { db, weightStore } = freshModules();
+    const { upsertCalls } = mockWeightLogsTable();
+    const id = 'weight-7';
+    await db.mirrorUpsert('weight_logs', { id, user_id: USER_ID, date: DATE, payload: weightPayload(id) }, false);
+
+    const throwSpy = jest.spyOn(db, 'mirrorMarkSynced').mockImplementation(() => {
+      throw new Error('disco lleno');
+    });
+
+    await weightStore.useWeightStore.getState().flushPending(USER_ID);
+
+    expect(upsertCalls).toEqual([id]);
+    expect(mockReportError).toHaveBeenCalledTimes(1);
+    expect(mockReportError.mock.calls[0][1]).toMatchObject({ tag: 'sync_flush_weight_logs', extra: { op: 'unexpected' } });
+    expect(await db.mirrorPending('weight_logs', USER_ID)).toEqual([expect.objectContaining({ id })]);
+
+    throwSpy.mockRestore();
+    await weightStore.useWeightStore.getState().flushPending(USER_ID);
+    expect(await db.mirrorPending('weight_logs', USER_ID)).toHaveLength(0);
+  });
 });

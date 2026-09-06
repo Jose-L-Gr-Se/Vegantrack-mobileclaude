@@ -177,6 +177,14 @@ export const useWeightStore = create<WeightState>((set, get) => ({
           }
         }
       }
+    } catch (err) {
+      // Misma red de seguridad que diaryStore.ts: una excepción inesperada
+      // (local, no un {error} de Supabase) nunca debe quedar sin reportar
+      // ni marcar nada como sincronizado a medias. weight_logs no necesita
+      // el mutex adicional de food_log (fetchLogs no usa un DELETE masivo
+      // equivalente a mirrorReplaceDay — confirmado en la auditoría), sólo
+      // esta red de seguridad.
+      reportError(err, { tag: 'sync_flush_weight_logs', extra: { op: 'unexpected' } });
     } finally {
       flushInFlight = false;
     }

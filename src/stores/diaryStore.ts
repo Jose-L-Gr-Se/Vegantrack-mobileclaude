@@ -95,6 +95,51 @@ async function insertRemote(entry: NewFoodLogEntry): Promise<{ ok: boolean; erro
 // ya ocurre hoy con cualquier pendiente no sincronizado.
 let flushInFlight = false;
 
+// ── Coordinación food_log: fetchEntries vs flushPending (P1 sync, auditoría
+// final) ─────────────────────────────────────────────────────────────────
+//
+// Hallazgo: mirrorReplaceDay() (llamada por fetchEntries) hace
+// `DELETE ... WHERE synced=1` usando los datos de un SELECT remoto que
+// puede quedar obsoleto. Si flushPending() sincroniza una fila (la marca
+// synced=1) justo entre ese SELECT y el DELETE, la fila desaparece del
+// espejo local aunque ya está a salvo en el servidor — no hay pérdida real
+// en Supabase, pero sí una desaparición temporal e injustificada de la UI.
+// Ni el guard de tombstones de mirrorUpsert (protege sólo
+// deleted=1 AND synced=0, un caso distinto: un borrado pendiente, no una
+// fila viva en transición synced=0→1) ni flushInFlight (sólo protege
+// flushPending contra SÍ MISMO) evitan esto, porque fetchEntries ni
+// siquiera participa en ese mutex.
+//
+// Mecanismo: un mutex adicional y ortogonal, implementado como cola de
+// promesas encadenadas (sin threshold de tiempo, sin nueva tabla/columna,
+// sin dependencia nueva) que serializa dos secciones críticas sobre
+// food_log: (a) el tramo SELECT remoto + mirrorReplaceDay de fetchEntries,
+// y (b) el bucle completo de flushPending. Mientras una corre, la otra
+// espera su turno — nunca se salta ni se cancela. Así, cuando
+// mirrorReplaceDay ejecuta su DELETE, o no hay ningún flush concurrente
+// tocando el espejo, o el flush ya terminó del todo y el propio SELECT
+// (disparado DESPUÉS de esperar turno) ya habrá visto esa fila como
+// remota. A nivel de tabla completa, no por fecha: más simple, y el coste
+// de serializar un fetchEntries de un día con un flushPending que toca
+// otro día es despreciable (flushPending suele ser rápido o no-op).
+//
+// No se aplica a weight_logs: weightStore.fetchLogs() no usa
+// mirrorReplaceDay (hace mirrorUpsert fila a fila sin ningún DELETE
+// masivo), así que no está expuesto a esta carrera — confirmado en la
+// auditoría.
+let foodLogLock: Promise<unknown> = Promise.resolve();
+
+function withFoodLogLock<T>(fn: () => Promise<T>): Promise<T> {
+  const turn = foodLogLock.then(fn);
+  // Encadena el siguiente turno tras éste, éxito o error — así un fallo en
+  // una pasada nunca deja la cola bloqueada para las siguientes.
+  foodLogLock = turn.then(
+    () => undefined,
+    () => undefined
+  );
+  return turn;
+}
+
 export const useDiaryStore = create<DiaryState>((set, get) => ({
   entries: [],
   selectedDate: todayISO(),
@@ -115,22 +160,32 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       // espejo no disponible: seguimos con remoto
     }
 
-    // 2. Remoto: fuente de verdad; al llegar, refresca espejo y estado
-    const { data, error } = await supabase
-      .from('food_log')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('date', date)
-      .order('created_at', { ascending: true });
+    // 2. Remoto: fuente de verdad. SELECT + mirrorReplaceDay como una única
+    //    sección crítica frente a flushPending (ver withFoodLogLock arriba)
+    //    — cierra la carrera de la auditoría final sin tocar
+    //    mirrorReplaceDay ni el guard de tombstones (P0 ya cerrado).
+    const merged = await withFoodLogLock(async () => {
+      const { data, error } = await supabase
+        .from('food_log')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('date', date)
+        .order('created_at', { ascending: true });
 
-    if (!error && data) {
-      const remote = data as FoodLogEntry[];
-      await mirrorReplaceDay(
-        'food_log',
-        userId,
-        date,
-        remote.map((e) => ({ id: e.id, meal_type: e.meal_type, payload: e }))
-      );
+      if (!error && data) {
+        const remote = data as FoodLogEntry[];
+        await mirrorReplaceDay(
+          'food_log',
+          userId,
+          date,
+          remote.map((e) => ({ id: e.id, meal_type: e.meal_type, payload: e }))
+        );
+        return true;
+      }
+      return false;
+    });
+
+    if (merged) {
       // Mezclar pendientes locales del día que aún no están en remoto
       const local = await mirrorList<FoodLogEntry>('food_log', userId, date);
       if (get().selectedDate === date) {
@@ -366,28 +421,39 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     if (flushInFlight) return;
     flushInFlight = true;
     try {
-      const pending = await mirrorPending<FoodLogEntry>('food_log', userId);
-      for (const row of pending) {
-        if (row.deleted) {
-          const { error } = await supabase.from('food_log').delete().eq('id', row.id);
-          if (!error) {
-            await mirrorRemove('food_log', row.id);
-          } else if (!isTransientSyncError(error)) {
-            // Sin red no se reporta (es el caso esperado, no un bug); un
-            // error con código de servidor sí lo es — nunca cambia si se
-            // reintenta: la tombstone sigue synced=0 en ambos casos.
-            reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'delete', code: error.code || 'unknown' } });
-          }
-        } else {
-          const { created_at, updated_at, ...insertable } = row.payload;
-          const { ok, error } = await insertRemote(insertable as NewFoodLogEntry);
-          if (ok) {
-            await mirrorMarkSynced('food_log', row.id);
-          } else if (error && !isTransientSyncError(error)) {
-            reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'insert', code: error.code || 'unknown' } });
+      await withFoodLogLock(async () => {
+        const pending = await mirrorPending<FoodLogEntry>('food_log', userId);
+        for (const row of pending) {
+          if (row.deleted) {
+            const { error } = await supabase.from('food_log').delete().eq('id', row.id);
+            if (!error) {
+              await mirrorRemove('food_log', row.id);
+            } else if (!isTransientSyncError(error)) {
+              // Sin red no se reporta (es el caso esperado, no un bug); un
+              // error con código de servidor sí lo es — nunca cambia si se
+              // reintenta: la tombstone sigue synced=0 en ambos casos.
+              reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'delete', code: error.code || 'unknown' } });
+            }
+          } else {
+            const { created_at, updated_at, ...insertable } = row.payload;
+            const { ok, error } = await insertRemote(insertable as NewFoodLogEntry);
+            if (ok) {
+              await mirrorMarkSynced('food_log', row.id);
+            } else if (error && !isTransientSyncError(error)) {
+              reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'insert', code: error.code || 'unknown' } });
+            }
           }
         }
-      }
+      });
+    } catch (err) {
+      // Red de seguridad: una excepción inesperada (SQLite/JSON corrupto/
+      // cualquier fallo local — no un {error} de Supabase, que ya se
+      // clasifica arriba) nunca debe quedar como promesa no capturada. No
+      // se marca nada como sincronizado ni se pierde la fila que estuviera
+      // procesándose: sigue synced=0 tal cual estaba, se reintentará en el
+      // siguiente flushPending — mismo comportamiento que un fallo de red,
+      // sólo que éste sí se reporta (nunca sabríamos de él si no).
+      reportError(err, { tag: 'sync_flush_food_log', extra: { op: 'unexpected' } });
     } finally {
       flushInFlight = false;
     }
