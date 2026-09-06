@@ -66,6 +66,72 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholde
 export const isSupabaseConfigured =
   !supabaseUrl.includes('placeholder') && !supabaseAnonKey.includes('placeholder');
 
+/**
+ * Auditoría del bloqueo de auth/perfil: timeout de red para el endpoint de
+ * auth (`getSession`/refresco de token/login) — la única familia de
+ * llamadas que puede dejar el arranque entero de la app colgado (verificado
+ * leyendo @supabase/auth-js: ni `getSession()` ni `_callRefreshToken()`
+ * tienen ningún timeout propio).
+ *
+ * Deliberadamente NO se aplica a Postgrest/Functions vía este mismo cauce:
+ * `exportDiaryCsv` (sin `.limit()` para Pro) y `fetchRecentFoods` (200 filas)
+ * son consultas legítimamente más lentas que una operación de sesión, y no
+ * deben cortarse por un timeout pensado para peticiones pequeñas. El timeout
+ * de `fetchProfile`/`updateProfile` (una sola fila por PK) se aplica aparte,
+ * por llamada, con `.abortSignal()` — ver `authStore.ts`.
+ */
+export const AUTH_TIMEOUT_MS = 6000;
+
+// Exportado sólo para poder testear `timeoutFetch` sin adivinar/hardcodear
+// la URL base real (que depende de las variables de entorno).
+export const AUTH_PATH_PREFIX = `${supabaseUrl}/auth/v1/`;
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  return input.url; // Request
+}
+
+/**
+ * `fetch` de sustitución para el cliente de Supabase. Sólo actúa sobre
+ * peticiones al endpoint de auth (`/auth/v1/...`) — cualquier otra URL
+ * (Postgrest, Functions) se reenvía a `fetch` sin tocar, íntegra.
+ *
+ * Verificado en @supabase/auth-js (`lib/fetch.js`): un `AbortError` lanzado
+ * aquí se reclasifica siempre como `AuthRetryableFetchError`, y
+ * `getSession()`/`_callRefreshToken()` lo resuelven como `{data:null,
+ * error}` — nunca como una promesa colgada ni una excepción sin capturar.
+ * Por eso basta con abortar de verdad: el propio SDK ya sabe qué hacer con
+ * ese error.
+ *
+ * Conserva cualquier `AbortSignal` externo que ya viniera en `init.signal`
+ * en vez de sobrescribirlo: si el llamador aborta el suyo, o si nuestro
+ * timeout salta primero, cualquiera de los dos cancela la petición real.
+ * Usa `AbortController` + `setTimeout` manual (no `AbortSignal.timeout()`,
+ * de soporte no garantizado en Hermes) y limpia siempre el temporizador,
+ * tanto en éxito como en error, para no dejar timers sueltos.
+ */
+export function timeoutFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (!requestUrl(input).startsWith(AUTH_PATH_PREFIX)) {
+    return fetch(input, init);
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+
+  const externalSignal = init?.signal;
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', onExternalAbort);
+  }
+
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => {
+    clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
+  });
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: ChunkedSecureStore,
@@ -74,6 +140,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
     flowType: 'pkce',
   },
+  global: { fetch: timeoutFetch },
 });
 
 // Refresco automático de tokens solo mientras la app está en primer plano.

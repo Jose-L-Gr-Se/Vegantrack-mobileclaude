@@ -16,6 +16,7 @@ import { useDiaryStore } from '@/stores/diaryStore';
 import { useWeightStore } from '@/stores/weightStore';
 import { attachAppStateFlushListener } from '@/navigation/appStateSync';
 import { AuthScreen } from '@/screens/AuthScreen';
+import { AuthRecoveryScreen } from '@/screens/AuthRecoveryScreen';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
 import { DiaryScreen } from '@/screens/DiaryScreen';
 import { SearchScreen } from '@/screens/SearchScreen';
@@ -26,6 +27,7 @@ import { ScannerScreen } from '@/screens/ScannerScreen';
 import { RecipesScreen } from '@/screens/RecipesScreen';
 import { MicroTrendsScreen } from '@/screens/MicroTrendsScreen';
 import { PostOnboardingWelcome } from '@/components/PostOnboardingWelcome';
+import { resolveRootRoute } from '@/navigation/rootRoute';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 import type { LinkingOptions } from '@react-navigation/native';
 
@@ -110,7 +112,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 export function RootNavigator() {
   const t = useTheme();
-  const { user, profile, initialized, profileResolved, initialize } = useAuthStore();
+  const { user, profile, authPhase, initialize } = useAuthStore();
 
   useEffect(() => {
     void initialize();
@@ -129,10 +131,12 @@ export function RootNavigator() {
   // vacías) — ver `appStateSync.ts` para por qué no depende de `user`.
   useEffect(() => attachAppStateFlushListener(), []);
 
-  // Mostramos el spinner mientras arranca la app O mientras, habiendo sesión,
-  // el perfil todavía no se ha resuelto. Así evitamos el "flash" en el que se
-  // ve el diario un instante antes de saltar al onboarding.
-  if (!initialized || (user && !profileResolved)) {
+  // `authPhase` es la única fuente de verdad del arranque (auditoría del
+  // bloqueo de auth/perfil) — nunca más de un booleano paralelo aquí, y la
+  // decisión de a dónde navegar vive en `resolveRootRoute`, no aquí.
+  const route = resolveRootRoute({ authPhase, user, profile });
+
+  if (route === 'loading') {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background }}>
         <ActivityIndicator size="large" color={t.primary} />
@@ -140,18 +144,20 @@ export function RootNavigator() {
     );
   }
 
+  if (route === 'recovery') {
+    return <AuthRecoveryScreen cachedProfileName={profile?.display_name} onRetry={initialize} />;
+  }
+
   const navTheme = t.dark
     ? { ...DarkTheme, colors: { ...DarkTheme.colors, background: t.background, primary: t.primary } }
     : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: t.background, primary: t.primary } };
 
-  const needsOnboarding = user && profile && !profile.calorie_target;
-
   return (
     <NavigationContainer theme={navTheme} linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!user ? (
+        {route === 'auth' ? (
           <Stack.Screen name="Auth" component={AuthScreen} />
-        ) : needsOnboarding ? (
+        ) : route === 'onboarding' ? (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         ) : (
           <>
