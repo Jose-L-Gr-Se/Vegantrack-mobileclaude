@@ -14,6 +14,7 @@ import { useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useWeightStore } from '@/stores/weightStore';
+import { attachAppStateFlushListener } from '@/navigation/appStateSync';
 import { AuthScreen } from '@/screens/AuthScreen';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
 import { DiaryScreen } from '@/screens/DiaryScreen';
@@ -122,6 +123,11 @@ export function RootNavigator() {
       void useWeightStore.getState().flushPending(user.id);
     }
   }, [user]);
+
+  // Fase 2 del P1 de sincronización: además del disparo de arriba, reintenta
+  // lo pendiente al volver la app a primer plano. Suscripción única (deps
+  // vacías) — ver `appStateSync.ts` para por qué no depende de `user`.
+  useEffect(() => attachAppStateFlushListener(), []);
 
   // Mostramos el spinner mientras arranca la app O mientras, habiendo sesión,
   // el perfil todavía no se ha resuelto. Así evitamos el "flash" en el que se
