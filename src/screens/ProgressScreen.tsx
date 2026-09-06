@@ -39,7 +39,13 @@ export function ProgressScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (user) void weight.fetchLogs(user.id);
+      if (!user) return;
+      void weight.fetchLogs(user.id);
+      // Fase 3 del P1 de sincronización: además de traer lo remoto, reintenta
+      // lo pendiente cada vez que se entra a Progreso — mismo patrón que
+      // DiaryScreen. flushPending ya es segura ante llamadas concurrentes
+      // (mutex de la Fase 1); fire-and-forget.
+      void weight.flushPending(user.id);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id])
   );

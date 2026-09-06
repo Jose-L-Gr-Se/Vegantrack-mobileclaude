@@ -35,7 +35,7 @@ export function DiaryScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList, 'Diary'>>();
   const { user, profile } = useAuthStore();
-  const { entries, selectedDate, setDate, fetchEntries, deleteEntry, getDaySummary, copyDayEntries, copyMealEntries, loadOverrides } = useDiaryStore();
+  const { entries, selectedDate, setDate, fetchEntries, deleteEntry, getDaySummary, copyDayEntries, copyMealEntries, loadOverrides, flushPending } = useDiaryStore();
   const supplements = useSupplementStore();
   const { isPro } = usePro();
   const photo = useMealPhoto();
@@ -135,6 +135,12 @@ export function DiaryScreen() {
       if (!user) return;
       trackAppOpenOnce();
       void fetchEntries(user.id, selectedDate);
+      // Fase 3 del P1 de sincronización: además de traer lo remoto, reintenta
+      // lo pendiente cada vez que se entra al Diario — junto a los disparos ya
+      // existentes (login/arranque, vuelta a primer plano). flushPending ya es
+      // segura ante llamadas concurrentes (mutex de la Fase 1); fire-and-forget,
+      // igual que el resto de llamadas de este efecto.
+      void flushPending(user.id);
       void supplements.fetchSupplements(user.id);
       void supplements.fetchTodayLogs(user.id);
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,6 +187,10 @@ export function DiaryScreen() {
   const onRefresh = async () => {
     if (!user) return;
     setRefreshing(true);
+    // Fase 3: el pull-to-refresh también reintenta lo pendiente, no sólo trae
+    // lo remoto. Fire-and-forget — no debe alargar el spinner del refresh,
+    // que sigue dependiendo únicamente de fetchEntries.
+    void flushPending(user.id);
     await fetchEntries(user.id, selectedDate);
     setRefreshing(false);
   };
