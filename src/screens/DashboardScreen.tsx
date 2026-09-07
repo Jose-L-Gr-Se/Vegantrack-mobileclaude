@@ -16,6 +16,7 @@ import { usePro } from '@/hooks/usePro';
 import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
 import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay } from '@/utils/nutrition';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
+import { track } from '@/lib/analytics';
 import type { RootStackParamList } from '@/navigation/types';
 
 export function DashboardScreen() {
@@ -31,7 +32,10 @@ export function DashboardScreen() {
 
   const openMicroTrends = () => {
     if (isPro) navigation.navigate('MicroTrends');
-    else setShowPro(true);
+    else {
+      track('paywall_viewed', { source: 'trends' });
+      setShowPro(true);
+    }
   };
 
   useFocusEffect(

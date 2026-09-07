@@ -118,12 +118,18 @@ export function DiaryScreen() {
   const [suppEditor, setSuppEditor] = useState<
     null | 'picker' | 'new' | { preset: number } | Supplement
   >(null);
+  const [showSupplementPaywall, setShowSupplementPaywall] = useState(false);
 
   const tryAddSupplement = (open: () => void) => {
     if (!isPro && supplements.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
+      track('paywall_viewed', { source: 'supplements_limit' });
       Alert.alert(
         'Límite alcanzado',
-        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`
+        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`,
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          { text: 'Ver Pro', onPress: () => setShowSupplementPaywall(true) },
+        ]
       );
       return;
     }
@@ -575,6 +581,11 @@ export function DiaryScreen() {
 
       {/* Paywall al agotar la cuota gratuita de fotos */}
       {photo.quotaBlocked ? <ProModal isPro={isPro} onClose={photo.clearQuota} /> : null}
+
+      {/* Paywall al alcanzar el límite free de suplementos (dead-end de la auditoría) */}
+      {showSupplementPaywall ? (
+        <ProModal isPro={isPro} onClose={() => setShowSupplementPaywall(false)} />
+      ) : null}
 
       {/* Sheet premium: selector de fuente de foto + errores de análisis */}
       <MealPhotoSheet

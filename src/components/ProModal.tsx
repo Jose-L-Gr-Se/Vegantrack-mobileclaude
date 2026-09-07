@@ -19,6 +19,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { usePurchasesStore, ENTITLEMENT_PRO } from '@/stores/purchasesStore';
+import { track } from '@/lib/analytics';
 
 // ── Definición de planes ─────────────────────────────────────────────────────
 
@@ -196,12 +197,25 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
       return;
     }
 
+    // Instrumentación del funnel de monetización: el momento en que se le
+    // pasa el control a la hoja nativa de Google Play. `plan.id` sólo puede
+    // ser 'monthly'|'annual' aquí (el plan 'free' no tiene packageType y ya
+    // se ha descartado arriba) — nunca datos de pago, nunca email.
+    track('checkout_opened', { plan: plan.id });
+
     setPurchasing(true);
     setPurchaseError(null);
     try {
       const { customerInfo: info } = await Purchases.purchasePackage(pkg);
-      const nowPro = info.entitlements.active[ENTITLEMENT_PRO] !== undefined;
+      const entitlement = info.entitlements.active[ENTITLEMENT_PRO];
+      const nowPro = entitlement !== undefined;
       if (nowPro) {
+        // `periodType === 'TRIAL'` distingue "empezó una prueba gratuita"
+        // (todavía no ha pagado) de "compra/renovación real" — son pasos
+        // distintos del funnel, no el mismo evento con otro nombre.
+        track(entitlement.periodType === 'TRIAL' ? 'trial_started' : 'purchase_completed', {
+          plan: plan.id,
+        });
         // `info` ya contiene el entitlement: usePro() devuelve Pro de inmediato.
         // El webhook de RevenueCat es quien escribe subscription_tier; lo
         // recogemos en cuanto llegue, sin bloquear el cierre del modal.
@@ -210,7 +224,13 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
       }
     } catch (e: any) {
       if (e.code !== PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR) {
+        // Sólo el código de error de RevenueCat (un enum estable, no texto
+        // libre) — nunca `e.message`/`e.userMessage`, que pueden variar y no
+        // aportan nada a una métrica agregada.
+        track('purchase_failed', { plan: plan.id, code: e.code });
         setPurchaseError(e.userMessage ?? e.message ?? 'Error al procesar la compra.');
+      } else {
+        track('purchase_cancelled', { plan: plan.id });
       }
     } finally {
       setPurchasing(false);
@@ -224,6 +244,7 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
       const info = await Purchases.restorePurchases();
       const nowPro = info.entitlements.active[ENTITLEMENT_PRO] !== undefined;
       if (nowPro) {
+        track('purchase_restored');
         // Igual que en la compra: el entitlement lo manda RevenueCat, no el cliente.
         void fetchProfile();
         Alert.alert('Compras restauradas', 'Tu suscripción Pro ha sido restaurada correctamente.');

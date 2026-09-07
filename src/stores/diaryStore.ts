@@ -23,6 +23,7 @@ import { normalizeSupplementDose } from '@/utils/supplementUnits';
 import { addDays, todayISO } from '@/utils/dates';
 import { isTransientSyncError, type SyncOpError } from '@/utils/syncError';
 import { reportError } from '@/lib/errorReporting';
+import { trackFirstFoodLoggedOnce } from '@/lib/analytics';
 import { uuidv4 } from '@/utils/uuid';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
 import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
@@ -213,6 +214,10 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     if (get().selectedDate === entry.date) {
       set({ entries: [...get().entries, full] });
     }
+    // Activación real (auditoría del funnel): se mide en el momento de la
+    // escritura local, no tras confirmar red — coherente con offline-first,
+    // y `trackFirstFoodLoggedOnce` ya es idempotente y best-effort por sí sola.
+    void trackFirstFoodLoggedOnce(entry.user_id);
 
     // Intento remoto + marca de sincronizado como una única sección crítica
     // frente a fetchEntries (ver withFoodLogLock arriba, auditoría del

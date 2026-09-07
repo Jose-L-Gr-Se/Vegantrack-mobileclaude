@@ -9,6 +9,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, Input, SectionHeader } from '@/components/ui';
 import { MEAL_LABELS } from '@/components/AddFoodModal';
+import { ProModal } from '@/components/ProModal';
+import { track } from '@/lib/analytics';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { computeRecipeNutrients, useRecipeStore } from '@/stores/recipeStore';
@@ -29,6 +31,7 @@ export function RecipesScreen() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showPro, setShowPro] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [servings, setServings] = useState('2');
@@ -45,9 +48,14 @@ export function RecipesScreen() {
   const create = async () => {
     if (!user || !name.trim()) return;
     if (!isPro && store.recipes.length >= FREE_RECIPE_LIMIT) {
+      track('paywall_viewed', { source: 'recipes_limit' });
       Alert.alert(
         'Límite alcanzado',
-        `El plan free permite ${FREE_RECIPE_LIMIT} recetas. Hazte Pro para recetas ilimitadas.`
+        `El plan free permite ${FREE_RECIPE_LIMIT} recetas. Hazte Pro para recetas ilimitadas.`,
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          { text: 'Ver Pro', onPress: () => setShowPro(true) },
+        ]
       );
       return;
     }
@@ -177,6 +185,8 @@ export function RecipesScreen() {
           </Card>
         </View>
       </Modal>
+
+      {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
     </ScrollView>
   );
 }

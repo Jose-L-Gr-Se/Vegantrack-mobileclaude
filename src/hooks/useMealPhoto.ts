@@ -80,8 +80,10 @@ export function useMealPhoto() {
     const res = await analyzeMealPhoto(asset.base64!, asset.mimeType ?? 'image/jpeg');
 
     if (res.ok) {
+      // Auditoría de privacidad del funnel: nunca contenido de comida en
+      // analítica, ni siquiera el nombre (podía revelar datos de salud
+      // indirectos — alergias, embarazo, patrones alimentarios).
       track('photo_scan_success', {
-        food_name: res.analysis.food_name,
         is_vegan: res.analysis.is_vegan,
         remaining: res.remaining,
       });

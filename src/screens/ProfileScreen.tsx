@@ -27,6 +27,7 @@ import {
 import { toUserFacingError } from '@/utils/userFacingError';
 import { exportDiaryCsv } from '@/utils/exportCsv';
 import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
+import { track } from '@/lib/analytics';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import {
   cancelDailyReminder,
@@ -204,7 +205,10 @@ export function ProfileScreen() {
 
   const openMicroTrends = () => {
     if (isPro) navigation.navigate('MicroTrends');
-    else setShowPro(true);
+    else {
+      track('paywall_viewed', { source: 'trends' });
+      setShowPro(true);
+    }
   };
 
   // Avatar initials
@@ -441,7 +445,10 @@ export function ProfileScreen() {
             <>
               <View style={{ height: 1, backgroundColor: t.separator }} />
               <Pressable
-                onPress={() => setShowPro(true)}
+                onPress={() => {
+                  track('paywall_viewed', { source: 'profile_banner' });
+                  setShowPro(true);
+                }}
                 style={({ pressed }) => ({
                   marginVertical: spacing.sm,
                   borderRadius: radii.lg,
@@ -772,7 +779,9 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SupplementsModal({
+/** Exportado sólo para tests (mismo criterio que `EditProfileModal`): se
+ * testea en aislamiento, sin montar el resto de `ProfileScreen`. */
+export function SupplementsModal({
   onClose,
   initialEditId,
 }: {
@@ -786,6 +795,7 @@ function SupplementsModal({
   const { isPro } = usePro();
 
   const [editing, setEditing] = React.useState<Supplement | 'new' | { preset: number } | null>(null);
+  const [showPro, setShowPro] = React.useState(false);
 
   // Fases 5 y 6 del P0 de unidades: needs_review + unsupported, con la
   // etiqueta accesible ya resuelta — misma función que usa DiaryScreen.
@@ -802,9 +812,14 @@ function SupplementsModal({
 
   const tryAdd = (open: () => void) => {
     if (!isPro && store.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
+      track('paywall_viewed', { source: 'supplements_limit' });
       Alert.alert(
         'Límite alcanzado',
-        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Házte Pro para añadir más.`
+        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Házte Pro para añadir más.`,
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          { text: 'Ver Pro', onPress: () => setShowPro(true) },
+        ]
       );
       return;
     }
@@ -869,6 +884,7 @@ function SupplementsModal({
   }
 
   return (
+    <>
     <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1018,6 +1034,8 @@ function SupplementsModal({
         </View>
       </View>
     </BottomSheet>
+    {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
+    </>
   );
 }
 

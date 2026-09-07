@@ -4,7 +4,7 @@
  * elegir periodo (7/30/90 días) y micro a graficar, y muestra la media del
  * periodo por nutriente.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type MicroKey, type MicroTrendPoint } from '@/stores/diaryStore';
 import { usePro } from '@/hooks/usePro';
 import { formatDateHuman } from '@/utils/dates';
+import { track } from '@/lib/analytics';
 
 const PERIODS = [
   { label: '7D', days: 7 },
@@ -52,6 +53,14 @@ export function MicroTrendsScreen() {
   const [data, setData] = useState<MicroTrendPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPro, setShowPro] = useState(false);
+
+  // Cubre a quien llega directamente a esta pantalla sin Pro (p. ej. deep
+  // link) sin pasar por el botón de Dashboard/Perfil, que ya se mide en su
+  // propio punto. Mismo `source` porque es el mismo gate real, sólo cambia
+  // la puerta de entrada.
+  useEffect(() => {
+    if (!isPro) track('paywall_viewed', { source: 'trends' });
+  }, [isPro]);
 
   useFocusEffect(
     useCallback(() => {

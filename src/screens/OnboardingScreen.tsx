@@ -21,6 +21,7 @@ import {
   WEIGHT_KG_RANGE,
 } from '@/utils/profileValidation';
 import { toUserFacingError } from '@/utils/userFacingError';
+import { track } from '@/lib/analytics';
 import type { ActivityLevel, Goal, Sex } from '@/types';
 
 const ACTIVITY_OPTIONS: { value: ActivityLevel; label: string; desc: string; icon: string }[] = [
@@ -200,6 +201,7 @@ export function OnboardingScreen() {
     });
     // Onboarding completado: activamos la bienvenida (se mostrará al entrar
     // al diario, ya que el perfil con calorie_target hace cambiar de stack).
+    track('onboarding_completed');
     useUiStore.getState().setJustOnboarded(true);
   };
 
