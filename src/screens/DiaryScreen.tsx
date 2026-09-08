@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
@@ -34,6 +34,7 @@ export function DiaryScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList, 'Diary'>>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Diary'>>();
   const { user, profile } = useAuthStore();
   const { entries, selectedDate, setDate, fetchEntries, deleteEntry, getDaySummary, copyDayEntries, copyMealEntries, loadOverrides, flushPending } = useDiaryStore();
   const supplements = useSupplementStore();
@@ -46,6 +47,12 @@ export function DiaryScreen() {
   const [copying, setCopying] = useState(false);
   const [editing, setEditing] = useState<FoodLogEntry | null>(null);
   const [mealSheetMode, setMealSheetMode] = useState<MealSheetMode | null>(null);
+  // Bloque 1 de activación (Product Audit v2): recuerda si el intento de
+  // análisis con IA en curso viene de la pantalla de activación
+  // post-onboarding (`startAction: 'photo'`, ver efecto más abajo), para
+  // llevar al usuario al Dashboard sólo esa vez al guardar la comida, en vez
+  // del destino normal (quedarse en el Diario).
+  const [fromActivation, setFromActivation] = useState(false);
 
   // Fases 5 y 6 del P0 de unidades: suplementos configurados (tomados hoy o
   // no) cuya dosis es needs_review o unsupported, con la etiqueta accesible
@@ -60,6 +67,20 @@ export function DiaryScreen() {
   useEffect(() => {
     if (photo.quotaBlocked) track('paywall_viewed', { source: 'photo_quota' });
   }, [photo.quotaBlocked]);
+
+  // Bloque 1 de activación: al llegar desde la pantalla post-onboarding con
+  // `startAction: 'photo'`, abre el picker directamente — misma vía que el
+  // CTA "Analizar plato con IA" de esta pantalla (`startPhoto`), sin lógica
+  // nueva. Se consume una sola vez (mismo criterio que `openSupplementId`/
+  // `openSupplements` en ProfileScreen).
+  useEffect(() => {
+    if (route.params?.startAction === 'photo') {
+      setFromActivation(true);
+      setMealSheetMode('picker');
+      navigation.setParams({ startAction: undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.startAction]);
 
   // Muestra el error sheet cuando el análisis falla.
   useEffect(() => {
@@ -77,6 +98,7 @@ export function DiaryScreen() {
   const handleMealSheetClose = () => {
     photo.clearError();
     setMealSheetMode(null);
+    setFromActivation(false);
   };
 
   const sheetProfile =
@@ -570,11 +592,23 @@ export function DiaryScreen() {
           analysis={photo.analysis}
           onCorrected={(analysis) => photo.applyCorrection(analysis)}
           onVeganCorrected={(isVegan) => photo.applyManualVeganCorrection(isVegan)}
-          onClose={photo.reset}
+          onClose={() => {
+            setFromActivation(false);
+            photo.reset();
+          }}
           onAdded={() => {
             track('photo_entry_saved', {});
             if (user) void fetchEntries(user.id, selectedDate);
             photo.reset();
+            // Bloque 1 de activación: sólo cuando este análisis vino de la
+            // pantalla de activación post-onboarding, tras guardar la
+            // primera comida se lleva al usuario al resumen (Dashboard),
+            // que ahora ya tiene datos reales que mostrar. El resto de
+            // fotos del día a día se quedan en el Diario, como siempre.
+            if (fromActivation) {
+              setFromActivation(false);
+              navigation.navigate('Dashboard');
+            }
           }}
         />
       ) : null}

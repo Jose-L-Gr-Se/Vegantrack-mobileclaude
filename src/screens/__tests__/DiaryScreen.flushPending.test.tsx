@@ -36,7 +36,10 @@ jest.mock('@react-navigation/native', () => ({
     const ReactActual = require('react');
     ReactActual.useEffect(() => cb(), []);
   },
-  useNavigation: () => ({ navigate: jest.fn() }),
+  useNavigation: () => ({ navigate: jest.fn(), setParams: jest.fn() }),
+  // Sin `startAction` (Bloque 1 de activación): no aplica a esta ronda de
+  // pruebas, ninguna de ellas depende de la navegación de activación.
+  useRoute: () => ({ params: undefined }),
 }));
 
 jest.mock('@/stores/authStore', () => ({ useAuthStore: jest.fn() }));

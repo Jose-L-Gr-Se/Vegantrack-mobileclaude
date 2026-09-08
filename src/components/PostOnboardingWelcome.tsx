@@ -1,53 +1,65 @@
 /**
- * Bienvenida cálida tras completar el onboarding. Aparece una sola vez (la
- * dispara `justOnboarded` en uiStore), celebra el alta, resume los objetivos
- * recién calculados y ofrece los planes Pro en el momento de mayor intención.
+ * Pantalla de activación tras completar el onboarding (Bloque 1 del Product
+ * Audit v2 — "onboarding_completed → first_food_logged"). Aparece una sola
+ * vez (la dispara `justOnboarded` en uiStore, igual que antes) y sustituye lo
+ * que antes era una pantalla de bienvenida con lista de próximos pasos y
+ * upsell de Pro: ahora es un paso funcional que lleva directo a registrar la
+ * primera comida, con las dos vías ya existentes en la app (IA / búsqueda) —
+ * no se duplica ninguna lógica de captura o de añadido de alimentos, sólo se
+ * navega a las pantallas que ya la implementan (Diary/Search), indicándoles
+ * con un parámetro de navegación que abran directamente esa acción.
+ *
+ * Deliberadamente NO toca pricing/Free-Pro en esta ronda: se retira el
+ * bloque de "Desbloquea todo con Pro" que había aquí antes — mostrarlo justo
+ * en este paso es exactamente el tono de "pantalla de marketing" que este
+ * paso debe evitar.
  */
-import React, { useState } from 'react';
+import React from 'react';
 import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui';
 import { Logo } from '@/components/Logo';
-import { ProModal } from '@/components/ProModal';
 import { brand, fonts, radii, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
-import { usePro } from '@/hooks/usePro';
 import { formatNumber } from '@/utils/nutrition';
-
-const NEXT_STEPS = [
-  { icon: '🍽️', text: 'Registra tu primera comida o foto de un plato' },
-  { icon: '📊', text: 'Sigue tus macros y micros en tiempo real' },
-  { icon: '📷', text: 'Escanea códigos de barras al instante' },
-];
+import type { RootStackParamList } from '@/navigation/types';
 
 export function PostOnboardingWelcome() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const justOnboarded = useUiStore((s) => s.justOnboarded);
   const setJustOnboarded = useUiStore((s) => s.setJustOnboarded);
   const profile = useAuthStore((s) => s.profile);
-  const { isPro } = usePro();
-  const [showPlans, setShowPlans] = useState(false);
 
   if (!justOnboarded) return null;
 
-  const close = () => {
-    setShowPlans(false);
-    setJustOnboarded(false);
-  };
+  const close = () => setJustOnboarded(false);
 
-  // Al pulsar "ver planes" cerramos la bienvenida y mostramos solo el ProModal
-  // (evita anidar dos Modals, que en Android da problemas).
-  if (showPlans) {
-    return <ProModal isPro={isPro} onClose={close} />;
-  }
+  // Cada CTA navega primero (deja la pestaña/parámetro ya listo debajo de
+  // este modal) y luego cierra — al desmontarse el modal, la app aparece ya
+  // en el sitio correcto en vez de en la pestaña por defecto.
+  const goAnalyzeWithAi = () => {
+    navigation.navigate('Main', { screen: 'Diary', params: { startAction: 'photo' } });
+    close();
+  };
+  const goSearchFood = () => {
+    navigation.navigate('Main', { screen: 'Search', params: { fromActivation: true } });
+    close();
+  };
+  const skipToDashboard = () => {
+    navigation.navigate('Main', { screen: 'Dashboard' });
+    close();
+  };
 
   const firstName = (profile?.display_name ?? '').trim().split(' ')[0];
   const heroBg = t.dark ? brand[800] : brand[600];
 
   return (
-    <Modal visible transparent={false} animationType="fade" onRequestClose={close}>
+    <Modal visible transparent={false} animationType="fade" onRequestClose={skipToDashboard}>
       <View style={{ flex: 1, backgroundColor: t.background }}>
         {/* ── Hero ──────────────────────────────────────────── */}
         <View
@@ -90,7 +102,8 @@ export function PostOnboardingWelcome() {
               marginTop: spacing.xs, textAlign: 'center', lineHeight: 21,
             }}
           >
-            Tu plan personalizado está preparado. Bienvenido a una nutrición vegana con cabeza.
+            Registra tu primera comida y verás al momento tus calorías, tus
+            macros y tus nutrientes clave de dieta vegana (B12, hierro, zinc y más).
           </Text>
         </View>
 
@@ -103,7 +116,8 @@ export function PostOnboardingWelcome() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          {/* Objetivo calórico destacado */}
+          {/* Objetivo calórico destacado — eco directo de lo que el usuario
+              acaba de calcular en el onboarding, no marketing. */}
           {profile?.calorie_target ? (
             <View
               style={{
@@ -132,46 +146,10 @@ export function PostOnboardingWelcome() {
               ) : null}
             </View>
           ) : null}
-
-          {/* Próximos pasos */}
-          <View style={{ gap: spacing.md }}>
-            <Text style={{ fontWeight: '800', fontSize: 14, color: t.text }}>
-              Ya puedes empezar a:
-            </Text>
-            {NEXT_STEPS.map((s) => (
-              <View key={s.text} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-                <Text style={{ fontSize: 22 }}>{s.icon}</Text>
-                <Text style={{ flex: 1, color: t.textSecondary, fontSize: 14, lineHeight: 20 }}>{s.text}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Invitación a Pro (solo si aún no lo es) */}
-          {!isPro ? (
-            <View
-              style={{
-                borderRadius: radii.lg,
-                borderWidth: 1,
-                borderColor: t.cardBorder,
-                backgroundColor: t.card,
-                padding: spacing.lg,
-                gap: spacing.sm,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-                <Text style={{ fontSize: 20 }}>👑</Text>
-                <Text style={{ fontWeight: '800', fontSize: 15, color: t.text }}>
-                  Desbloquea todo con Pro
-                </Text>
-              </View>
-              <Text style={{ color: t.textSecondary, fontSize: 13, lineHeight: 19 }}>
-                Análisis de platos con IA sin límite, historial completo y tendencias de micros. Cancela cuando quieras.
-              </Text>
-            </View>
-          ) : null}
         </ScrollView>
 
-        {/* Botones fijos abajo */}
+        {/* CTAs principales — llevan directo a las dos vías ya existentes
+            para registrar una comida, sin pantallas nuevas. */}
         <View
           style={{
             paddingHorizontal: spacing.xl,
@@ -183,12 +161,11 @@ export function PostOnboardingWelcome() {
             backgroundColor: t.background,
           }}
         >
-          {!isPro ? (
-            <Button title="Ver planes Pro 👑" onPress={() => setShowPlans(true)} />
-          ) : null}
-          <TouchableOpacity onPress={close} activeOpacity={0.7} style={{ alignItems: 'center', paddingVertical: spacing.md }}>
-            <Text style={{ color: isPro ? t.primary : t.textMuted, fontSize: 15, fontWeight: '700' }}>
-              {isPro ? 'Entrar a mi diario' : 'Quizá más tarde'}
+          <Button title="📷 Analizar con IA" onPress={goAnalyzeWithAi} />
+          <Button title="🔍 Buscar alimento" onPress={goSearchFood} variant="secondary" />
+          <TouchableOpacity onPress={skipToDashboard} activeOpacity={0.7} style={{ alignItems: 'center', paddingVertical: spacing.md }}>
+            <Text style={{ color: t.textMuted, fontSize: 15, fontWeight: '700' }}>
+              Ahora no, ir al resumen
             </Text>
           </TouchableOpacity>
         </View>

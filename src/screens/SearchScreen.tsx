@@ -357,7 +357,14 @@ export function SearchScreen() {
             setToast(msg);
             setQuery('');
             if (user) void fetchRecentFoods(user.id);
-            navigation.navigate('Main', { screen: 'Diary' });
+            // Bloque 1 de activación (Product Audit v2): si se llegó a
+            // buscar desde la pantalla de activación post-onboarding
+            // (`fromActivation`), tras guardar la primera comida se va al
+            // resumen (Dashboard), que ya tiene datos reales que mostrar —
+            // en cualquier otro caso, el destino de siempre es el Diario.
+            navigation.navigate('Main', {
+              screen: route.params?.fromActivation ? 'Dashboard' : 'Diary',
+            });
           }}
           onShowAlternatives={(product) => {
             closeSheet();
