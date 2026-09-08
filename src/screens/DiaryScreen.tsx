@@ -22,7 +22,7 @@ import { useDiaryStore } from '@/stores/diaryStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
 import { useMealPhoto } from '@/hooks/useMealPhoto';
-import { track, trackAppOpenOnce } from '@/lib/analytics';
+import { track } from '@/lib/analytics';
 import { FREE_HISTORY_DAYS, FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import { addDays, daysBetween, formatDateHuman, todayISO } from '@/utils/dates';
 import type { FoodLogEntry, MealType, Supplement } from '@/types';
@@ -165,7 +165,9 @@ export function DiaryScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
-      trackAppOpenOnce();
+      // `app_open` ya no se dispara aquí (auditoría de medición de sesiones):
+      // ahora vive en el arranque general de la app (RootNavigator), no
+      // atado a que el usuario visite el Diario en concreto.
       void fetchEntries(user.id, selectedDate);
       // Fase 3 del P1 de sincronización: además de traer lo remoto, reintenta
       // lo pendiente cada vez que se entra al Diario — junto a los disparos ya

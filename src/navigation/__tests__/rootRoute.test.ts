@@ -3,7 +3,7 @@
  * probada como función pura (`resolveRootRoute`) en vez de montando
  * `NavigationContainer` con las más de 10 pantallas reales de la app.
  */
-import { resolveRootRoute } from '@/navigation/rootRoute';
+import { resolveRootRoute, shouldTrackAppOpen } from '@/navigation/rootRoute';
 import type { Profile } from '@/types';
 import type { User } from '@supabase/supabase-js';
 
@@ -52,5 +52,22 @@ describe('resolveRootRoute', () => {
     expect(
       resolveRootRoute({ authPhase: 'authenticated_profile_loaded', user: USER, profile: PROFILE_WITH_TARGET })
     ).toBe('main');
+  });
+});
+
+describe('shouldTrackAppOpen — auditoría de medición de sesiones/retención', () => {
+  it('en "main" con usuario, devuelve su userId', () => {
+    expect(shouldTrackAppOpen('main', USER)).toBe('user-1');
+  });
+
+  it('en "main" sin usuario (no debería poder ocurrir, pero por si acaso), no dispara', () => {
+    expect(shouldTrackAppOpen('main', null)).toBeNull();
+  });
+
+  it('en loading/auth/onboarding/recovery, nunca dispara aunque haya usuario', () => {
+    expect(shouldTrackAppOpen('loading', USER)).toBeNull();
+    expect(shouldTrackAppOpen('auth', USER)).toBeNull();
+    expect(shouldTrackAppOpen('onboarding', USER)).toBeNull();
+    expect(shouldTrackAppOpen('recovery', USER)).toBeNull();
   });
 });

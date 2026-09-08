@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useWeightStore } from '@/stores/weightStore';
 import { attachAppStateFlushListener } from '@/navigation/appStateSync';
+import { trackAppOpenOnce } from '@/lib/analytics';
 import { AuthScreen } from '@/screens/AuthScreen';
 import { AuthRecoveryScreen } from '@/screens/AuthRecoveryScreen';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
@@ -27,7 +28,7 @@ import { ScannerScreen } from '@/screens/ScannerScreen';
 import { RecipesScreen } from '@/screens/RecipesScreen';
 import { MicroTrendsScreen } from '@/screens/MicroTrendsScreen';
 import { PostOnboardingWelcome } from '@/components/PostOnboardingWelcome';
-import { resolveRootRoute } from '@/navigation/rootRoute';
+import { resolveRootRoute, shouldTrackAppOpen } from '@/navigation/rootRoute';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 import type { LinkingOptions } from '@react-navigation/native';
 
@@ -135,6 +136,21 @@ export function RootNavigator() {
   // bloqueo de auth/perfil) — nunca más de un booleano paralelo aquí, y la
   // decisión de a dónde navegar vive en `resolveRootRoute`, no aquí.
   const route = resolveRootRoute({ authPhase, user, profile });
+
+  // `app_open` (auditoría de medición de sesiones/retención): se dispara
+  // desde el arranque/entrada general de la app, no desde una pantalla en
+  // concreto — así no depende de qué pestaña visite el usuario primero.
+  // `shouldTrackAppOpen` es pura y testeable por separado (mismo criterio
+  // que `resolveRootRoute`); `trackAppOpenOnce` deduplica por usuario y día
+  // natural (persistido en SQLite), así que un cambio de pestaña, un ciclo
+  // de segundo plano/primer plano o varios renders de este componente el
+  // mismo día no generan más de un evento — sólo un cambio real de día (o de
+  // usuario) sí.
+  useEffect(() => {
+    const userId = shouldTrackAppOpen(route, user);
+    if (userId) void trackAppOpenOnce(userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, user?.id]);
 
   if (route === 'loading') {
     return (

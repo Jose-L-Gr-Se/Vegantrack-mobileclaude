@@ -37,3 +37,17 @@ export function resolveRootRoute({
   if (profile && !profile.calorie_target) return 'onboarding';
   return 'main';
 }
+
+/**
+ * Decisión de si toca registrar `app_open` para este render (auditoría de
+ * medición de sesiones/retención) — igual de aislada que `resolveRootRoute`
+ * y por el mismo motivo: probar "cuándo dispara" sin montar el árbol de
+ * navegación real. Sólo cuenta como apertura real cuando ya se ha llegado al
+ * árbol autenticado normal (`route === 'main'`) con un usuario confirmado;
+ * nunca durante 'loading'/'auth'/'onboarding'/'recovery'. Devuelve el
+ * `userId` a pasar a `trackAppOpenOnce` (que ya deduplica por usuario y día),
+ * o `null` si no toca.
+ */
+export function shouldTrackAppOpen(route: RootRoute, user: User | null): string | null {
+  return route === 'main' && user ? user.id : null;
+}
