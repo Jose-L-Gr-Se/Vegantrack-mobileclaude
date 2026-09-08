@@ -3,7 +3,7 @@
  * recordatorio diario, exportación CSV, Pro y logout.
  */
 import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -56,7 +56,10 @@ const GOAL_LABELS: Record<Goal, string> = {
 };
 
 /** A reusable row inside a Card — 52px tall with icon, label+subtitle, and optional right element. */
-function MenuRow({
+/** Exportado sólo para tests (mismo criterio que `EditProfileModal`/
+ * `SupplementsModal`): se testea en aislamiento, sin montar el resto de
+ * `ProfileScreen`. */
+export function MenuRow({
   iconName,
   label,
   subtitle,
@@ -65,6 +68,10 @@ function MenuRow({
   iconBg,
   iconColor,
   danger,
+  loading,
+  disabled,
+  accessibilityLabel,
+  accessibilityHint,
 }: {
   iconName: string;
   label: string;
@@ -74,19 +81,30 @@ function MenuRow({
   iconBg?: string;
   iconColor?: string;
   danger?: boolean;
+  /** Muestra un indicador de carga en vez del chevron y bloquea la pulsación. */
+  loading?: boolean;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }) {
   const t = useTheme();
   const bg = iconBg ?? t.primarySoft;
   const ic = iconColor ?? t.primary;
+  const isDisabled = disabled || loading;
   return (
     <Pressable
       onPress={onPress}
+      disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
       style={({ pressed }) => ({
         height: 52,
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
-        opacity: pressed ? 0.7 : 1,
+        opacity: pressed ? 0.7 : isDisabled ? 0.5 : 1,
       })}
     >
       <View
@@ -127,7 +145,9 @@ function MenuRow({
           <Text style={{ color: t.primary, fontSize: 11, fontWeight: '700' }}>{badge}</Text>
         </View>
       ) : null}
-      {!danger ? (
+      {loading ? (
+        <ActivityIndicator size="small" color={t.textMuted} />
+      ) : !danger ? (
         <Ionicons name={'chevron-forward' as any} size={16} color={t.textMuted} />
       ) : null}
     </Pressable>
@@ -196,10 +216,16 @@ export function ProfileScreen() {
   };
 
   const onExport = async () => {
-    if (!user) return;
+    // `exporting` corta el doble-tap: una segunda pulsación mientras la
+    // primera exportación sigue en curso no debe disparar una segunda
+    // consulta ni una segunda hoja de compartir superpuesta (auditoría de
+    // CSV, P1).
+    if (!user || exporting) return;
     setExporting(true);
     const { error } = await exportDiaryCsv(user.id, isPro);
     setExporting(false);
+    // `error` ya viene sin detalle técnico crudo (exportDiaryCsv lo sanea) —
+    // CLAUDE.md §5.
     if (error) Alert.alert('Error', error);
   };
 
@@ -439,7 +465,11 @@ export function ProfileScreen() {
           <MenuRow
             iconName="document-text-outline"
             label="Exportar diario CSV"
+            subtitle={exporting ? 'Exportando…' : undefined}
             onPress={onExport}
+            loading={exporting}
+            accessibilityLabel="Exportar diario a CSV"
+            accessibilityHint="Genera un archivo CSV de tu diario y abre el menú para compartirlo"
           />
           {!isPro && (
             <>
