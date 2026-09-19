@@ -233,8 +233,18 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     });
 
     if (ok) {
-      // Racha en segundo plano (la PWA usa la RPC update_streak)
-      void supabase.rpc('update_streak', { p_user_id: entry.user_id }).then(
+      // Racha en segundo plano (la PWA usa la RPC update_streak).
+      // Auditoría de retención — P0: `update_streak(p_user_id, p_date)` exige
+      // ambos parámetros en Postgres (sin valor por defecto para `p_date`);
+      // antes sólo se pasaba `p_user_id`, así que PostgREST no encontraba
+      // ninguna función con esa firma y la llamada fallaba SIEMPRE — de forma
+      // silenciosa, porque el error ya se descartaba a propósito (fire-and-
+      // forget: un fallo aquí nunca debe bloquear ni deshacer el guardado de
+      // la comida, que ya se ha confirmado arriba). `entry.date` es la fecha
+      // de la propia entrada (no `new Date()`): mismo criterio que usa la
+      // PWA, para que registrar (o corregir) una entrada de un día pasado
+      // actualice la racha de ESE día, no la de hoy.
+      void supabase.rpc('update_streak', { p_user_id: entry.user_id, p_date: entry.date }).then(
         () => undefined,
         () => undefined
       );
