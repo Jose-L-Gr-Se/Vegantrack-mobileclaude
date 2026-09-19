@@ -15,6 +15,7 @@ import { useSupplementStore } from '@/stores/supplementStore';
 import { usePro } from '@/hooks/usePro';
 import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
 import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay } from '@/utils/nutrition';
+import { microRecommendationText } from '@/utils/microRecommendations';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
 import { track } from '@/lib/analytics';
 import type { RootStackParamList } from '@/navigation/types';
@@ -214,6 +215,12 @@ export function DashboardScreen() {
             note = ` · cobertura de datos: ${Math.round(display.coverageByGrams * 100)}%`;
           }
 
+          // Dashboard accionable: recomendación alimentaria genérica sólo
+          // cuando está baja (pct < 0.9) Y el dato del día es suficientemente
+          // fiable (confidence >= MIN_SCORE_CONFIDENCE) — misma regla que ya
+          // usa VeganScore, sin reimplementar el umbral aquí.
+          const recommendation = microRecommendationText(key, display);
+
           return (
             <View key={key} style={{ gap: 4 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -235,6 +242,9 @@ export function DashboardScreen() {
                   }}
                 />
               </View>
+              {recommendation ? (
+                <Text style={{ color: t.textMuted, fontSize: 11 }}>{recommendation}</Text>
+              ) : null}
             </View>
           );
         })}
