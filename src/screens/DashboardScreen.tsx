@@ -6,8 +6,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline } from 'react-native-svg';
-import { Card, MacroBar, Pill, ProgressRing, SectionHeader } from '@/components/ui';
-import { ProModal } from '@/components/ProModal';
+import { Card, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type WeekDay } from '@/stores/diaryStore';
@@ -17,7 +16,6 @@ import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganSc
 import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay } from '@/utils/nutrition';
 import { microRecommendationText } from '@/utils/microRecommendations';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
-import { track } from '@/lib/analytics';
 import type { RootStackParamList } from '@/navigation/types';
 
 export function DashboardScreen() {
@@ -29,14 +27,11 @@ export function DashboardScreen() {
   const diary = useDiaryStore();
   const supplementStore = useSupplementStore();
   const [weekData, setWeekData] = useState<WeekDay[]>([]);
-  const [showPro, setShowPro] = useState(false);
 
+  // La pantalla decide internamente qué rango puede ver cada usuario (7 días
+  // para Free, 7/30/90 para Pro) — este punto de entrada ya no bloquea.
   const openMicroTrends = () => {
-    if (isPro) navigation.navigate('MicroTrends');
-    else {
-      track('paywall_viewed', { source: 'trends' });
-      setShowPro(true);
-    }
+    navigation.navigate('MicroTrends');
   };
 
   useFocusEffect(
@@ -277,7 +272,7 @@ export function DashboardScreen() {
         </Pressable>
       ) : null}
 
-      {/* Tendencias de micros (Pro) */}
+      {/* Tendencias de micros — 7 días gratis, 30/90 días con Pro */}
       <Pressable onPress={openMicroTrends}>
         <Card
           style={{
@@ -301,12 +296,11 @@ export function DashboardScreen() {
             <Ionicons name={'trending-up' as never} size={20} color={t.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Text style={{ fontWeight: '700', fontSize: 15, color: t.text }}>Tendencias de micros</Text>
-              {!isPro ? <Pill text="PRO" color={semantic.warning} /> : null}
-            </View>
+            <Text style={{ fontWeight: '700', fontSize: 15, color: t.text }}>Tendencias de micros</Text>
             <Text style={{ color: t.textSecondary, fontSize: 12, marginTop: 2 }}>
-              Evolución de B12, hierro y omega-3 a 30 y 90 días
+              {isPro
+                ? 'Evolución de B12, hierro y omega-3 · 7, 30 y 90 días'
+                : '7 días gratis · Pro desbloquea 30 y 90 días'}
             </Text>
           </View>
           <Ionicons name={'chevron-forward' as never} size={18} color={t.textMuted} />
@@ -345,8 +339,6 @@ export function DashboardScreen() {
           ))}
         </View>
       </Card>
-
-      {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
     </ScrollView>
   );
 }

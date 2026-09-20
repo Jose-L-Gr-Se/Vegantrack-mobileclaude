@@ -1,8 +1,15 @@
 /**
- * Tendencias de micros (Pro): evolución diaria de B12, hierro, zinc, calcio,
+ * Tendencias de micros: evolución diaria de B12, hierro, zinc, calcio,
  * vitamina D y omega-3 como % de la RDA, sumando comida y suplementos. Permite
  * elegir periodo (7/30/90 días) y micro a graficar, y muestra la media del
  * periodo por nutriente.
+ *
+ * Contrato Free/Pro (auditoría de experiencia de retorno 3/7/14 días): Free
+ * puede ver el rango de 7 días — es la única ventana de progreso de
+ * nutrición a lo largo del tiempo que existía en el producto y que antes
+ * estaba completamente cerrada, incluso para 7 días. 30 y 90 días siguen
+ * siendo Pro. El selector de periodo está siempre visible y funcional,
+ * también sin Pro, para poder volver a 7D sin salir de la pantalla.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
@@ -48,23 +55,31 @@ export function MicroTrendsScreen() {
   const { isPro } = usePro();
   const getMicroTrends = useDiaryStore((s) => s.getMicroTrends);
 
-  const [days, setDays] = useState(30);
+  // Quien no es Pro aterriza directamente en el rango que sí puede ver (7D),
+  // en vez de en uno (30D, el valor por defecto de siempre) que le
+  // bloquearía al instante nada más entrar.
+  const [days, setDays] = useState(isPro ? 30 : 7);
   const [micro, setMicro] = useState<MicroKey>('vitamin_b12_mcg');
   const [data, setData] = useState<MicroTrendPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPro, setShowPro] = useState(false);
 
-  // Cubre a quien llega directamente a esta pantalla sin Pro (p. ej. deep
-  // link) sin pasar por el botón de Dashboard/Perfil, que ya se mide en su
-  // propio punto. Mismo `source` porque es el mismo gate real, sólo cambia
-  // la puerta de entrada.
+  // Free: 7 días. 30 y 90 siguen siendo Pro.
+  const allowed = isPro || days === 7;
+
+  // Sólo mide un intento REAL de acceder a contenido Pro (30/90 días) — con
+  // 7 días ya abierto a Free, entrar y quedarse en 7D no es un intento de
+  // acceder a Pro, así que no debe contar como paywall_viewed. Cubre tanto
+  // quien llega directo a 30/90 (deep link, o el valor con el que un Pro que
+  // acaba de expirar podría haberse quedado) como quien cambia de rango
+  // dentro de la propia pantalla.
   useEffect(() => {
-    if (!isPro) track('paywall_viewed', { source: 'trends' });
-  }, [isPro]);
+    if (!allowed) track('paywall_viewed', { source: 'trends' });
+  }, [allowed]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!user || !isPro) {
+      if (!user || !allowed) {
         setLoading(false);
         return;
       }
@@ -96,24 +111,6 @@ export function MicroTrendsScreen() {
       </Text>
     </View>
   );
-
-  if (!isPro) {
-    return (
-      <View style={{ flex: 1, backgroundColor: t.background }}>
-        {header}
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}>
-          <EmptyState emoji="👑" text="Las tendencias de micros forman parte de Pro. Desbloquéalas para ver tu evolución de B12, hierro y omega-3 semana a semana." />
-          <Pressable
-            onPress={() => setShowPro(true)}
-            style={{ backgroundColor: t.primary, borderRadius: 999, paddingVertical: 14, alignItems: 'center' }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Ver planes Pro</Text>
-          </Pressable>
-        </View>
-        {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
-      </View>
-    );
-  }
 
   // Serie del micro seleccionado. El trazado sigue mostrando todos los días
   // (una serie con huecos exige un gráfico más complejo, fuera de alcance de
@@ -163,7 +160,17 @@ export function MicroTrendsScreen() {
           ))}
         </View>
 
-        {loading ? (
+        {!allowed ? (
+          <View style={{ padding: spacing.lg, gap: spacing.lg }}>
+            <EmptyState emoji="👑" text="El histórico de 30 y 90 días forma parte de Pro. Ya puedes ver los últimos 7 días gratis — desbloquea Pro para ver más." />
+            <Pressable
+              onPress={() => setShowPro(true)}
+              style={{ backgroundColor: t.primary, borderRadius: 999, paddingVertical: 14, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Ver planes Pro</Text>
+            </Pressable>
+          </View>
+        ) : loading ? (
           <View style={{ paddingVertical: spacing.xxl, alignItems: 'center' }}>
             <ActivityIndicator color={t.primary} size="large" />
           </View>
@@ -284,6 +291,7 @@ export function MicroTrendsScreen() {
           </>
         )}
       </ScrollView>
+      {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
     </View>
   );
 }

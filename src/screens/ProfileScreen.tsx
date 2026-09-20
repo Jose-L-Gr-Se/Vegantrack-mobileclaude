@@ -239,12 +239,10 @@ export function ProfileScreen() {
     if (error) Alert.alert('Error', error);
   };
 
+  // La pantalla decide internamente qué rango puede ver cada usuario (7 días
+  // para Free, 7/30/90 para Pro) — este punto de entrada ya no bloquea.
   const openMicroTrends = () => {
-    if (isPro) navigation.navigate('MicroTrends');
-    else {
-      track('paywall_viewed', { source: 'trends' });
-      setShowPro(true);
-    }
+    navigation.navigate('MicroTrends');
   };
 
   // Avatar initials
@@ -402,7 +400,7 @@ export function ProfileScreen() {
           <MenuRow
             iconName="trending-up-outline"
             label="Tendencias de micros"
-            subtitle={isPro ? undefined : 'Pro'}
+            subtitle={isPro ? undefined : '7 días gratis · Pro desbloquea 30 y 90 días'}
             onPress={openMicroTrends}
           />
         </Card>
