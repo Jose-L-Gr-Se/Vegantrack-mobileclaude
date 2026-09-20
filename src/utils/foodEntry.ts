@@ -89,3 +89,25 @@ export function buildEntry(
     image_url: food.image_url,
   };
 }
+
+/**
+ * Comida por defecto según la hora del día — sólo para preseleccionar el
+ * selector de comida en el resultado de foto-IA (auditoría IA→resultado→
+ * guardar): antes no había ningún valor por defecto y el usuario tenía que
+ * elegir uno obligatoriamente antes de poder guardar. Es sólo un punto de
+ * partida editable, nunca un valor fijo — el usuario puede cambiarlo con el
+ * mismo selector de siempre.
+ *
+ * Franjas horarias (hora local, 0-23), sin solapamiento ni huecos:
+ *   00-04  snack      (madrugada)
+ *   05-10  breakfast
+ *   11-16  lunch
+ *   17-22  dinner
+ *   23     snack
+ */
+export function mealTypeForHour(hour: number): MealType {
+  if (hour >= 5 && hour < 11) return 'breakfast';
+  if (hour >= 11 && hour < 17) return 'lunch';
+  if (hour >= 17 && hour < 23) return 'dinner';
+  return 'snack';
+}

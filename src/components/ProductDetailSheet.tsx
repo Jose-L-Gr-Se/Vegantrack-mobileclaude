@@ -15,7 +15,7 @@
  * típico de recientes y entradas guardadas— los recupera de OpenFoodFacts
  * (caché local, instantáneo) y los fusiona. Así la ficha es consistente.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Pill, ProgressRing } from '@/components/ui';
@@ -23,7 +23,8 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBadges';
 import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
-import { buildEntry } from '@/utils/foodEntry';
+import { buildEntry, mealTypeForHour } from '@/utils/foodEntry';
+import { track } from '@/lib/analytics';
 import {
   FIELDS_WITHOUT_UNKNOWN_REPRESENTATION,
   NUTRITION_QUALITY_IMPOSSIBLE_TEXT,
@@ -199,14 +200,23 @@ export function ProductDetailSheet({
     () => (editEntry ? entryToPer100g(editEntry) : foodProp ?? null),
     [editEntry, foodProp]
   );
+  // Sólo activo cuando el alimento viene de la IA por foto (movido aquí,
+  // antes de `meal`, porque su preselección por hora lo necesita).
+  const isAiPhoto = baseFood?.source === 'ai_photo' && !isEdit;
 
   const [food, setFood] = useState<FoodPer100g | null>(baseFood);
   const [offProduct, setOffProduct] = useState<OpenFoodFactsProduct | null>(offProductProp ?? null);
   const [confidence, setConfidence] = useState<VeganConfidence | undefined>(veganConfidence);
 
   const [grams, setGrams] = useState(String(initialGrams ?? editEntry?.serving_size_g ?? 100));
+  // Resultado de foto-IA: preselecciona una comida por hora (editable, nunca
+  // bloqueada — a diferencia de `lockedMealType`, que oculta el selector
+  // entero) para que guardar no exija siempre un toque extra obligatorio
+  // (auditoría IA→resultado→guardar). Otros flujos (búsqueda, código de
+  // barras, edición) no se ven afectados: siguen arrancando en `null` salvo
+  // que ya vinieran con `lockedMealType`/`editEntry.meal_type`.
   const [meal, setMeal] = useState<MealType | null>(
-    lockedMealType ?? editEntry?.meal_type ?? null
+    lockedMealType ?? editEntry?.meal_type ?? (isAiPhoto ? mealTypeForHour(new Date().getHours()) : null)
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -227,10 +237,9 @@ export function ProductDetailSheet({
   const [veganOverride, setVeganOverride] = useState<boolean | null>(null);
 
   // — Edición del nombre y opción "guardar como habitual" —
-  // Sólo activo cuando el alimento viene de la IA por foto: así el usuario
+  // (`isAiPhoto` ya se calculó más arriba, junto a `baseFood`) así el usuario
   // puede corregir un fallo de etiquetado ("carne" → "seitán con verduras") y
   // persistirlo para no volver a gastar tokens la próxima vez.
-  const isAiPhoto = baseFood?.source === 'ai_photo' && !isEdit;
   const [editedName, setEditedName] = useState(baseFood?.food_name ?? '');
   const [saveAsCustom, setSaveAsCustom] = useState(false);
 
@@ -271,6 +280,26 @@ export function ProductDetailSheet({
     setConfidence(manualVeganConfidence(isVegan));
     onVeganCorrected?.(isVegan);
   };
+
+  // Instrumentación del resultado de foto-IA (auditoría IA→resultado→
+  // guardar): "visto" una vez por resultado mostrado, y "descartado" si el
+  // sheet se cierra sin haber guardado — sin importar cuántos de los 4
+  // gestos de cierre del BottomSheet (tap fuera/handle/swipe/atrás) lo
+  // disparen, porque todos acaban desmontando este componente una única vez,
+  // y el cleanup de un efecto sólo corre una vez por desmontaje. `savedRef`
+  // (no state: no debe causar un re-render ni resetearse entre renders) es
+  // lo único que decide si ese cierre cuenta como guardado o como
+  // descartado. Nunca incluye nombre/macros/imagen/barcode — sólo mide que
+  // el paso ocurrió.
+  const savedRef = useRef(false);
+  useEffect(() => {
+    if (!isAiPhoto) return;
+    track('photo_result_viewed');
+    return () => {
+      if (!savedRef.current) track('photo_result_discarded');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     setFood(baseFood);
@@ -357,11 +386,13 @@ export function ProductDetailSheet({
     const parsed = parseFloat(grams.replace(',', '.'));
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setError('Introduce una cantidad válida en gramos');
+      if (isAiPhoto) track('photo_entry_save_failed', { reason: 'invalid_grams' });
       return;
     }
     const target = lockedMealType ?? meal;
     if (!target) {
       setError('Elige a qué comida añadirlo (desayuno, comida, cena o snack).');
+      if (isAiPhoto) track('photo_entry_save_failed', { reason: 'meal_not_selected' });
       return;
     }
     if (!user) return;
@@ -389,6 +420,7 @@ export function ProductDetailSheet({
           ? 'Corrige los valores marcados arriba antes de guardar.'
           : 'No se puede guardar: algunos datos nutricionales de este producto parecen incorrectos.'
       );
+      if (isAiPhoto) track('photo_entry_save_failed', { reason: 'nutrition_impossible' });
       return;
     }
 
@@ -439,8 +471,14 @@ export function ProductDetailSheet({
     const entry = buildEntry(finalFood, parsed, target, selectedDate, user.id);
     const { error: err } = await addEntry(entry);
     setBusy(false);
-    if (err) setError(err);
-    else {
+    if (err) {
+      setError(err);
+      if (isAiPhoto) track('photo_entry_save_failed', { reason: 'server_error' });
+    } else {
+      // Marca el resultado como guardado ANTES de cerrar: el cleanup del
+      // efecto de arriba lee `savedRef` al desmontar y no debe contar este
+      // cierre (disparado por el propio guardado) como un descarte.
+      savedRef.current = true;
       onAdded?.(`${finalName} añadido a ${MEAL_LABELS[target]}`);
       onClose();
     }
