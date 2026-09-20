@@ -34,7 +34,7 @@ jest.mock('@/notifications/reminders', () => ({
   DEFAULT_REMINDER_HOUR: 20,
   getReminderHour: jest.fn().mockResolvedValue(20),
   scheduleDailyReminder: jest.fn(),
-  cancelDailyReminder: jest.fn(),
+  disableDailyReminder: jest.fn(),
 }));
 jest.mock('@/lib/analytics', () => ({ track: jest.fn() }));
 jest.mock('@/components/BottomSheet', () => ({

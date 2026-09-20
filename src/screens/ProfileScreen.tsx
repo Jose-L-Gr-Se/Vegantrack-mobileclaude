@@ -30,10 +30,11 @@ import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
 import { track } from '@/lib/analytics';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import {
-  cancelDailyReminder,
   DEFAULT_REMINDER_HOUR,
+  disableDailyReminder,
   getReminderHour,
   scheduleDailyReminder,
+  type ReminderStreakInfo,
 } from '@/notifications/reminders';
 import { ProModal } from '@/components/ProModal';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -193,9 +194,18 @@ export function ProfileScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.openSupplementId, route.params?.openSupplements]);
 
+  // Recordatorio contextual (P1 de retención): la racha real de `profile`
+  // viaja con cada programación para que el texto se personalice sólo
+  // cuando siga viva — `reminders.ts` decide el "válida o no", aquí sólo se
+  // reúnen los dos campos que necesita.
+  const streakInfo: ReminderStreakInfo | null = profile
+    ? { streakCount: profile.streak_count, lastLogDate: profile.last_log_date }
+    : null;
+
   const toggleReminder = async (enabled: boolean) => {
     if (enabled) {
-      const ok = await scheduleDailyReminder(DEFAULT_REMINDER_HOUR);
+      if (!user) return;
+      const ok = await scheduleDailyReminder(user.id, DEFAULT_REMINDER_HOUR, streakInfo);
       if (ok) setReminderHour(DEFAULT_REMINDER_HOUR);
       else
         Alert.alert(
@@ -203,16 +213,16 @@ export function ProfileScreen() {
           'Activa las notificaciones de VegeTrack en Ajustes de Android.'
         );
     } else {
-      await cancelDailyReminder();
+      await disableDailyReminder();
       setReminderHour(null);
     }
   };
 
   const changeReminderHour = (delta: number) => {
-    if (reminderHour === null) return;
+    if (reminderHour === null || !user) return;
     const next = (reminderHour + delta + 24) % 24;
     setReminderHour(next);
-    void scheduleDailyReminder(next);
+    void scheduleDailyReminder(user.id, next, streakInfo);
   };
 
   const onExport = async () => {

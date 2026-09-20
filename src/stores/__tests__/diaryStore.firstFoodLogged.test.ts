@@ -14,6 +14,11 @@ import type * as DiaryStoreModule from '@/stores/diaryStore';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
 
 jest.mock('expo-sqlite', () => require('@/db/__tests__/expoSqliteTestAdapter'));
+// diaryStore.ts lee el perfil de authStore.getState() para el texto del
+// recordatorio contextual (P1 de retención) — authStore importa
+// purchasesStore -> react-native-purchases, un paquete con ESM que Jest no
+// transforma sin mock.
+jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null }) } }));
 
 const mockFrom = jest.fn();
 jest.mock('@/lib/supabase', () => ({

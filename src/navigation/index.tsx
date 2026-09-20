@@ -16,6 +16,7 @@ import { useDiaryStore } from '@/stores/diaryStore';
 import { useWeightStore } from '@/stores/weightStore';
 import { attachAppStateFlushListener } from '@/navigation/appStateSync';
 import { trackAppOpenOnce } from '@/lib/analytics';
+import { resyncDailyReminder } from '@/notifications/reminders';
 import { AuthScreen } from '@/screens/AuthScreen';
 import { AuthRecoveryScreen } from '@/screens/AuthRecoveryScreen';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
@@ -149,6 +150,25 @@ export function RootNavigator() {
   useEffect(() => {
     const userId = shouldTrackAppOpen(route, user);
     if (userId) void trackAppOpenOnce(userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, user?.id]);
+
+  // Recordatorio contextual (P1 de retención): reevalúa el estado de HOY
+  // cada vez que se llega al árbol autenticado normal — "abrir la app" es
+  // el evento que sí controla la app; una notificación ya programada no
+  // puede ejecutar JS al sonar para decidir si hace falta. Reutiliza el
+  // mismo `shouldTrackAppOpen` que ya decide "¿hemos llegado a main con un
+  // usuario?" (misma condición, otro consumidor). Repetible sin efecto —
+  // `reminders.ts` cancela-antes-de-programar con un único `identifier`,
+  // así que varias aperturas el mismo día nunca duplican nada.
+  useEffect(() => {
+    const userId = shouldTrackAppOpen(route, user);
+    if (userId) {
+      void resyncDailyReminder(
+        userId,
+        profile ? { streakCount: profile.streak_count, lastLogDate: profile.last_log_date } : null
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route, user?.id]);
 

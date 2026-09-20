@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/authStore';
 import {
   mirrorList,
   mirrorMarkDeleted,
@@ -24,6 +25,7 @@ import { addDays, todayISO } from '@/utils/dates';
 import { isTransientSyncError, type SyncOpError } from '@/utils/syncError';
 import { reportError } from '@/lib/errorReporting';
 import { trackFirstFoodLoggedOnce } from '@/lib/analytics';
+import { onMealLogged } from '@/notifications/reminders';
 import { uuidv4 } from '@/utils/uuid';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
 import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
@@ -218,6 +220,21 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     // escritura local, no tras confirmar red — coherente con offline-first,
     // y `trackFirstFoodLoggedOnce` ya es idempotente y best-effort por sí sola.
     void trackFirstFoodLoggedOnce(entry.user_id);
+    // Recordatorio contextual (P1 de retención): si esta entrada es de hoy,
+    // ya se ha resuelto el día — reprograma de inmediato la notificación
+    // para MAÑANA (nunca la deja sin ninguna pendiente: un trigger DATE de
+    // una sola vez, no un DAILY recurrente que cancelar dejaría sin nada si
+    // el usuario no vuelve a abrir la app). Mismo momento que la línea de
+    // arriba (escritura local, no tras confirmar red) y mismo criterio
+    // best-effort: nunca debe afectar al guardado de la comida, que ya se
+    // ha hecho. La racha se lee de authStore vía getState() (mismo patrón
+    // que weightStore.ts) — puede ir un día por detrás de la que calculará
+    // update_streak más abajo, aceptable para el texto de una notificación.
+    const profileForReminder = useAuthStore.getState().profile;
+    void onMealLogged(entry.user_id, entry.date, {
+      streakCount: profileForReminder?.streak_count ?? 0,
+      lastLogDate: profileForReminder?.last_log_date ?? null,
+    });
 
     // Intento remoto + marca de sincronizado como una única sección crítica
     // frente a fetchEntries (ver withFoodLogLock arriba, auditoría del
