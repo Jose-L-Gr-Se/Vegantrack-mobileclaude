@@ -93,14 +93,22 @@ const firstFoodLoggedKvKey = (userId: string) => `first_food_logged_tracked:${us
  * Deliberadamente por usuario, no por sesión — si sólo fuera un flag en
  * memoria, un usuario real reabriendo la app en días distintos dispararía el
  * evento de "primera vez" una y otra vez.
+ *
+ * Devuelve `true` sólo cuando ESTA llamada es la que acaba de marcar el
+ * hito por primera vez — `diaryStore.addEntry` lo usa para decidir si
+ * corresponde ofrecer el recordatorio diario tras la primera comida
+ * (auditoría de activación). `false` tanto si ya estaba marcado como si algo
+ * falla: ante la duda, nunca se trata una entrada como "la primera".
  */
-export async function trackFirstFoodLoggedOnce(userId: string): Promise<void> {
+export async function trackFirstFoodLoggedOnce(userId: string): Promise<boolean> {
   try {
     const already = await kvGet<boolean>(firstFoodLoggedKvKey(userId));
-    if (already) return;
+    if (already) return false;
     await kvSet(firstFoodLoggedKvKey(userId), true);
     track('first_food_logged');
+    return true;
   } catch {
     // Ignorado a propósito — igual que track().
+    return false;
   }
 }

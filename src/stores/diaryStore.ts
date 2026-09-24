@@ -25,7 +25,8 @@ import { addDays, todayISO } from '@/utils/dates';
 import { isTransientSyncError, type SyncOpError } from '@/utils/syncError';
 import { reportError } from '@/lib/errorReporting';
 import { trackFirstFoodLoggedOnce } from '@/lib/analytics';
-import { onMealLogged } from '@/notifications/reminders';
+import { getReminderHour, getReminderOfferShown, markReminderOfferShown, onMealLogged } from '@/notifications/reminders';
+import { useUiStore } from '@/stores/uiStore';
 import { uuidv4 } from '@/utils/uuid';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
 import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
@@ -63,7 +64,7 @@ interface DiaryState {
 
   setDate: (date: string) => void;
   fetchEntries: (userId: string, date: string) => Promise<void>;
-  addEntry: (entry: NewFoodLogEntry) => Promise<{ error: string | null }>;
+  addEntry: (entry: NewFoodLogEntry) => Promise<{ error: string | null; isFirstEntry: boolean }>;
   deleteEntry: (id: string) => Promise<{ error: string | null }>;
   getDaySummary: () => NutrientSummary;
   fetchRecentFoods: (userId: string) => Promise<void>;
@@ -151,6 +152,34 @@ function withFoodLogLock<T>(fn: () => Promise<T>): Promise<T> {
   return turn;
 }
 
+/**
+ * Decide si corresponde ofrecer activar el recordatorio diario tras la
+ * primera comida de un usuario (auditoría de activación) — llamada sólo
+ * cuando `addEntry` ya confirmó que ésta es esa primera comida. Nunca activa
+ * nada por sí sola: sólo marca una señal efímera (`useUiStore`) que el
+ * overlay de la app (montado una vez, junto a `PostOnboardingWelcome`)
+ * consume para mostrarse. Ni un fallo aquí ni la propia oferta pueden
+ * bloquear o deshacer el guardado, que ya se ha confirmado antes de llamar
+ * a esta función.
+ */
+async function maybeOfferReminderAfterFirstEntry(userId: string): Promise<void> {
+  try {
+    const alreadyShown = await getReminderOfferShown(userId);
+    if (alreadyShown) return;
+    const activeHour = await getReminderHour();
+    if (activeHour !== null) {
+      // Ya tiene el recordatorio activado: no hay nada que ofrecer. No se
+      // marca "mostrado" — `isFirstEntry` en sí ya sólo puede darse una vez
+      // por usuario, así que no hace falta una segunda bandera para esto.
+      return;
+    }
+    await markReminderOfferShown(userId);
+    useUiStore.getState().setReminderOfferPending(true);
+  } catch {
+    // Best-effort — igual que el resto de efectos posteriores al guardado.
+  }
+}
+
 export const useDiaryStore = create<DiaryState>((set, get) => ({
   entries: [],
   selectedDate: todayISO(),
@@ -219,7 +248,21 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     // Activación real (auditoría del funnel): se mide en el momento de la
     // escritura local, no tras confirmar red — coherente con offline-first,
     // y `trackFirstFoodLoggedOnce` ya es idempotente y best-effort por sí sola.
-    void trackFirstFoodLoggedOnce(entry.user_id);
+    // Se espera su resultado (a diferencia de antes, que era fire-and-forget)
+    // porque `isFirstEntry` es lo único que decide si corresponde ofrecer el
+    // recordatorio (ver más abajo) — sigue siendo sólo una lectura/escritura
+    // local en KV, no añade ninguna espera de red.
+    const isFirstEntry = (await trackFirstFoodLoggedOnce(entry.user_id)) === true;
+    // Oferta única del recordatorio tras la primera comida (auditoría de
+    // activación): éste es el único punto por el que pasa CUALQUIER método
+    // de registrar comida (búsqueda, foto-IA, recetas, copiar entradas —
+    // todos llaman a este mismo `addEntry`), así que es el sitio correcto
+    // para que la oferta no dependa de qué pantalla la disparó. Mismo
+    // criterio best-effort que el resto de efectos de esta función: nunca
+    // debe afectar al guardado ya confirmado.
+    if (isFirstEntry) {
+      void maybeOfferReminderAfterFirstEntry(entry.user_id);
+    }
     // Recordatorio contextual (P1 de retención): si esta entrada es de hoy,
     // ya se ha resuelto el día — reprograma de inmediato la notificación
     // para MAÑANA (nunca la deja sin ninguna pendiente: un trigger DATE de
@@ -265,17 +308,17 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
         () => undefined,
         () => undefined
       );
-      return { error: null };
+      return { error: null, isFirstEntry };
     }
     if (error && !isTransientSyncError(error)) {
       // Error real del servidor (no de red, auditoría del Diario Bug C): la
       // entry queda pendiente en local — nunca se pierde, flushPending
       // seguirá reintentándola — pero el llamador (ProductDetailSheet)
       // debe saberlo para no dar por bueno un guardado que no ocurrió.
-      return { error: error.message || 'No se pudo guardar el cambio en el servidor.' };
+      return { error: error.message || 'No se pudo guardar el cambio en el servidor.', isFirstEntry };
     }
     // Sin red: no es error, la entry queda pendiente de sincronizar.
-    return { error: null };
+    return { error: null, isFirstEntry };
   },
 
   deleteEntry: async (id) => {

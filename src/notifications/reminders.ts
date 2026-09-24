@@ -45,6 +45,7 @@ import type { FoodLogEntry } from '@/types';
 const REMINDER_ID = 'daily-log-reminder';
 const HOUR_KV_KEY = 'reminder_hour';
 const ENABLED_KV_KEY = 'reminder_enabled';
+const OFFER_SHOWN_KV_PREFIX = 'reminder_offer_shown';
 export const DEFAULT_REMINDER_HOUR = 20;
 
 Notifications.setNotificationHandler({
@@ -255,4 +256,22 @@ export async function resyncDailyReminder(
   } catch {
     // Best-effort — un fallo aquí no debe bloquear el arranque de la app.
   }
+}
+
+/**
+ * ¿Ya se le ofreció a este usuario activar el recordatorio tras su primera
+ * comida (auditoría de activación)? Por usuario, en KV local — misma
+ * ubicación/patrón que el resto del estado de este módulo (`reminder_hour`,
+ * `reminder_enabled`), aunque esta bandera vive aparte porque describe algo
+ * distinto: no una preferencia del usuario, sino si ya se le presentó la
+ * única oportunidad de activarla desde ese punto concreto.
+ */
+export async function getReminderOfferShown(userId: string): Promise<boolean> {
+  return (await kvGet<boolean>(`${OFFER_SHOWN_KV_PREFIX}:${userId}`)) === true;
+}
+
+/** Marca la oferta como ya mostrada para `userId` — no se revierte nunca
+ * (ver `getReminderOfferShown`): es una única oportunidad. */
+export async function markReminderOfferShown(userId: string): Promise<void> {
+  await kvSet(`${OFFER_SHOWN_KV_PREFIX}:${userId}`, true);
 }

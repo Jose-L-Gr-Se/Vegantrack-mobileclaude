@@ -130,7 +130,10 @@ describe('diaryStore.addEntry — update_streak (P0 de retención)', () => {
 
     // El guardado ya se confirmó por red antes de intentar la racha —
     // un fallo del RPC (fire-and-forget) nunca debe reflejarse aquí.
-    expect(result).toEqual({ error: null });
+    // `isFirstEntry: false` porque este archivo mockea
+    // `trackFirstFoodLoggedOnce` sin resolución explícita (ver comentario
+    // del mock más arriba) — no es el objeto de este test.
+    expect(result).toEqual({ error: null, isFirstEntry: false });
     expect(mockRpc).toHaveBeenCalledWith('update_streak', { p_user_id: USER_ID, p_date: DATE });
   });
 
@@ -141,6 +144,6 @@ describe('diaryStore.addEntry — update_streak (P0 de retención)', () => {
     const result = await diaryStore.useDiaryStore.getState().addEntry(entry('entry-E'));
     await flush();
 
-    expect(result).toEqual({ error: null });
+    expect(result).toEqual({ error: null, isFirstEntry: false });
   });
 });
