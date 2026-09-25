@@ -18,12 +18,15 @@ import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
 import { calculateTargets } from '@/utils/nutrition';
 import {
+  birthDateMessage,
   HEIGHT_CM_RANGE,
   numericFieldMessage,
+  validateBirthDate,
   validateHeightCm,
   validateWeightKg,
   WEIGHT_KG_RANGE,
 } from '@/utils/profileValidation';
+import { DateField } from '@/components/DateField';
 import { toUserFacingError } from '@/utils/userFacingError';
 import { exportDiaryCsv } from '@/utils/exportCsv';
 import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
@@ -39,7 +42,7 @@ import {
 import { ProModal } from '@/components/ProModal';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SupplementEditor } from '@/components/SupplementEditor';
-import type { ActivityLevel, CustomFood, Goal, Supplement } from '@/types';
+import type { ActivityLevel, CustomFood, Goal, Sex, Supplement } from '@/types';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
@@ -651,6 +654,8 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
   const [height, setHeight] = useState(profile?.height_cm ? String(profile.height_cm) : '');
   const [weight, setWeight] = useState(profile?.weight_kg ? String(profile.weight_kg) : '');
   const [name, setName] = useState(profile?.display_name ?? '');
+  const [birthDate, setBirthDate] = useState(profile?.birth_date ?? '');
+  const [sex, setSex] = useState<Sex | null>(profile?.sex ?? null);
   const [activity, setActivity] = useState<ActivityLevel>(profile?.activity_level ?? 'moderate');
   const [goal, setGoal] = useState<Goal>(profile?.goal ?? 'maintain');
   const [saving, setSaving] = useState(false);
@@ -662,6 +667,14 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
     // se avisa y no se hace ningún UPDATE.
     const heightValidation = validateHeightCm(height);
     const weightValidation = validateWeightKg(weight);
+    // Auditoría de perfil/objetivos: fecha de nacimiento y sexo se pedían en
+    // el onboarding pero no había forma de corregirlos después — un error al
+    // rellenarlos (fecha equivocada, sexo equivocado) quedaba fijo para
+    // siempre, afectando en silencio el TDEE/BMR (edad, sexo) y la RDA de
+    // hierro (8 mg ♂ / 18 mg ♀, más del doble de diferencia) durante toda la
+    // vida de la cuenta. Mismo criterio de validación que el onboarding:
+    // nunca se guarda un valor no válido ni se revierte en silencio.
+    const birthDateValidation = validateBirthDate(birthDate);
     if (heightValidation.status !== 'empty' && heightValidation.status !== 'valid') {
       Alert.alert(
         'Altura no válida',
@@ -676,6 +689,10 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
       );
       return;
     }
+    if (birthDateValidation.status !== 'empty' && birthDateValidation.status !== 'valid') {
+      Alert.alert('Fecha de nacimiento no válida', birthDateMessage(birthDateValidation.status));
+      return;
+    }
 
     setSaving(true);
     const base = {
@@ -686,6 +703,8 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
       // (antes: `parseFloat(...) || profile?.height_cm || null`).
       height_cm: heightValidation.status === 'valid' ? heightValidation.value : null,
       weight_kg: weightValidation.status === 'valid' ? weightValidation.value : null,
+      birth_date: birthDateValidation.status === 'valid' ? birthDate : null,
+      sex,
       activity_level: activity,
       goal,
     };
@@ -694,6 +713,8 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
       display_name: base.display_name,
       height_cm: base.height_cm,
       weight_kg: base.weight_kg,
+      birth_date: base.birth_date,
+      sex: base.sex,
       activity_level: activity,
       goal,
       ...(targets
@@ -758,6 +779,37 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
                 onChangeText={setWeight}
                 keyboardType="numeric"
               />
+
+              {/* Auditoría de perfil/objetivos: fecha de nacimiento y sexo ya
+                  se piden en el onboarding (afectan al TDEE/BMR y a la RDA de
+                  hierro), pero hasta ahora no había forma de corregirlos
+                  aquí si el usuario se equivocaba al rellenarlos. */}
+              <DateField label="Fecha de nacimiento" value={birthDate} onChange={setBirthDate} />
+
+              <View style={{ gap: spacing.sm }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    letterSpacing: 0.8,
+                    color: t.textMuted,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Sexo biológico
+                </Text>
+                <Text style={{ color: t.textMuted, fontSize: 12, marginTop: -4 }}>
+                  Se usa solo para calcular tu metabolismo y la dosis de hierro recomendada.
+                </Text>
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <OptionRow selected={sex === 'male'} label="Hombre" icon="👨" onPress={() => setSex('male')} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <OptionRow selected={sex === 'female'} label="Mujer" icon="👩" onPress={() => setSex('female')} />
+                  </View>
+                </View>
+              </View>
 
               <View style={{ gap: spacing.sm }}>
                 <Text
