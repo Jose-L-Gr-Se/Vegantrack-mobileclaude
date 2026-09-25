@@ -21,7 +21,7 @@ jest.mock('@/db/database', () => ({
   mirrorReplaceDay: jest.fn(),
   mirrorUpsert: jest.fn(),
 }));
-jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null }) } }));
+jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null, fetchProfile: jest.fn() }) } }));
 
 const mockFrom = jest.fn();
 jest.mock('@/lib/supabase', () => ({ supabase: { from: (...args: unknown[]) => mockFrom(...args) } }));

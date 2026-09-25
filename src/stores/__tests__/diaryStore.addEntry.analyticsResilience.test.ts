@@ -10,7 +10,7 @@
  * `addEntry` no depende de que ese insert tenga éxito.
  */
 jest.mock('expo-sqlite', () => require('@/db/__tests__/expoSqliteTestAdapter'));
-jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null }) } }));
+jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null, fetchProfile: jest.fn() }) } }));
 jest.mock('@/lib/errorReporting', () => ({ reportError: jest.fn(), addBreadcrumb: jest.fn() }));
 jest.mock('@/notifications/reminders', () => ({
   getReminderHour: jest.fn().mockResolvedValue(null),

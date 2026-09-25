@@ -393,8 +393,23 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       // de la propia entrada (no `new Date()`): mismo criterio que usa la
       // PWA, para que registrar (o corregir) una entrada de un día pasado
       // actualice la racha de ESE día, no la de hoy.
+      //
+      // Auditoría del loop de retención (primeros 7 días): `update_streak`
+      // deja `streak_count`/`last_log_date` al día en `profiles`, pero nada
+      // volvía a leer ese perfil — `authStore.fetchProfile()` sólo se llama
+      // en transiciones de auth (login, arranque de la app), nunca aquí. El
+      // único refuerzo positivo real que ya existe en el producto (🔥 Racha:
+      // N días en el Diario, y el desglose de VeganScore en Resumen) leía
+      // siempre el perfil cacheado ANTES de esta comida, así que un usuario
+      // que registraba su primera comida del día nunca veía su racha
+      // reflejada hasta cerrar y reabrir la app — justo el momento en que
+      // más cuenta como "razón para volver mañana". Mismo criterio
+      // best-effort que el resto de esta cadena: un fallo aquí nunca debe
+      // afectar al guardado ya confirmado.
       void supabase.rpc('update_streak', { p_user_id: entry.user_id, p_date: entry.date }).then(
-        () => undefined,
+        () => {
+          void useAuthStore.getState().fetchProfile();
+        },
         () => undefined
       );
       return { error: null, isFirstEntry };

@@ -19,7 +19,7 @@ jest.mock('expo-sqlite', () => require('@/db/__tests__/expoSqliteTestAdapter'));
 // recordatorio contextual (P1 de retención) — authStore importa
 // purchasesStore -> react-native-purchases, un paquete con ESM que Jest no
 // transforma sin mock.
-jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null }) } }));
+jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null, fetchProfile: jest.fn() }) } }));
 
 const mockFrom = jest.fn();
 jest.mock('@/lib/supabase', () => ({

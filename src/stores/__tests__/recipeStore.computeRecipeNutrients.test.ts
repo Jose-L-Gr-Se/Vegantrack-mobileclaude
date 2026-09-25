@@ -30,7 +30,7 @@ jest.mock('@/lib/errorReporting', () => ({ reportError: jest.fn(), addBreadcrumb
 // authStore.getState() para el texto del recordatorio contextual (P1 de
 // retención) — authStore importa purchasesStore → react-native-purchases,
 // un paquete con ESM que Jest no transforma sin mock.
-jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null }) } }));
+jest.mock('@/stores/authStore', () => ({ useAuthStore: { getState: () => ({ profile: null, fetchProfile: jest.fn() }) } }));
 
 function makeIngredient(over: Partial<RecipeIngredient>): RecipeIngredient {
   return {
