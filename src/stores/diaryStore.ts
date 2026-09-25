@@ -457,8 +457,18 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       else byName.set(key, { entry: e, count: 1 });
     }
 
-    // Keep insertion order (= recency) instead of sorting by count
+    // Auditoría de fricción del registro recurrente: los alimentos más
+    // usados primero (no los más recientes) — `use_count` ya se calculaba y
+    // se mostraba en pantalla, pero nunca se usaba para ordenar. En empate
+    // de frecuencia, gana el más reciente: `entry` ya es la fila más nueva
+    // de cada alimento (se queda con la primera vez que se ve la clave, y
+    // `data` viene ordenado por created_at desc), así que no hace falta
+    // ningún campo ni consulta nueva para desempatar.
     const recents: RecentFood[] = [...byName.values()]
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return new Date(b.entry.created_at).getTime() - new Date(a.entry.created_at).getTime();
+      })
       .slice(0, 15)
       .map(({ entry: e, count }) => {
         const ratio = e.serving_size_g > 0 ? 100 / e.serving_size_g : 0;

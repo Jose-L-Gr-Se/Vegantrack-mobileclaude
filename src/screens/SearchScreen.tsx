@@ -85,6 +85,12 @@ export function SearchScreen() {
   const [selectedProduct, setSelectedProduct] = useState<OpenFoodFactsProduct | null>(null);
   const [selectedConfidence, setSelectedConfidence] = useState<VeganConfidence | undefined>(undefined);
   const [lockedMeal, setLockedMeal] = useState<MealType | null>(null);
+  // Sólo se rellena al elegir un Reciente (auditoría de fricción del
+  // registro recurrente): la ración que el usuario usó la última vez para
+  // ese alimento, para no tener que volver a escribirla. El resto de
+  // caminos (búsqueda, frescos, custom, código de barras) no la tocan y
+  // `ProductDetailSheet` sigue cayendo a su default de 100 g.
+  const [selectedInitialGrams, setSelectedInitialGrams] = useState<number | undefined>(undefined);
   const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -130,6 +136,7 @@ export function SearchScreen() {
       if (product) {
         setSelectedProduct(product);
         setSelectedConfidence(getVeganConfidence(product));
+        setSelectedInitialGrams(undefined);
         setSelected(productToFoodPer100g(product));
       } else {
         setToast('Producto no encontrado en OpenFoodFacts');
@@ -171,6 +178,7 @@ export function SearchScreen() {
   const selectProduct = (p: OpenFoodFactsProduct) => {
     setSelectedProduct(p);
     setSelectedConfidence(getVeganConfidence(p));
+    setSelectedInitialGrams(undefined);
     setSelected(productToFoodPer100g(p));
   };
 
@@ -178,6 +186,7 @@ export function SearchScreen() {
     setSelected(null);
     setSelectedProduct(null);
     setSelectedConfidence(undefined);
+    setSelectedInitialGrams(undefined);
   };
 
   const freshMatches = searchFreshProduce(query);
@@ -245,7 +254,10 @@ export function SearchScreen() {
             {freshMatches.slice(0, 6).map((item) => (
               <Pressable
                 key={item.id}
-                onPress={() => setSelected(productToFoodPer100g(normalizeProduct(freshItemToProduct(item))))}
+                onPress={() => {
+                  setSelectedInitialGrams(undefined);
+                  setSelected(productToFoodPer100g(normalizeProduct(freshItemToProduct(item))));
+                }}
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}
               >
                 <Text style={{ color: t.text, fontWeight: '600' }}>
@@ -264,7 +276,10 @@ export function SearchScreen() {
             {customMatches.slice(0, 6).map((f) => (
               <Pressable
                 key={f.id}
-                onPress={() => setSelected(customFoodToPer100g(f))}
+                onPress={() => {
+                  setSelectedInitialGrams(undefined);
+                  setSelected(customFoodToPer100g(f));
+                }}
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}
               >
                 <Text style={{ color: t.text, fontWeight: '600' }}>{f.name}</Text>
@@ -323,7 +338,13 @@ export function SearchScreen() {
             {recentFoods.map((r, i) => (
               <Pressable
                 key={`${r.food_name}-${i}`}
-                onPress={() => setSelected(recentToPer100g(r))}
+                onPress={() => {
+                  // Auditoría de fricción del registro recurrente: precarga
+                  // la ración que se usó la última vez para este alimento,
+                  // en vez de forzar a escribirla otra vez.
+                  setSelectedInitialGrams(r.last_serving_g);
+                  setSelected(recentToPer100g(r));
+                }}
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, alignItems: 'center' }}
               >
                 <View style={{ flex: 1, paddingRight: spacing.md }}>
@@ -350,6 +371,7 @@ export function SearchScreen() {
           food={selected}
           offProduct={selectedProduct}
           lockedMealType={lockedMeal}
+          initialGrams={selectedInitialGrams}
           veganConfidence={selectedConfidence}
           profile={sheetProfile}
           onClose={closeSheet}
