@@ -13,6 +13,7 @@ import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
+import { useUiStore } from '@/stores/uiStore';
 import { customFoodToPer100g, useCustomFoodStore } from '@/stores/customFoodStore';
 import {
   canSuggestVeganAlternative,
@@ -75,6 +76,7 @@ export function SearchScreen() {
   const profile = useAuthStore((s) => s.profile);
   const { recentFoods, fetchRecentFoods } = useDiaryStore();
   const customFoodStore = useCustomFoodStore();
+  const showMealSavedToast = useUiStore((s) => s.showMealSavedToast);
 
   const [query, setQuery] = useState('');
   const [veganOnly, setVeganOnly] = useState(false);
@@ -376,7 +378,12 @@ export function SearchScreen() {
           profile={sheetProfile}
           onClose={closeSheet}
           onAdded={(msg) => {
-            setToast(msg);
+            // Auditoría del loop "siguiente comida": este toast se ponía en
+            // estado LOCAL de SearchScreen justo antes de navegar fuera de
+            // esta pestaña — quedaba oculto al instante, así que nunca se
+            // veía. `showMealSavedToast` vive en `useUiStore`, montado en la
+            // raíz, y sobrevive al cambio de pestaña.
+            showMealSavedToast(msg);
             setQuery('');
             if (user) void fetchRecentFoods(user.id);
             // Bloque 1 de activación (Product Audit v2): si se llegó a

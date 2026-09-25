@@ -19,6 +19,15 @@ interface UiState {
   // mostrada antes, recordatorio aún no activo) ya se tomó antes de marcarla.
   reminderOfferPending: boolean;
   setReminderOfferPending: (value: boolean) => void;
+  // Mensaje de confirmación tras registrar una comida (auditoría del loop
+  // "siguiente comida"): antes vivía como estado local de `SearchScreen`, así
+  // que se ponía justo antes de navegar de vuelta al Diario y nunca llegaba
+  // a verse — la pestaña que lo renderizaba quedaba oculta al instante. Al
+  // vivir aquí (montado una vez en la raíz, igual que `reminderOfferPending`)
+  // sobrevive al cambio de pestaña. `null` = nada que mostrar.
+  mealSavedToast: string | null;
+  showMealSavedToast: (message: string) => void;
+  clearMealSavedToast: () => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -26,4 +35,7 @@ export const useUiStore = create<UiState>((set) => ({
   setJustOnboarded: (value) => set({ justOnboarded: value }),
   reminderOfferPending: false,
   setReminderOfferPending: (value) => set({ reminderOfferPending: value }),
+  mealSavedToast: null,
+  showMealSavedToast: (message) => set({ mealSavedToast: message }),
+  clearMealSavedToast: () => set({ mealSavedToast: null }),
 }));

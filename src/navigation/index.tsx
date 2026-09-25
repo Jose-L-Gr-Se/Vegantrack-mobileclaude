@@ -30,6 +30,7 @@ import { RecipesScreen } from '@/screens/RecipesScreen';
 import { MicroTrendsScreen } from '@/screens/MicroTrendsScreen';
 import { PostOnboardingWelcome } from '@/components/PostOnboardingWelcome';
 import { FirstEntryReminderOffer } from '@/components/FirstEntryReminderOffer';
+import { MealSavedToast } from '@/components/MealSavedToast';
 import { resolveRootRoute, shouldTrackAppOpen } from '@/navigation/rootRoute';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 import type { LinkingOptions } from '@react-navigation/native';
@@ -85,15 +86,17 @@ function MainTabs() {
   );
 }
 
-/** Tabs + overlays de app (bienvenida post-onboarding y oferta de
- * recordatorio tras la primera comida), montados una única vez para
- * cualquier pestaña activa — ver `FirstEntryReminderOffer`. */
+/** Tabs + overlays de app (bienvenida post-onboarding, oferta de
+ * recordatorio tras la primera comida, y confirmación de comida guardada),
+ * montados una única vez para cualquier pestaña activa — ver
+ * `FirstEntryReminderOffer`/`MealSavedToast`. */
 function MainWithWelcome() {
   return (
     <View style={{ flex: 1 }}>
       <MainTabs />
       <PostOnboardingWelcome />
       <FirstEntryReminderOffer />
+      <MealSavedToast />
     </View>
   );
 }

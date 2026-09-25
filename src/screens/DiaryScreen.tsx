@@ -19,6 +19,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
+import { useUiStore } from '@/stores/uiStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
 import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
 import { useMealPhoto } from '@/hooks/useMealPhoto';
@@ -40,6 +41,7 @@ export function DiaryScreen() {
   const supplements = useSupplementStore();
   const { isPro } = usePro();
   const photo = useMealPhoto();
+  const showMealSavedToast = useUiStore((s) => s.showMealSavedToast);
   const [refreshing, setRefreshing] = useState(false);
   // Protección mínima contra doble tap mientras una copia está en curso
   // (auditoría del Diario, Bugs D/E) — estado local de esta pantalla, no un
@@ -598,9 +600,16 @@ export function DiaryScreen() {
             setFromActivation(false);
             photo.reset();
           }}
-          onAdded={() => {
+          onAdded={(msg) => {
             track('photo_entry_saved', {});
             if (user) void fetchEntries(user.id, selectedDate);
+            // Auditoría del loop "siguiente comida": este flujo (analizar
+            // con IA) se queda en el propio Diario, pero antes no daba
+            // ninguna confirmación de que la comida se había guardado —
+            // el usuario sólo lo sabía si se fijaba en que la entrada
+            // apareciera en la lista. Mismo mensaje ("X añadido a Y") que ya
+            // usa el resto de flujos de guardado.
+            showMealSavedToast(msg);
             photo.reset();
             // Bloque 1 de activación: sólo cuando este análisis vino de la
             // pantalla de activación post-onboarding, tras guardar la
