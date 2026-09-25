@@ -59,12 +59,10 @@ const PLANS: Plan[] = [
     cadence: 'al mes',
     desc: 'Sin límites y con estadísticas profundas.',
     features: [
-      'Análisis de platos con IA sin límite',
+      'Hasta 100 análisis de plato con IA al día',
       'Historial ilimitado',
       'Tendencias de micros (30 / 90 días)',
       'Recetas y suplementos ilimitados',
-      'Exportar el diario a CSV',
-      'Soporte prioritario',
     ],
     badge: 'Popular',
     featured: true,
@@ -79,7 +77,6 @@ const PLANS: Plan[] = [
     features: [
       'Todo lo de Pro mensual',
       '20% de descuento (más de 2 meses gratis)',
-      'Acceso anticipado a novedades',
     ],
     badge: 'Ahorra 20%',
     packageType: PACKAGE_TYPE.ANNUAL,
@@ -277,7 +274,7 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
           <Text style={{ fontSize: 30 }}>👑</Text>
           <Text style={{ fontSize: 28, fontWeight: '700', color: t.text }}>Hazte Pro</Text>
           <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>
-            Análisis de platos con IA sin límite, historial completo y tendencias de micros. Cancela cuando quieras.
+            Hasta 100 análisis de plato con IA al día, historial completo y tendencias de micros. Cancela cuando quieras.
           </Text>
         </View>
 
