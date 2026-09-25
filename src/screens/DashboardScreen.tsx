@@ -190,6 +190,17 @@ export function DashboardScreen() {
               </Text>
             </View>
           ))}
+          {/* Auditoría de feedback nutricional: "Micros clave" (arriba) sólo
+              cuenta B12, hierro y vitamina D — los otros 3 que se ven en la
+              tarjeta "Micronutrientes (RDA)" más abajo (zinc, calcio,
+              omega-3) no puntúan aquí. Sin esta aclaración, ambas tarjetas
+              parecen hablar de lo mismo y pueden contradecirse: alguien con
+              zinc/calcio/omega-3 impecables pero B12/hierro/vitamina D bajos
+              vería un "Micros clave" bajo pese a la tarjeta de abajo en
+              verde, y viceversa. */}
+          <Text style={{ color: t.textMuted, fontSize: 10 }}>
+            Micros clave: vitamina B12, hierro y vitamina D. El resto se detalla en Micronutrientes (RDA), más abajo.
+          </Text>
         </View>
       </Card>
 
