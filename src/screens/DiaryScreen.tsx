@@ -116,21 +116,27 @@ export function DiaryScreen() {
         }
       : null;
 
-  // Aviso de la ficha tras analizar una foto: si hay ingredientes de origen
-  // animal, se muestra como dato suave e informativo (no bloquea ni juzga);
-  // si no, los supuestos de la estimación.
-  const photoNotice: { tone: 'warn' | 'info'; text: string } | null = photo.analysis
-    ? !photo.analysis.is_vegan && photo.analysis.non_vegan_ingredients?.length
-      ? {
-          tone: 'info',
-          text: `Posibles ingredientes de origen animal: ${photo.analysis.non_vegan_ingredients.join(
-            ', '
-          )} (sólo informativo).`,
-        }
-      : photo.analysis.notes
-      ? { tone: 'info', text: photo.analysis.notes }
-      : null
-    : null;
+  // Aviso de la ficha tras analizar una foto: ingredientes de origen animal
+  // (dato suave e informativo, no bloquea ni juzga) y los supuestos/
+  // incertidumbres que la propia IA señala en `notes` — auditoría del flujo
+  // de foto-IA: antes `notes` sólo se mostraba cuando NO había ingredientes
+  // no veganos que avisar, así que un plato marcado como no vegano ocultaba
+  // en silencio cualquier duda que Gemini hubiera apuntado (p. ej. "no se
+  // aprecia bien la ración" o "no se identifica con certeza la salsa") —
+  // justo la información que hace falta para confiar en la estimación.
+  // Ambos avisos son independientes entre sí, así que se muestran los dos
+  // cuando los dos existen, no uno sustituyendo al otro.
+  const photoNotice: { tone: 'warn' | 'info'; text: string } | null = (() => {
+    if (!photo.analysis) return null;
+    const parts: string[] = [];
+    if (!photo.analysis.is_vegan && photo.analysis.non_vegan_ingredients?.length) {
+      parts.push(
+        `Posibles ingredientes de origen animal: ${photo.analysis.non_vegan_ingredients.join(', ')} (sólo informativo).`
+      );
+    }
+    if (photo.analysis.notes) parts.push(photo.analysis.notes);
+    return parts.length > 0 ? { tone: 'info', text: parts.join(' ') } : null;
+  })();
 
   // Editor de suplementos en línea desde el Diario (sin ir a Perfil).
   // Estado posible:
@@ -638,7 +644,22 @@ export function DiaryScreen() {
         error={photo.error}
         onCamera={() => handlePhotoSource('camera')}
         onGallery={() => handlePhotoSource('library')}
-        onRetry={() => { photo.clearError(); setMealSheetMode('picker'); }}
+        onRetry={() => {
+          // Auditoría del flujo de foto-IA: un fallo transitorio del
+          // servidor (IA saturada, límite de peticiones, corte global...)
+          // no tiene nada que ver con la foto en sí — repetir el análisis
+          // con la MISMA foto, sin volver a pasar por cámara/galería, evita
+          // rehacer un paso que ya se había completado bien. `no_food` es la
+          // única excepción real (`error.retryable === false`): si la IA no
+          // vio comida, hace falta una foto distinta.
+          if (photo.error?.retryable) {
+            setMealSheetMode(null);
+            void photo.retry();
+            return;
+          }
+          photo.clearError();
+          setMealSheetMode('picker');
+        }}
         onClose={handleMealSheetClose}
       />
 

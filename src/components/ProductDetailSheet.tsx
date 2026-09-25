@@ -16,7 +16,7 @@
  * (caché local, instantáneo) y los fusiona. Así la ficha es consistente.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Pill, ProgressRing } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
@@ -301,6 +301,32 @@ export function ProductDetailSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auditoría del flujo de foto-IA: cerrar este resultado sin guardar tira
+  // el análisis entero — para Free (1 a la semana) eso significa repetir la
+  // única foto de la semana, y a cualquiera le cuesta una llamada a Gemini
+  // ya gastada. Un toque accidental en el fondo, en el handle, o el propio
+  // gesto de deslizar hacia abajo (los 4 gestos de cierre del BottomSheet)
+  // lo perdían sin ningún aviso. Sólo se pregunta en este caso concreto —
+  // foto-IA con un análisis todavía sin guardar; el resto de la ficha
+  // (búsqueda, código de barras, edición) sigue cerrándose igual que
+  // siempre, sin ningún paso de más. Cuando SÍ se guarda, `commit()` marca
+  // `savedRef` antes de llamar a `onClose()` directamente (sin pasar por
+  // aquí), así que un guardado con éxito nunca dispara esta confirmación.
+  const handleRequestClose = () => {
+    if (isAiPhoto && !savedRef.current) {
+      Alert.alert(
+        '¿Descartar este análisis?',
+        'Si sales ahora perderás este resultado y tendrás que volver a analizar la foto.',
+        [
+          { text: 'Seguir aquí', style: 'cancel' },
+          { text: 'Descartar', style: 'destructive', onPress: onClose },
+        ]
+      );
+      return;
+    }
+    onClose();
+  };
+
   useEffect(() => {
     setFood(baseFood);
     setEditedName(baseFood?.food_name ?? '');
@@ -491,7 +517,7 @@ export function ProductDetailSheet({
   return (
     <BottomSheet
       visible={true}
-      onClose={onClose}
+      onClose={handleRequestClose}
       footer={
         <View style={{ gap: spacing.sm }}>
           {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
