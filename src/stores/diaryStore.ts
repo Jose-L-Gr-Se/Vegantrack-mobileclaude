@@ -21,6 +21,7 @@ import {
 import { loadOverrides, type NutrientOverride } from '@/lib/nutrientOverrides';
 import { summarizeEntries, MICRO_RDA, ironRdaForSex, resolveMicroDisplay, type MicroConfidence } from '@/utils/nutrition';
 import { normalizeSupplementDose } from '@/utils/supplementUnits';
+import { computeVeganNutritionScore } from '@/utils/veganScore';
 import { addDays, todayISO } from '@/utils/dates';
 import { isTransientSyncError, type SyncOpError } from '@/utils/syncError';
 import { reportError } from '@/lib/errorReporting';
@@ -29,7 +30,7 @@ import { getReminderHour, getReminderOfferShown, markReminderOfferShown, onMealL
 import { useUiStore } from '@/stores/uiStore';
 import { uuidv4 } from '@/utils/uuid';
 import type { NewFoodLogEntry } from '@/utils/foodEntry';
-import type { FoodLogEntry, NutrientSummary, RecentFood, Sex } from '@/types';
+import type { FoodLogEntry, NutrientSummary, RecentFood, Sex, VeganNutritionScoreBreakdown } from '@/types';
 
 export interface WeekDay {
   date: string;
@@ -55,6 +56,18 @@ export interface MicroTrendPoint {
   micros: Record<MicroKey, { value: number; pct: number; hasEntries: boolean; confidence: MicroConfidence }>;
 }
 
+/**
+ * Un día de la serie histórica de VeganScore nutricional (auditoría de
+ * histórico de VeganScore). `score` es `null`, nunca un breakdown con
+ * `total: 0`, cuando ese día no tiene ninguna fila en `food_log` — así un
+ * consumidor no puede confundir "sin registrar" con "puntuación 0" sin
+ * comprobar nada más que si el campo es `null`.
+ */
+export interface VeganNutritionScoreTrendPoint {
+  date: string;
+  score: VeganNutritionScoreBreakdown | null;
+}
+
 interface DiaryState {
   entries: FoodLogEntry[];
   selectedDate: string;
@@ -70,6 +83,13 @@ interface DiaryState {
   fetchRecentFoods: (userId: string) => Promise<void>;
   getWeekData: (userId: string) => Promise<WeekDay[]>;
   getMicroTrends: (userId: string, days: number, sex: Sex | null | undefined) => Promise<MicroTrendPoint[]>;
+  getVeganNutritionScoreTrend: (
+    userId: string,
+    days: number,
+    calorieTarget: number,
+    proteinTarget: number,
+    sex: Sex | null | undefined
+  ) => Promise<VeganNutritionScoreTrendPoint[]>;
   copyDayEntries: (userId: string, fromDate: string, toDate: string) => Promise<{ count: number; error: string | null }>;
   copyMealEntries: (userId: string, fromDate: string, toDate: string, mealType: string) => Promise<{ count: number; error: string | null }>;
   loadOverrides: () => Promise<void>;
@@ -150,6 +170,75 @@ function withFoodLogLock<T>(fn: () => Promise<T>): Promise<T> {
     () => undefined
   );
   return turn;
+}
+
+/**
+ * Comida + suplementos de un rango de fechas, agrupados por día — la
+ * consulta e infraestructura de agregación que `getMicroTrends` ya traía
+ * (comida completa de `food_log`, mapa de `supplements` por id, tomas de
+ * `supplement_logs` normalizadas con la MISMA puerta que
+ * `supplementStore.getTodayContributions()`). Extraída para que
+ * `getVeganNutritionScoreTrend` (auditoría de histórico de VeganScore) la
+ * reutilice sin duplicar ni las 3 consultas a Supabase ni la normalización
+ * de dosis — única fuente de "qué comió y qué suplementos tomó este usuario
+ * cada día", para cualquier consumidor futuro de tendencias históricas.
+ */
+async function fetchHistoricalFoodAndSupplements(
+  userId: string,
+  start: string,
+  end: string
+): Promise<{ foodByDate: Map<string, FoodLogEntry[]>; suppByDate: Map<string, Record<string, number>> }> {
+  // Comida del periodo (filas completas: necesitamos macros + micros + flags known + source)
+  const { data: foodRows } = await supabase
+    .from('food_log')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('date', start)
+    .lte('date', end);
+
+  // Mapa de suplementos (activos e inactivos, para registros históricos)
+  const { data: suppRows } = await supabase
+    .from('supplements')
+    .select('id, nutrient_key, dose_amount, dose_unit')
+    .eq('user_id', userId);
+  const suppMap = new Map<string, { key: string | null; amount: number; unit: string }>();
+  for (const s of (suppRows ?? []) as { id: string; nutrient_key: string | null; dose_amount: number; dose_unit: string }[]) {
+    suppMap.set(s.id, { key: s.nutrient_key, amount: s.dose_amount, unit: s.dose_unit });
+  }
+
+  // Tomas de suplementos del periodo
+  const { data: logRows } = await supabase
+    .from('supplement_logs')
+    .select('supplement_id, date')
+    .eq('user_id', userId)
+    .gte('date', start)
+    .lte('date', end);
+
+  // Agrupar comida por fecha
+  const foodByDate = new Map<string, FoodLogEntry[]>();
+  for (const e of (foodRows ?? []) as FoodLogEntry[]) {
+    const list = foodByDate.get(e.date) ?? [];
+    list.push(e);
+    foodByDate.set(e.date, list);
+  }
+
+  // Aportes de suplementos por fecha y nutriente. Misma puerta que
+  // supplementStore.getTodayContributions(): sólo se suman dosis
+  // normalizadas con status 'success' — needs_review/unsupported quedan
+  // excluidas, nunca se asume que dose_amount ya está en la unidad
+  // canónica (ver src/utils/supplementUnits.ts).
+  const suppByDate = new Map<string, Record<string, number>>();
+  for (const log of (logRows ?? []) as { supplement_id: string; date: string }[]) {
+    const m = suppMap.get(log.supplement_id);
+    if (!m || !m.key) continue;
+    const normalized = normalizeSupplementDose({ amount: m.amount, unit: m.unit, nutrientKey: m.key });
+    if (normalized.status !== 'success') continue;
+    const day = suppByDate.get(log.date) ?? {};
+    day[m.key] = (day[m.key] ?? 0) + normalized.canonicalAmount;
+    suppByDate.set(log.date, day);
+  }
+
+  return { foodByDate, suppByDate };
 }
 
 /**
@@ -439,56 +528,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   getMicroTrends: async (userId, days, sex) => {
     const end = todayISO();
     const start = addDays(end, -(days - 1));
-
-    // Comida del periodo (filas completas: necesitamos micros + flags known + source)
-    const { data: foodRows } = await supabase
-      .from('food_log')
-      .select('*')
-      .eq('user_id', userId)
-      .gte('date', start)
-      .lte('date', end);
-
-    // Mapa de suplementos (activos e inactivos, para registros históricos)
-    const { data: suppRows } = await supabase
-      .from('supplements')
-      .select('id, nutrient_key, dose_amount, dose_unit')
-      .eq('user_id', userId);
-    const suppMap = new Map<string, { key: string | null; amount: number; unit: string }>();
-    for (const s of (suppRows ?? []) as { id: string; nutrient_key: string | null; dose_amount: number; dose_unit: string }[]) {
-      suppMap.set(s.id, { key: s.nutrient_key, amount: s.dose_amount, unit: s.dose_unit });
-    }
-
-    // Tomas de suplementos del periodo
-    const { data: logRows } = await supabase
-      .from('supplement_logs')
-      .select('supplement_id, date')
-      .eq('user_id', userId)
-      .gte('date', start)
-      .lte('date', end);
-
-    // Agrupar comida por fecha
-    const foodByDate = new Map<string, FoodLogEntry[]>();
-    for (const e of (foodRows ?? []) as FoodLogEntry[]) {
-      const list = foodByDate.get(e.date) ?? [];
-      list.push(e);
-      foodByDate.set(e.date, list);
-    }
-
-    // Aportes de suplementos por fecha y nutriente. Misma puerta que
-    // supplementStore.getTodayContributions(): sólo se suman dosis
-    // normalizadas con status 'success' — needs_review/unsupported quedan
-    // excluidas, nunca se asume que dose_amount ya está en la unidad
-    // canónica (ver src/utils/supplementUnits.ts).
-    const suppByDate = new Map<string, Record<string, number>>();
-    for (const log of (logRows ?? []) as { supplement_id: string; date: string }[]) {
-      const m = suppMap.get(log.supplement_id);
-      if (!m || !m.key) continue;
-      const normalized = normalizeSupplementDose({ amount: m.amount, unit: m.unit, nutrientKey: m.key });
-      if (normalized.status !== 'success') continue;
-      const day = suppByDate.get(log.date) ?? {};
-      day[m.key] = (day[m.key] ?? 0) + normalized.canonicalAmount;
-      suppByDate.set(log.date, day);
-    }
+    const { foodByDate, suppByDate } = await fetchHistoricalFoodAndSupplements(userId, start, end);
 
     const overrides = get().overrides ?? [];
     const microKeys = Object.keys(MICRO_RDA) as MicroKey[];
@@ -515,6 +555,39 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
         };
       }
       points.push({ date, micros });
+    }
+    return points;
+  },
+
+  getVeganNutritionScoreTrend: async (userId, days, calorieTarget, proteinTarget, sex) => {
+    const end = todayISO();
+    const start = addDays(end, -(days - 1));
+    const { foodByDate, suppByDate } = await fetchHistoricalFoodAndSupplements(userId, start, end);
+    const overrides = get().overrides ?? [];
+
+    const points: VeganNutritionScoreTrendPoint[] = [];
+    for (let i = 0; i < days; i++) {
+      const date = addDays(start, i);
+      const dayEntries = foodByDate.get(date) ?? [];
+      // Señal autoritativa de "sin datos" — a diferencia del `hasData` que
+      // devuelve `computeVeganNutritionScore` (que infiere "vacío" de
+      // `calories === 0`, la misma convención que ya usa `computeVeganScore`
+      // para HOY), aquí se sabe con certeza si hubo alguna fila real de
+      // `food_log` ese día, sin depender de ninguna heurística sobre las
+      // calorías resultantes.
+      if (dayEntries.length === 0) {
+        points.push({ date, score: null });
+        continue;
+      }
+      const summary = summarizeEntries(dayEntries, overrides);
+      const score = computeVeganNutritionScore({
+        summary,
+        calorieTarget,
+        proteinTarget,
+        suppContributions: suppByDate.get(date) ?? {},
+        sex: sex ?? null,
+      });
+      points.push({ date, score });
     }
     return points;
   },

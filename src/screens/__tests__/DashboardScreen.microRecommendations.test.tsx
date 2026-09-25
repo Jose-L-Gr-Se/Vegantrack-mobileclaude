@@ -122,6 +122,7 @@ function mockStores(microsOverride: ReturnType<typeof micros>) {
     selectedDate: '2026-09-19',
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),
+    getVeganNutritionScoreTrend: jest.fn().mockResolvedValue([]),
     getDaySummary: () => ({
       calories: 1500,
       protein_g: 60,

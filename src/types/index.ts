@@ -336,6 +336,21 @@ export interface VeganScoreBreakdown {
   hasData: boolean;
 }
 
+/**
+ * "VeganScore nutricional": mismos 4 componentes de `VeganScoreBreakdown`
+ * salvo `streak` — nunca incluida, ni siquiera a 0 — reescalados de 0-90 a
+ * 0-100. Ver `computeVeganNutritionScore` en `utils/veganScore.ts` para el
+ * porqué y las diferencias exactas con el VeganScore normal.
+ */
+export interface VeganNutritionScoreBreakdown {
+  total: number;
+  calories: VeganScorePart;
+  protein: VeganScorePart;
+  micros: VeganScorePart;
+  fiber: VeganScorePart;
+  hasData: boolean;
+}
+
 /** Alimento normalizado a valores por 100 g, listo para loguear en cualquier ración. */
 export interface FoodPer100g {
   food_name: string;

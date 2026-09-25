@@ -1,40 +1,75 @@
 /**
  * VeganScore: puntuación compuesta 0-100 del día.
  * Portado 1:1 de la PWA (vegantrack/src/utils/veganScore.ts).
+ *
+ * ── VeganScore vs VeganScore nutricional ────────────────────────────────────
+ * `computeVeganScore` es el de siempre: 5 componentes (calorías, proteína,
+ * micros, fibra, racha), pensado para UN día ya conocido (normalmente hoy),
+ * donde `streakCount` viene de `profiles.streak_count` en tiempo real.
+ *
+ * `computeVeganNutritionScore` (auditoría de histórico de VeganScore) es una
+ * métrica DISTINTA y explícita, no un atajo de la anterior con la racha a 0:
+ * existe porque `profiles.streak_count` es un único valor mutable sin
+ * historial (no hay forma de saber cuál era la racha en un día pasado, y
+ * reconstruirla mal sería peor que no mostrarla — ver auditoría de histórico
+ * de VeganScore) y porque la propia racha no es un dato nutricional del día,
+ * es un dato de comportamiento acumulado. Sus 4 componentes nutricionales
+ * (calorías/proteína/micros/fibra) son EXACTAMENTE los mismos cálculos que
+ * usa `computeVeganScore` — se comparten aquí en `computeNutritionParts`
+ * para que nunca puedan divergir — pero su suma (máximo 90, no 100 al faltar
+ * los 10 puntos de racha) se reescala a 0-100 preservando el peso relativo
+ * de cada componente entre sí, para que la puntuación siga leyéndose en la
+ * misma escala familiar 0-100 sin necesitar explicar una escala nueva.
+ *
+ * Limitación conocida y no oculta: para CUALQUIER día (incluidos los
+ * pasados), ambas funciones usan `calorieTarget`/`proteinTarget`/`sex` tal
+ * como se les pasen — normalmente los valores ACTUALES del perfil, porque
+ * `profiles` tampoco guarda historial de objetivos ni de sexo. Si el usuario
+ * cambió su objetivo calórico o su peso entre medias, un día histórico se
+ * puntúa con el objetivo de HOY, no con el de entonces. Es la misma
+ * aproximación que ya usa `getMicroTrends`/`MicroTrendsScreen` para las RDA
+ * históricas (nunca se ha guardado el sexo/objetivos por día) — no es una
+ * limitación nueva de esta métrica, y se documenta también en el punto donde
+ * se construye la serie histórica (`diaryStore.getVeganNutritionScoreTrend`)
+ * y en el copy que ve el usuario.
  */
-import type { NutrientSummary, Sex, VeganScoreBreakdown } from '@/types';
+import type { NutrientSummary, Sex, VeganScoreBreakdown, VeganNutritionScoreBreakdown } from '@/types';
 import { MIN_SCORE_CONFIDENCE, meetsMinConfidence, resolveMicroDisplay } from '@/utils/nutrition';
 
-interface VeganScoreInput {
+interface NutritionPartsInput {
   summary: NutrientSummary;
   calorieTarget: number;
   proteinTarget: number;
-  streakCount: number;
   suppContributions: Partial<Record<string, number>>;
   sex: Sex | null;
 }
 
-export function computeVeganScore({
+interface NutritionParts {
+  calScore: number;
+  calLabel: string;
+  proScore: number;
+  proLabel: string;
+  microScore: number;
+  microLabel: string;
+  fiberScore: number;
+  fiberLabel: string;
+}
+
+/**
+ * Los 4 componentes nutricionales, compartidos por `computeVeganScore` y
+ * `computeVeganNutritionScore` — única fuente de esta lógica, nunca
+ * duplicada entre las dos. No decide nada de racha ni de escala final: eso
+ * es cosa de cada función pública, que combina estas partes de forma
+ * distinta (una las suma tal cual sobre 100 junto a la racha; la otra las
+ * reescala de 90 a 100 sin ella).
+ */
+function computeNutritionParts({
   summary,
   calorieTarget,
   proteinTarget,
-  streakCount,
   suppContributions,
   sex,
-}: VeganScoreInput): VeganScoreBreakdown {
-  if (summary.calories === 0) {
-    const empty = (max: number) => ({ score: 0, max, label: 'Sin datos' });
-    return {
-      total: 0,
-      calories: empty(30),
-      protein: empty(25),
-      micros: empty(20),
-      fiber: empty(15),
-      streak: empty(10),
-      hasData: false,
-    };
-  }
-
+}: NutritionPartsInput): NutritionParts {
   // 1. Calorías (30 pts): en rango 85-115% del objetivo
   let calScore = 0;
   let calLabel = '';
@@ -107,6 +142,42 @@ export function computeVeganScore({
   else if (f >= 10) { fiberScore = 3; fiberLabel = 'Bajo'; }
   else { fiberLabel = 'Muy bajo'; }
 
+  return { calScore, calLabel, proScore, proLabel, microScore, microLabel, fiberScore, fiberLabel };
+}
+
+interface VeganScoreInput {
+  summary: NutrientSummary;
+  calorieTarget: number;
+  proteinTarget: number;
+  streakCount: number;
+  suppContributions: Partial<Record<string, number>>;
+  sex: Sex | null;
+}
+
+export function computeVeganScore({
+  summary,
+  calorieTarget,
+  proteinTarget,
+  streakCount,
+  suppContributions,
+  sex,
+}: VeganScoreInput): VeganScoreBreakdown {
+  if (summary.calories === 0) {
+    const empty = (max: number) => ({ score: 0, max, label: 'Sin datos' });
+    return {
+      total: 0,
+      calories: empty(30),
+      protein: empty(25),
+      micros: empty(20),
+      fiber: empty(15),
+      streak: empty(10),
+      hasData: false,
+    };
+  }
+
+  const { calScore, calLabel, proScore, proLabel, microScore, microLabel, fiberScore, fiberLabel } =
+    computeNutritionParts({ summary, calorieTarget, proteinTarget, suppContributions, sex });
+
   // 5. Racha (10 pts)
   let streakScore = 0;
   let streakLabel = '';
@@ -122,6 +193,72 @@ export function computeVeganScore({
     micros: { score: Math.round(microScore), max: 20, label: microLabel },
     fiber: { score: Math.round(fiberScore), max: 15, label: fiberLabel },
     streak: { score: Math.round(streakScore), max: 10, label: streakLabel },
+    hasData: true,
+  };
+}
+
+/** Suma máxima de los 4 componentes nutricionales (30+25+20+15), antes de
+ * reescalar a 0-100 — la constante vive aquí para que el factor de reescala
+ * (`100 / NUTRITION_RAW_MAX`) no sea un número mágico repetido. */
+const NUTRITION_RAW_MAX = 90;
+
+interface VeganNutritionScoreInput {
+  summary: NutrientSummary;
+  calorieTarget: number;
+  proteinTarget: number;
+  suppContributions: Partial<Record<string, number>>;
+  sex: Sex | null;
+}
+
+/**
+ * "VeganScore nutricional": los mismos 4 componentes de comida de
+ * `computeVeganScore` (calorías, proteína, micros clave, fibra), SIN racha
+ * — ni incluida, ni a 0, ni aproximada de ninguna forma. No es
+ * `computeVeganScore` con un streak inventado: es una métrica propia,
+ * pensada para poder calcularse igual de bien para un día de hace una
+ * semana que para hoy, porque sólo depende de datos que si existen para ese
+ * día (comida + suplementos), nunca de un contador que sólo conoce su
+ * valor actual.
+ *
+ * Reescalado: los 4 componentes sin racha suman como máximo 90, no 100 —
+ * `total` se reescala proporcionalmente a 0-100 (mismo peso relativo entre
+ * calorías/proteína/micros/fibra que en `computeVeganScore`) para que la
+ * cifra final se siga leyendo en la escala 0-100 habitual. Los sub-scores
+ * individuales (`calories`, `protein`, `micros`, `fiber`) NO se reescalan:
+ * conservan su `max` original (30/25/20/15) para poder compararse
+ * directamente, componente a componente, con los de `computeVeganScore`.
+ */
+export function computeVeganNutritionScore({
+  summary,
+  calorieTarget,
+  proteinTarget,
+  suppContributions,
+  sex,
+}: VeganNutritionScoreInput): VeganNutritionScoreBreakdown {
+  if (summary.calories === 0) {
+    const empty = (max: number) => ({ score: 0, max, label: 'Sin datos' });
+    return {
+      total: 0,
+      calories: empty(30),
+      protein: empty(25),
+      micros: empty(20),
+      fiber: empty(15),
+      hasData: false,
+    };
+  }
+
+  const { calScore, calLabel, proScore, proLabel, microScore, microLabel, fiberScore, fiberLabel } =
+    computeNutritionParts({ summary, calorieTarget, proteinTarget, suppContributions, sex });
+
+  const rawTotal = calScore + proScore + microScore + fiberScore;
+  const total = Math.min(100, Math.round((rawTotal * 100) / NUTRITION_RAW_MAX));
+
+  return {
+    total,
+    calories: { score: Math.round(calScore), max: 30, label: calLabel },
+    protein: { score: Math.round(proScore), max: 25, label: proLabel },
+    micros: { score: Math.round(microScore), max: 20, label: microLabel },
+    fiber: { score: Math.round(fiberScore), max: 15, label: fiberLabel },
     hasData: true,
   };
 }

@@ -7,6 +7,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline } from 'react-native-svg';
 import { Card, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
+import { VeganNutritionScoreTrend, type VeganNutritionTrendPoint } from '@/components/VeganNutritionScoreTrend';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type WeekDay } from '@/stores/diaryStore';
@@ -27,6 +28,11 @@ export function DashboardScreen() {
   const diary = useDiaryStore();
   const supplementStore = useSupplementStore();
   const [weekData, setWeekData] = useState<WeekDay[]>([]);
+  // Histórico de VeganScore nutricional (auditoría de histórico de
+  // VeganScore) — 7 días fijos en esta ronda, igual para Free y Pro (Free ya
+  // ve 7 días en Tendencias; ampliar esto a 30/90 para Pro queda para una
+  // ronda futura, no es parte de este bloque).
+  const [nutritionTrend, setNutritionTrend] = useState<VeganNutritionTrendPoint[]>([]);
 
   // La pantalla decide internamente qué rango puede ver cada usuario (7 días
   // para Free, 7/30/90 para Pro) — este punto de entrada ya no bloquea.
@@ -41,8 +47,22 @@ export function DashboardScreen() {
       void diary.getWeekData(user.id).then(setWeekData);
       void supplementStore.fetchSupplements(user.id);
       void supplementStore.fetchTodayLogs(user.id);
+      // Mismos objetivos/sexo ACTUALES del perfil que usa el VeganScore de
+      // hoy — `profiles` no guarda su valor histórico (ver
+      // `computeVeganNutritionScore`), así que cualquier día pasado se
+      // puntúa con los objetivos de hoy. El propio bloque lo explica en su
+      // pie de texto; no se oculta.
+      void diary
+        .getVeganNutritionScoreTrend(
+          user.id,
+          7,
+          profile?.calorie_target ?? 0,
+          profile?.protein_target_g ?? 0,
+          profile?.sex ?? null
+        )
+        .then((points) => setNutritionTrend(points.map((p) => ({ date: p.date, score: p.score?.total ?? null }))));
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, diary.selectedDate])
+    }, [user?.id, diary.selectedDate, profile?.calorie_target, profile?.protein_target_g, profile?.sex])
   );
 
   const summary = diary.getDaySummary();
@@ -172,6 +192,9 @@ export function DashboardScreen() {
           ))}
         </View>
       </Card>
+
+      {/* Histórico de VeganScore nutricional — sin racha, ver componente */}
+      <VeganNutritionScoreTrend points={nutritionTrend} />
 
       {/* Macros detallados */}
       <Card style={{ gap: spacing.md }}>
