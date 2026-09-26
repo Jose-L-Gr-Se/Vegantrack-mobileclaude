@@ -298,10 +298,21 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   fetchEntries: async (userId, date) => {
     set({ loading: true });
 
-    // 1. Local primero: render inmediato (también sin red)
+    // 1. Local primero: render inmediato (también sin red). Mismo guard que
+    //    el paso 2 de abajo: con navegación rápida de fecha (dos taps
+    //    seguidos en ‹/›, o adelante y atrás) puede haber más de un
+    //    fetchEntries en vuelo a la vez, cada uno para una fecha distinta.
+    //    Sin comprobar que `date` sigue siendo la fecha seleccionada, una
+    //    lectura local tardía de una fecha ya abandonada pisaría `entries`
+    //    con la comida de esa fecha vieja — y si el paso 2 no llega a
+    //    corregirlo (sin red, o su propio SELECT también tarda), esa fecha
+    //    equivocada se queda mostrada sin que nada la corrija (auditoría del
+    //    histórico y navegación por días).
     try {
       const local = await mirrorList<FoodLogEntry>('food_log', userId, date);
-      set({ entries: local.map((r) => r.payload), loading: false });
+      if (get().selectedDate === date) {
+        set({ entries: local.map((r) => r.payload), loading: false });
+      }
     } catch {
       // espejo no disponible: seguimos con remoto
     }

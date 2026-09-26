@@ -566,7 +566,16 @@ export function DiaryScreen() {
         loading={copying}
       />
 
-      {entries.length === 0 && <EmptyState emoji="🥗" text="Aún no has registrado nada hoy. Toca ＋ en una comida para buscar alimentos." />}
+      {entries.length === 0 && (
+        <EmptyState
+          emoji="🥗"
+          text={
+            selectedDate === todayISO()
+              ? 'Aún no has registrado nada hoy. Toca ＋ en una comida para buscar alimentos.'
+              : 'No hay nada registrado este día. Toca ＋ en una comida para añadir algo.'
+          }
+        />
+      )}
 
       {editing ? (
         <ProductDetailSheet
