@@ -35,6 +35,14 @@ export function RecipesScreen() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [servings, setServings] = useState('2');
+  // Auditoría de límites Free/Pro: `create()` no tenía ningún guard contra
+  // doble tap. Con el límite free comprobado sólo al ENTRAR a la función
+  // (`store.recipes.length >= FREE_RECIPE_LIMIT`), dos toques rápidos en
+  // "Crear" con exactamente 2 recetas (una por debajo del límite) veían
+  // ambos `length === 2` y creaban las dos — dejando 4 recetas para una
+  // cuenta free con límite 3. Mismo patrón que ya usa el resto de flujos de
+  // guardado de la app (`ProductDetailSheet.commit()`, `SupplementEditor`).
+  const [creating, setCreating] = useState(false);
 
   const selected = store.recipes.find((r) => r.id === selectedId) ?? null;
 
@@ -46,7 +54,7 @@ export function RecipesScreen() {
   );
 
   const create = async () => {
-    if (!user || !name.trim()) return;
+    if (!user || !name.trim() || creating) return;
     if (!isPro && store.recipes.length >= FREE_RECIPE_LIMIT) {
       track('paywall_viewed', { source: 'recipes_limit' });
       Alert.alert(
@@ -59,8 +67,10 @@ export function RecipesScreen() {
       );
       return;
     }
+    setCreating(true);
     const n = Math.max(1, parseFloat(servings.replace(',', '.')) || 1);
     const { error } = await store.createRecipe(user.id, name.trim(), description.trim() || null, n);
+    setCreating(false);
     if (error) Alert.alert('Error', error);
     else {
       setShowCreate(false);
@@ -176,11 +186,12 @@ export function RecipesScreen() {
               onChangeText={setServings}
               keyboardType="numeric"
             />
-            <Button title="Crear" onPress={create} />
+            <Button title="Crear" onPress={create} loading={creating} />
             <Button
               title="Cancelar"
               variant="secondary"
               onPress={() => setShowCreate(false)}
+              disabled={creating}
             />
           </Card>
         </View>
