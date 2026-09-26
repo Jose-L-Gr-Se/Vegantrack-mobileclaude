@@ -74,7 +74,18 @@ export function DashboardScreen() {
     suppContributions: supplementStore.getTodayContributions(),
     sex: profile?.sex ?? null,
   });
-  const scoreColor = getScoreColor(score.total);
+  // Auditoría de onboarding/primera sesión: `computeVeganScore()` ya
+  // distingue "sin ninguna comida registrada hoy" (`hasData: false`, todas
+  // las partes a 0 con label 'Sin datos') de un día real con puntuación 0 —
+  // pero esta pantalla ignoraba `hasData` por completo y siempre pintaba el
+  // aro en el color de la puntuación (rojo "danger" para 0) con la etiqueta
+  // de peor tramo ("Mejorable 🌱"). Un usuario nuevo que aún no ha registrado
+  // nada (p. ej. "Ahora no, ir al resumen" tras el onboarding) veía así un
+  // VeganScore en rojo con una valoración negativa de un día que ni siquiera
+  // ha empezado — exactamente la clase de "reclamo alarmante sin datos" que
+  // CLAUDE.md pide evitar. Con `hasData: false` se usa un color neutro, no
+  // el semáforo de puntuación.
+  const scoreColor = score.hasData ? getScoreColor(score.total) : t.textMuted;
 
   const breakdownRows = [
     { label: 'Calorías', part: score.calories },
@@ -180,27 +191,37 @@ export function DashboardScreen() {
         <View style={{ flex: 1, gap: spacing.sm }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontWeight: '800', fontSize: 16, color: t.text }}>VeganScore</Text>
-            <Text style={{ fontWeight: '700', color: scoreColor, fontSize: 14 }}>{getScoreLabel(score.total)}</Text>
+            <Text style={{ fontWeight: '700', color: scoreColor, fontSize: 14 }}>
+              {score.hasData ? getScoreLabel(score.total) : 'Sin datos aún'}
+            </Text>
           </View>
-          {breakdownRows.map(({ label, part }) => (
-            <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
-              <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }}>
-                {part.score}/{part.max}
+          {score.hasData ? (
+            <>
+              {breakdownRows.map(({ label, part }) => (
+                <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
+                  <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }}>
+                    {part.score}/{part.max}
+                  </Text>
+                </View>
+              ))}
+              {/* Auditoría de feedback nutricional: "Micros clave" (arriba) sólo
+                  cuenta B12, hierro y vitamina D — los otros 3 que se ven en la
+                  tarjeta "Micronutrientes (RDA)" más abajo (zinc, calcio,
+                  omega-3) no puntúan aquí. Sin esta aclaración, ambas tarjetas
+                  parecen hablar de lo mismo y pueden contradecirse: alguien con
+                  zinc/calcio/omega-3 impecables pero B12/hierro/vitamina D bajos
+                  vería un "Micros clave" bajo pese a la tarjeta de abajo en
+                  verde, y viceversa. */}
+              <Text style={{ color: t.textMuted, fontSize: 10 }}>
+                Micros clave: vitamina B12, hierro y vitamina D. El resto se detalla en Micronutrientes (RDA), más abajo.
               </Text>
-            </View>
-          ))}
-          {/* Auditoría de feedback nutricional: "Micros clave" (arriba) sólo
-              cuenta B12, hierro y vitamina D — los otros 3 que se ven en la
-              tarjeta "Micronutrientes (RDA)" más abajo (zinc, calcio,
-              omega-3) no puntúan aquí. Sin esta aclaración, ambas tarjetas
-              parecen hablar de lo mismo y pueden contradecirse: alguien con
-              zinc/calcio/omega-3 impecables pero B12/hierro/vitamina D bajos
-              vería un "Micros clave" bajo pese a la tarjeta de abajo en
-              verde, y viceversa. */}
-          <Text style={{ color: t.textMuted, fontSize: 10 }}>
-            Micros clave: vitamina B12, hierro y vitamina D. El resto se detalla en Micronutrientes (RDA), más abajo.
-          </Text>
+            </>
+          ) : (
+            <Text style={{ color: t.textMuted, fontSize: 12 }}>
+              Registra tu primera comida de hoy para ver tu VeganScore.
+            </Text>
+          )}
         </View>
       </Card>
 
