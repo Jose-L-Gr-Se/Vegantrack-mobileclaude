@@ -68,7 +68,7 @@ jest.mock('@/notifications/reminders', () => ({
   markReminderOfferShown: jest.fn(async () => undefined),
   onMealLogged: jest.fn(async () => undefined),
   scheduleDailyReminder: jest.fn(),
-  disableDailyReminder: jest.fn(),
+  disableDailyReminder: jest.fn(async () => undefined),
   resyncDailyReminder: jest.fn(),
 }));
 

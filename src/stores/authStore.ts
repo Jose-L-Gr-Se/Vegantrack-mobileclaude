@@ -21,6 +21,7 @@ import { useSupplementStore } from '@/stores/supplementStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useWeightStore } from '@/stores/weightStore';
 import { useRecipeStore } from '@/stores/recipeStore';
+import { disableDailyReminder } from '@/notifications/reminders';
 import {
   sanitizeProfilePatch,
   type EditableProfileFields,
@@ -37,6 +38,17 @@ import type { Profile } from '@/types';
  * `usePurchasesStore().reset()`, sólo que ahora para todos los stores con
  * datos de usuario, no sólo el de compras. Nunca toca el espejo SQLite ni
  * Supabase: sólo el estado en memoria de esta sesión de la app.
+ *
+ * También cancela el recordatorio diario y borra su preferencia (auditoría
+ * de notificaciones): `reminder_enabled`/`reminder_hour` en `reminders.ts`
+ * son claves KV GLOBALES, no por usuario (a diferencia de `profile:${userId}`
+ * o `reminder_offer_shown:${userId}`) — sin este cierre, la preferencia y la
+ * notificación YA PROGRAMADA de la cuenta que cierra sesión seguían activas
+ * para la SIGUIENTE cuenta que iniciara sesión en el mismo dispositivo sin
+ * reiniciar la app, aunque esa cuenta nunca hubiera tocado el recordatorio.
+ * `disableDailyReminder()` es la función que ya existe para "apagar del
+ * todo" (cancela lo pendiente + borra la preferencia) — se reutiliza tal
+ * cual, sin inventar un segundo mecanismo de reset.
  */
 function resetUserDataStores(): void {
   useDiaryStore.getState().reset();
@@ -44,6 +56,7 @@ function resetUserDataStores(): void {
   useCustomFoodStore.getState().reset();
   useWeightStore.getState().reset();
   useRecipeStore.getState().reset();
+  void disableDailyReminder().catch(() => undefined);
 }
 
 /**

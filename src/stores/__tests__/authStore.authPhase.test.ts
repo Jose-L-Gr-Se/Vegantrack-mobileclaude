@@ -95,7 +95,7 @@ jest.mock('@/notifications/reminders', () => ({
   markReminderOfferShown: jest.fn(async () => undefined),
   onMealLogged: jest.fn(async () => undefined),
   scheduleDailyReminder: jest.fn(),
-  disableDailyReminder: jest.fn(),
+  disableDailyReminder: jest.fn(async () => undefined),
   resyncDailyReminder: jest.fn(),
 }));
 
@@ -391,6 +391,15 @@ describe('auditoría del ciclo de vida de la cuenta: signOut() limpia el estado 
     expect(useCustomFoodStore.getState().customFoods).toEqual([]);
     expect(useWeightStore.getState().logs).toEqual([]);
     expect(useRecipeStore.getState().recipes).toEqual([]);
+
+    // Auditoría de notificaciones: `reminder_enabled`/`reminder_hour` son
+    // claves KV globales (no por usuario) — sin cancelar y desactivar aquí,
+    // la preferencia y la notificación ya programada de esta cuenta seguirían
+    // activas para la siguiente cuenta que inicie sesión en el mismo
+    // dispositivo, aunque esa cuenta nunca las hubiera tocado.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { disableDailyReminder } = require('@/notifications/reminders');
+    expect(disableDailyReminder).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -416,6 +425,10 @@ describe('deleteAccount() limpia el estado en memoria de los demás stores', () 
     expect(useDiaryStore.getState().entries).toEqual([]);
     expect(useWeightStore.getState().logs).toEqual([]);
     expect(useAuthStore.getState().authPhase).toBe('unauthenticated');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { disableDailyReminder } = require('@/notifications/reminders');
+    expect(disableDailyReminder).toHaveBeenCalledTimes(1);
   });
 });
 
