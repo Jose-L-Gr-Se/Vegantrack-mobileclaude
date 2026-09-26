@@ -1129,7 +1129,7 @@ export function SupplementsModal({
   );
 }
 
-function CustomFoodModal({ onClose }: { onClose: () => void }) {
+export function CustomFoodModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const { user } = useAuthStore();
   const store = useCustomFoodStore();
@@ -1144,12 +1144,22 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
   const [fiber, setFiber] = useState('');
   const [sugar, setSugar] = useState('');
   const [satFat, setSatFat] = useState('');
+  // Auditoría de alimentos personalizados: antes `is_vegan` se guardaba
+  // SIEMPRE como `true` al crear (y ni se tocaba al editar) — un alimento
+  // personalizado no vegano (p. ej. "Caldo de pollo casero", creado sólo para
+  // llevar la cuenta de sus calorías) se marcaba "Vegano ✓" sin que hubiera
+  // ninguna forma, en ningún punto de la app, de corregirlo: `ProductDetailSheet`
+  // sólo ofrece corrección manual de veganismo para el flujo de foto-IA
+  // (`isAiPhoto`), nunca para `source: 'custom'`. Ahora es un campo más del
+  // formulario, igual de editable que las macros.
+  const [isVegan, setIsVegan] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const num = (s: string) => parseFloat(s.replace(',', '.')) || 0;
 
   const resetForm = () => {
     setName(''); setKcal(''); setProtein(''); setCarbs('');
-    setFat(''); setFiber(''); setSugar(''); setSatFat('');
+    setFat(''); setFiber(''); setSugar(''); setSatFat(''); setIsVegan(true);
   };
 
   const startEdit = (f: CustomFood) => {
@@ -1163,6 +1173,7 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
     setFiber(f.fiber_per_100g ? String(f.fiber_per_100g) : '');
     setSugar(f.sugar_per_100g ? String(f.sugar_per_100g) : '');
     setSatFat(f.saturated_fat_per_100g ? String(f.saturated_fat_per_100g) : '');
+    setIsVegan(f.is_vegan);
   };
 
   const startCreate = () => {
@@ -1172,7 +1183,14 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
   };
 
   const save = async () => {
-    if (!user || !name.trim()) return;
+    // Auditoría de alimentos personalizados: `save()` no tenía ninguna
+    // protección contra doble tap (a diferencia de `ProductDetailSheet.commit()`
+    // o `DiaryScreen.copyFromYesterday()`, que sí deshabilitan su botón
+    // mientras la operación está en curso) — un doble toque podía disparar
+    // `createCustomFood()` dos veces antes de que el primero terminara,
+    // dejando dos alimentos idénticos guardados.
+    if (!user || !name.trim() || saving) return;
+    setSaving(true);
     const foodData = {
       name: name.trim(),
       calories_per_100g: num(kcal),
@@ -1182,10 +1200,12 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
       fiber_per_100g: num(fiber),
       sugar_per_100g: num(sugar),
       saturated_fat_per_100g: num(satFat),
+      is_vegan: isVegan,
     };
 
     if (editingId) {
       const { error } = await store.updateCustomFood(editingId, foodData);
+      setSaving(false);
       if (error) Alert.alert('Error', error);
       else { setEditingId(null); resetForm(); }
     } else {
@@ -1199,9 +1219,9 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
         calcium_mg_per_100g: null,
         vitamin_d_mcg_per_100g: null,
         omega3_g_per_100g: null,
-        is_vegan: true,
         image_url: null,
       });
+      setSaving(false);
       if (error) Alert.alert('Error', error);
       else { setCreating(false); resetForm(); }
     }
@@ -1313,8 +1333,17 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
                 <Input label="G. sat." value={satFat} onChangeText={setSatFat} keyboardType="numeric" />
               </View>
             </View>
-            <Button title={editingId ? 'Guardar cambios' : 'Crear alimento'} onPress={save} />
-            <Button title="Cancelar" variant="secondary" onPress={() => { setEditingId(null); setCreating(false); resetForm(); }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: t.text, fontWeight: '600', fontSize: 14 }}>¿Es vegano?</Text>
+              <Switch value={isVegan} onValueChange={setIsVegan} trackColor={{ true: t.primary }} />
+            </View>
+            <Button title={editingId ? 'Guardar cambios' : 'Crear alimento'} onPress={save} loading={saving} />
+            <Button
+              title="Cancelar"
+              variant="secondary"
+              onPress={() => { setEditingId(null); setCreating(false); resetForm(); }}
+              disabled={saving}
+            />
           </View>
         )}
 
