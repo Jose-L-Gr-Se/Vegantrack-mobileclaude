@@ -227,8 +227,25 @@ async function fetchHistoricalFoodAndSupplements(
   // normalizadas con status 'success' — needs_review/unsupported quedan
   // excluidas, nunca se asume que dose_amount ya está en la unidad
   // canónica (ver src/utils/supplementUnits.ts).
+  //
+  // Un mismo suplemento sólo cuenta UNA VEZ por día, sin importar cuántas
+  // filas de `supplement_logs` existan para él ese día — mismo invariante
+  // que `takenToday` en supplementStore (un mapa por supplement_id, nunca
+  // una lista). Aquí sí hace falta un dedupe explícito porque se recorren
+  // TODAS las filas de un rango histórico: dos dispositivos marcando el
+  // mismo suplemento casi a la vez, cada uno sin haber visto aún el insert
+  // del otro, pueden dejar dos filas para el mismo (supplement_id, date) —
+  // sin este dedupe, ese día se contaría el doble en tendencias y en el
+  // VeganScore histórico, aunque el Dashboard de HOY (que sí pasa por el
+  // mapa de `takenToday`) nunca lo duplicaría.
   const suppByDate = new Map<string, Record<string, number>>();
+  const countedSupplementByDate = new Map<string, Set<string>>();
   for (const log of (logRows ?? []) as { supplement_id: string; date: string }[]) {
+    const countedToday = countedSupplementByDate.get(log.date) ?? new Set<string>();
+    if (countedToday.has(log.supplement_id)) continue;
+    countedToday.add(log.supplement_id);
+    countedSupplementByDate.set(log.date, countedToday);
+
     const m = suppMap.get(log.supplement_id);
     if (!m || !m.key) continue;
     const normalized = normalizeSupplementDose({ amount: m.amount, unit: m.unit, nutrientKey: m.key });

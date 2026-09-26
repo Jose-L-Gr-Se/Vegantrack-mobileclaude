@@ -163,4 +163,31 @@ describe('getMicroTrends (Fase 2 del P0 de unidades de suplementos) · aporte de
     const point = points.find((p) => p.date === day)!;
     expect(point.micros.vitamin_b12_mcg.value).toBe(0);
   });
+
+  it('dos filas de supplement_logs para el MISMO suplemento el mismo día no duplican el aporte (dos dispositivos marcándolo casi a la vez)', async () => {
+    // Mismo supplement_id, misma fecha, dos filas — el escenario que puede
+    // dejar dos inserts para la misma toma (dos dispositivos, cada uno sin
+    // haber visto aún el insert del otro). El Dashboard de HOY nunca lo
+    // duplicaría (mapa `takenToday` por supplement_id en supplementStore);
+    // esta tendencia histórica sí sumaba una fila por cada una, antes del fix.
+    mockFrom.mockReset();
+    const supplement = { id: 'supp-1', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'mcg' };
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'food_log') return makeBuilder({ data: [] });
+      if (table === 'supplements') return makeBuilder({ data: [supplement] });
+      if (table === 'supplement_logs') {
+        return makeBuilder({
+          data: [
+            { supplement_id: supplement.id, date: day },
+            { supplement_id: supplement.id, date: day },
+          ],
+        });
+      }
+      throw new Error(`tabla inesperada en el mock: ${table}`);
+    });
+
+    const points = await useDiaryStore.getState().getMicroTrends('u1', 1, 'male');
+    const point = points.find((p) => p.date === day)!;
+    expect(point.micros.vitamin_b12_mcg.value).toBeCloseTo(25, 6); // nunca 50
+  });
 });

@@ -137,4 +137,27 @@ describe('getVeganNutritionScoreTrend', () => {
     expect(withSuppScore.micros.score).toBeGreaterThan(withoutSuppScore.micros.score);
     expect(withSuppScore.total).toBeGreaterThan(withoutSuppScore.total);
   });
+
+  it('dos filas de supplement_logs del mismo suplemento el mismo día puntúan igual que una sola (sin doble aporte)', async () => {
+    const foodRow = makeEntry({ id: 'a', date: perfectDay, calories: 2000, protein_g: 120, fiber_g: 35 });
+    const supplement = { id: 'supp-1', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'mcg' };
+
+    mockTables([foodRow], [supplement], [{ supplement_id: supplement.id, date: perfectDay }]);
+    const single = await useDiaryStore.getState().getVeganNutritionScoreTrend('u1', 1, 2000, 120, 'male');
+    const singleScore = single.find((p) => p.date === perfectDay)!.score!;
+
+    mockTables(
+      [foodRow],
+      [supplement],
+      [
+        { supplement_id: supplement.id, date: perfectDay },
+        { supplement_id: supplement.id, date: perfectDay },
+      ]
+    );
+    const duplicated = await useDiaryStore.getState().getVeganNutritionScoreTrend('u1', 1, 2000, 120, 'male');
+    const duplicatedScore = duplicated.find((p) => p.date === perfectDay)!.score!;
+
+    expect(duplicatedScore.micros.score).toBe(singleScore.micros.score);
+    expect(duplicatedScore.total).toBe(singleScore.total);
+  });
 });
