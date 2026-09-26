@@ -110,10 +110,28 @@ export const useWeightStore = create<WeightState>((set, get) => ({
   },
 
   deleteLog: async (id) => {
-    set({ logs: get().logs.filter((l) => l.id !== id) });
+    const remaining = get().logs.filter((l) => l.id !== id); // ya en orden ascendente (sortByDate)
+    set({ logs: remaining });
     await mirrorMarkDeleted('weight_logs', id);
     const { error } = await supabase.from('weight_logs').delete().eq('id', id);
     if (!error) await mirrorRemove('weight_logs', id);
+
+    // Auditoría de peso: `addLog()` mantiene `profiles.weight_kg` sincronizado
+    // con el ÚLTIMO peso registrado (comentario "igual que la PWA" de arriba),
+    // pero `deleteLog()` no lo tocaba en absoluto — borrar el registro más
+    // reciente (p. ej. un error de tecleo) dejaba el perfil con un peso que
+    // ya no tiene ningún registro que lo respalde. Esa cifra huérfana no es
+    // sólo cosmética: `EditProfileModal` la precarga como valor por defecto
+    // y `calculateTargets()` la usa para el BMR/TDEE si el usuario guarda
+    // cualquier otro cambio de perfil sin tocar el peso a mano — recalculando
+    // objetivos con un peso que el usuario acaba de borrar. Si queda al
+    // menos un registro, se resincroniza con el más reciente; si no queda
+    // ninguno, se deja tal cual (el peso del perfil puede haberse fijado por
+    // otra vía, p. ej. onboarding, sin pasar nunca por esta pantalla).
+    if (remaining.length > 0) {
+      const latest = remaining[remaining.length - 1];
+      void useAuthStore.getState().updateProfile({ weight_kg: latest.weight_kg });
+    }
     return { error: null };
   },
 
