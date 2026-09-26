@@ -505,7 +505,15 @@ export function productToFoodPer100g(product: OpenFoodFactsProduct): FoodPer100g
     brand: product.brands || null,
     barcode: product.code || null,
     image_url: product.image_front_url || null,
-    is_vegan: isProductVegan(product),
+    // No usar isProductVegan() (solo sello de la comunidad): OFF también
+    // marca 'en:vegan' vía análisis automático de ingredientes sin sello, y
+    // getVeganConfidence() ya trata ambas señales como 'high'. Si is_vegan se
+    // quedara en el sello estricto, el producto se guardaría con
+    // is_vegan: false pese a que la ficha (ProductDetailSheet) lo muestre
+    // como "Vegano ✓" — y como esa pantalla no dibuja ningún indicador propio
+    // para 'high' (delega en is_vegan), el usuario no vería ningún aviso en
+    // absoluto pese a que OFF sí tiene una señal de alta confianza.
+    is_vegan: getVeganConfidence(product) === 'high',
     source: product.code ? 'openfoodfacts' : 'manual',
     source_ref: product.code || null,
     calories: n['energy-kcal_100g'],

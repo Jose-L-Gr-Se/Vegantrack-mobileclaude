@@ -62,6 +62,42 @@ describe('productToFoodPer100g', () => {
     expect(f.is_vegan).toBe(true);
     expect(f.source).toBe('openfoodfacts');
   });
+
+  it('is_vegan sigue a getVeganConfidence("high"), no solo al sello de la comunidad', () => {
+    // Sin labels_tags, pero con análisis de ingredientes de OFF marcándolo
+    // vegano: getVeganConfidence ya lo trata como 'high' (ver test de
+    // getVeganConfidence más abajo), así que is_vegan debe coincidir — si no,
+    // el producto se guarda en el Diario como is_vegan: false pese a que
+    // ProductDetailSheet lo muestre como "Vegano ✓" al usuario antes de
+    // guardar.
+    const product = normalizeProduct({
+      code: 'x',
+      product_name: 'Crema vegetal',
+      nutriments: {},
+      ingredients_analysis_tags: ['en:vegan'],
+    });
+    expect(getVeganConfidence(product)).toBe('high');
+    expect(productToFoodPer100g(product).is_vegan).toBe(true);
+  });
+
+  it('is_vegan es false cuando la confianza no es "high" (p.ej. "parece vegano" o señal animal)', () => {
+    const maybeVegan = normalizeProduct({
+      code: 'x',
+      product_name: 'Hamburguesa de seitán',
+      nutriments: {},
+    });
+    expect(getVeganConfidence(maybeVegan)).toBe('medium');
+    expect(productToFoodPer100g(maybeVegan).is_vegan).toBe(false);
+
+    const nonVegan = normalizeProduct({
+      code: 'x',
+      product_name: 'Bebida de soja',
+      nutriments: {},
+      ingredients_analysis_tags: ['en:non-vegan'],
+    });
+    expect(getVeganConfidence(nonVegan)).toBe('low');
+    expect(productToFoodPer100g(nonVegan).is_vegan).toBe(false);
+  });
 });
 
 describe('getVeganConfidence', () => {
