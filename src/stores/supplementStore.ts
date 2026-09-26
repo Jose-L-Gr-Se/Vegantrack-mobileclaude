@@ -61,6 +61,11 @@ interface SupplementState {
   toggleTaken: (userId: string, supplementId: string) => Promise<void>;
   getTodayContributionDetails: () => SupplementContributionDetail[];
   getTodayContributions: () => Partial<Record<string, number>>;
+  /** Auditoría del ciclo de vida de la cuenta — ver el mismo `reset()` en
+   * `diaryStore.ts`: limpia sólo el estado en memoria (suplementos de OTRO
+   * usuario y sus tomas de hoy) para que no sobreviva a un cambio de cuenta
+   * sin reiniciar la app. */
+  reset: () => void;
 }
 
 export const useSupplementStore = create<SupplementState>((set, get) => ({
@@ -205,4 +210,6 @@ export const useSupplementStore = create<SupplementState>((set, get) => ({
     }
     return contributions;
   },
+
+  reset: () => set({ supplements: [], takenToday: {}, loading: false }),
 }));

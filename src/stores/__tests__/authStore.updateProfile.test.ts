@@ -38,10 +38,38 @@ jest.mock('@/lib/supabase', () => ({
 jest.mock('@/db/database', () => ({
   kvGet: jest.fn(async () => null),
   kvSet: jest.fn(async () => undefined),
+  mirrorList: jest.fn(async () => []),
+  mirrorUpsert: jest.fn(async () => undefined),
+  mirrorMarkSynced: jest.fn(async () => undefined),
+  mirrorMarkDeleted: jest.fn(async () => undefined),
+  mirrorRemove: jest.fn(async () => undefined),
+  mirrorPending: jest.fn(async () => []),
+  mirrorReplaceDay: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/stores/purchasesStore', () => ({
   usePurchasesStore: { getState: () => ({ init: jest.fn(), reset: jest.fn() }) },
+}));
+
+// Auditoría del ciclo de vida de la cuenta: `authStore.ts` ahora importa
+// `diaryStore`/`weightStore` (para limpiar su estado en `signOut`/
+// `deleteAccount`), que a su vez importan estos módulos con dependencias
+// nativas (Sentry, expo-notifications) — este test no ejercita esos flujos,
+// pero necesita que el árbol de imports cargue sin ellas.
+jest.mock('@/lib/errorReporting', () => ({ reportError: jest.fn(), addBreadcrumb: jest.fn() }));
+jest.mock('@/lib/analytics', () => ({
+  track: jest.fn(),
+  trackFirstFoodLoggedOnce: jest.fn(async () => false),
+}));
+jest.mock('@/notifications/reminders', () => ({
+  DEFAULT_REMINDER_HOUR: 20,
+  getReminderHour: jest.fn(async () => null),
+  getReminderOfferShown: jest.fn(async () => false),
+  markReminderOfferShown: jest.fn(async () => undefined),
+  onMealLogged: jest.fn(async () => undefined),
+  scheduleDailyReminder: jest.fn(),
+  disableDailyReminder: jest.fn(),
+  resyncDailyReminder: jest.fn(),
 }));
 
 jest.mock('expo-linking', () => ({ createURL: (p: string) => `vegantrack://${p}` }));

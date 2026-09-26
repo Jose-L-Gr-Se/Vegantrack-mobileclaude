@@ -46,6 +46,7 @@ const mockFrom = jest.fn((..._args: unknown[]) => ({
 
 const mockKvGet = jest.fn();
 const mockKvSet = jest.fn();
+const mockFunctionsInvoke = jest.fn();
 
 jest.mock('@/lib/supabase', () => ({
   AUTH_TIMEOUT_MS: 6000,
@@ -56,17 +57,46 @@ jest.mock('@/lib/supabase', () => ({
       signOut: (...args: unknown[]) => mockSignOut(...args),
     },
     from: (...args: unknown[]) => mockFrom(...args),
-    functions: { invoke: jest.fn() },
+    functions: { invoke: (...args: unknown[]) => mockFunctionsInvoke(...args) },
   },
 }));
 
 jest.mock('@/db/database', () => ({
   kvGet: (...args: unknown[]) => mockKvGet(...args),
   kvSet: (...args: unknown[]) => mockKvSet(...args),
+  mirrorList: jest.fn(async () => []),
+  mirrorUpsert: jest.fn(async () => undefined),
+  mirrorMarkSynced: jest.fn(async () => undefined),
+  mirrorMarkDeleted: jest.fn(async () => undefined),
+  mirrorRemove: jest.fn(async () => undefined),
+  mirrorPending: jest.fn(async () => []),
+  mirrorReplaceDay: jest.fn(async () => undefined),
 }));
 
 jest.mock('@/stores/purchasesStore', () => ({
   usePurchasesStore: { getState: () => ({ init: jest.fn(), reset: jest.fn().mockResolvedValue(undefined) }) },
+}));
+
+// Auditoría del ciclo de vida de la cuenta: `authStore.ts` ahora importa
+// `diaryStore`/`weightStore` (para limpiar su estado en `signOut`/
+// `deleteAccount`/`SIGNED_OUT`), que a su vez importan estos módulos con
+// dependencias nativas (Sentry, expo-notifications) — este archivo no
+// ejercita esos flujos de negocio, pero necesita que el árbol de imports
+// cargue sin ellas.
+jest.mock('@/lib/errorReporting', () => ({ reportError: jest.fn(), addBreadcrumb: jest.fn() }));
+jest.mock('@/lib/analytics', () => ({
+  track: jest.fn(),
+  trackFirstFoodLoggedOnce: jest.fn(async () => false),
+}));
+jest.mock('@/notifications/reminders', () => ({
+  DEFAULT_REMINDER_HOUR: 20,
+  getReminderHour: jest.fn(async () => null),
+  getReminderOfferShown: jest.fn(async () => false),
+  markReminderOfferShown: jest.fn(async () => undefined),
+  onMealLogged: jest.fn(async () => undefined),
+  scheduleDailyReminder: jest.fn(),
+  disableDailyReminder: jest.fn(),
+  resyncDailyReminder: jest.fn(),
 }));
 
 jest.mock('expo-linking', () => ({ createURL: (p: string) => `vegantrack://${p}` }));
@@ -105,6 +135,7 @@ beforeEach(() => {
   profileResultOnAbort = null;
   lastAbortSignal = undefined;
   mockKvGet.mockResolvedValue(null);
+  mockFunctionsInvoke.mockResolvedValue({ data: null, error: null });
   useAuthStore = loadFreshAuthStore();
 });
 
@@ -314,6 +345,77 @@ describe('logout explícito (signOut) elimina last_user_id', () => {
     expect(mockKvSet).toHaveBeenCalledWith('last_user_id', null);
     expect(useAuthStore.getState().authPhase).toBe('unauthenticated');
     expect(useAuthStore.getState().user).toBeNull();
+  });
+});
+
+describe('auditoría del ciclo de vida de la cuenta: signOut() limpia el estado en memoria de los demás stores', () => {
+  it('signOut() vacía diaryStore/supplementStore/customFoodStore/weightStore/recipeStore — nunca sobreviven a un cambio de cuenta', async () => {
+    const session = SESSION('user-1');
+    mockGetSession.mockResolvedValue({ data: { session }, error: null });
+    profileResult = { data: PROFILE('user-1'), error: null };
+    await useAuthStore.getState().initialize();
+
+    // Mismo registro de módulos que acaba de cargar `authStore` en este test
+    // (mismo `jest.resetModules()` de `beforeEach`) — así son EXACTAMENTE
+    // las instancias que `authStore.ts` importa internamente para limpiarlas.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useDiaryStore } = require('@/stores/diaryStore');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useSupplementStore } = require('@/stores/supplementStore');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useCustomFoodStore } = require('@/stores/customFoodStore');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useWeightStore } = require('@/stores/weightStore');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useRecipeStore } = require('@/stores/recipeStore');
+
+    // Simula que estos stores todavía tienen datos de la cuenta que se está
+    // cerrando — exactamente lo que ya habría en memoria tras usar la app.
+    useDiaryStore.setState({
+      entries: [{ id: 'e1' }],
+      recentFoods: [{ food_name: 'x' }],
+      overrides: [{ food_name_pattern: 'x' }],
+    });
+    useSupplementStore.setState({ supplements: [{ id: 's1' }], takenToday: { s1: 'log1' } });
+    useCustomFoodStore.setState({ customFoods: [{ id: 'c1' }] });
+    useWeightStore.setState({ logs: [{ id: 'w1' }] });
+    useRecipeStore.setState({ recipes: [{ id: 'r1' }] });
+
+    await useAuthStore.getState().signOut();
+
+    expect(useDiaryStore.getState().entries).toEqual([]);
+    expect(useDiaryStore.getState().recentFoods).toEqual([]);
+    expect(useDiaryStore.getState().overrides).toBeNull();
+    expect(useSupplementStore.getState().supplements).toEqual([]);
+    expect(useSupplementStore.getState().takenToday).toEqual({});
+    expect(useCustomFoodStore.getState().customFoods).toEqual([]);
+    expect(useWeightStore.getState().logs).toEqual([]);
+    expect(useRecipeStore.getState().recipes).toEqual([]);
+  });
+});
+
+describe('deleteAccount() limpia el estado en memoria de los demás stores', () => {
+  it('tras eliminar la cuenta con éxito, diaryStore/supplementStore/customFoodStore/weightStore/recipeStore también quedan vacíos', async () => {
+    const session = SESSION('user-1');
+    mockGetSession.mockResolvedValue({ data: { session }, error: null });
+    profileResult = { data: PROFILE('user-1'), error: null };
+    await useAuthStore.getState().initialize();
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useDiaryStore } = require('@/stores/diaryStore');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useWeightStore } = require('@/stores/weightStore');
+
+    useDiaryStore.setState({ entries: [{ id: 'e1' }] });
+    useWeightStore.setState({ logs: [{ id: 'w1' }] });
+
+    const { error } = await useAuthStore.getState().deleteAccount();
+
+    expect(error).toBeNull();
+    expect(mockFunctionsInvoke).toHaveBeenCalledWith('delete-account', { method: 'POST' });
+    expect(useDiaryStore.getState().entries).toEqual([]);
+    expect(useWeightStore.getState().logs).toEqual([]);
+    expect(useAuthStore.getState().authPhase).toBe('unauthenticated');
   });
 });
 

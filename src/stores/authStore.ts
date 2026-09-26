@@ -16,11 +16,35 @@ import * as WebBrowser from 'expo-web-browser';
 import { supabase, AUTH_TIMEOUT_MS } from '@/lib/supabase';
 import { kvGet, kvSet } from '@/db/database';
 import { usePurchasesStore } from '@/stores/purchasesStore';
+import { useDiaryStore } from '@/stores/diaryStore';
+import { useSupplementStore } from '@/stores/supplementStore';
+import { useCustomFoodStore } from '@/stores/customFoodStore';
+import { useWeightStore } from '@/stores/weightStore';
+import { useRecipeStore } from '@/stores/recipeStore';
 import {
   sanitizeProfilePatch,
   type EditableProfileFields,
 } from '@/utils/profilePatch';
 import type { Profile } from '@/types';
+
+/**
+ * Limpia el estado EN MEMORIA de los demás stores que guardan datos del
+ * usuario (comida, suplementos, alimentos personalizados, peso, recetas) —
+ * auditoría del ciclo de vida de la cuenta. Sin esto, iniciar sesión con una
+ * cuenta distinta sin reiniciar la app podía mostrar brevemente datos de la
+ * cuenta anterior (comida, peso...) hasta que la pantalla correspondiente
+ * volviera a pedirlos para el nuevo usuario. Mismo criterio que ya aplicaba
+ * `usePurchasesStore().reset()`, sólo que ahora para todos los stores con
+ * datos de usuario, no sólo el de compras. Nunca toca el espejo SQLite ni
+ * Supabase: sólo el estado en memoria de esta sesión de la app.
+ */
+function resetUserDataStores(): void {
+  useDiaryStore.getState().reset();
+  useSupplementStore.getState().reset();
+  useCustomFoodStore.getState().reset();
+  useWeightStore.getState().reset();
+  useRecipeStore.getState().reset();
+}
 
 /**
  * Estados de arranque de la sesión/perfil:
@@ -148,6 +172,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       if (event === 'SIGNED_OUT') {
         void kvSet(LAST_USER_ID_KEY, null);
         set({ session: null, user: null, profile: null, authPhase: 'unauthenticated' });
+        resetUserDataStores();
         return;
       }
 
@@ -307,6 +332,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     signOut: async () => {
       await supabase.auth.signOut();
       await usePurchasesStore.getState().reset();
+      resetUserDataStores();
       void kvSet(LAST_USER_ID_KEY, null);
       set({ user: null, session: null, profile: null, authPhase: 'unauthenticated' });
     },
@@ -318,6 +344,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
         const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' });
         if (error) return { error: error.message };
         await supabase.auth.signOut();
+        await usePurchasesStore.getState().reset();
+        resetUserDataStores();
         void kvSet(LAST_USER_ID_KEY, null);
         set({ user: null, session: null, profile: null, authPhase: 'unauthenticated' });
         return { error: null };

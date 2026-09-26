@@ -94,6 +94,17 @@ interface DiaryState {
   copyMealEntries: (userId: string, fromDate: string, toDate: string, mealType: string) => Promise<{ count: number; error: string | null }>;
   loadOverrides: () => Promise<void>;
   flushPending: (userId: string) => Promise<void>;
+  /**
+   * Vuelve el store a su estado inicial — auditoría del ciclo de vida de la
+   * cuenta: `signOut()`/`deleteAccount()` ya limpiaban `authStore` y
+   * `purchasesStore`, pero `entries`/`recentFoods`/`overrides` (comida y
+   * micronutrientes de OTRO usuario) se quedaban en memoria. Si se inicia
+   * sesión con una cuenta distinta SIN reiniciar la app, esos datos podían
+   * mostrarse brevemente atribuidos al nuevo usuario, antes de que el
+   * primer `fetchEntries()` de la nueva sesión los sobrescribiera. Sólo
+   * limpia estado en memoria — nunca toca el espejo SQLite ni Supabase.
+   */
+  reset: () => void;
 }
 
 function entryToRow(e: FoodLogEntry | NewFoodLogEntry) {
@@ -703,6 +714,8 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       flushInFlight = false;
     }
   },
+
+  reset: () => set({ entries: [], selectedDate: todayISO(), loading: false, recentFoods: [], overrides: null }),
 }));
 
 /**

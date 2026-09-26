@@ -33,6 +33,11 @@ interface WeightState {
   getChartData: (days: number) => WeightChartPoint[];
   getStats: () => { current: number; start: number; min: number; max: number; change: number } | null;
   flushPending: (userId: string) => Promise<void>;
+  /** Auditoría del ciclo de vida de la cuenta — ver el mismo `reset()` en
+   * `diaryStore.ts`. El peso es el dato más sensible de los que quedaban sin
+   * limpiar: sin esto, el peso de OTRO usuario podía verse brevemente al
+   * cambiar de cuenta sin reiniciar la app. */
+  reset: () => void;
 }
 
 const sortByDate = (logs: WeightLog[]) => [...logs].sort((a, b) => a.date.localeCompare(b.date));
@@ -189,4 +194,6 @@ export const useWeightStore = create<WeightState>((set, get) => ({
       flushInFlight = false;
     }
   },
+
+  reset: () => set({ logs: [], loading: false }),
 }));
