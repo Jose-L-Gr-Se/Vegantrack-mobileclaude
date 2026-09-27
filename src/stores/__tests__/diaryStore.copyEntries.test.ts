@@ -381,6 +381,50 @@ describe('diaryStore.copyDayEntries/copyMealEntries — Diseño 1 (auditoría de
     expect(local).toHaveLength(2); // dos intenciones de copiar → dos copias, cada una íntegra
   });
 
+  it('10. navegar a otro día MIENTRAS la copia está en curso no debe pisar `entries` con el espejo del día de destino (auditoría de "Copiar de ayer")', async () => {
+    // Bug encontrado en esta ronda: la consolidación final de copyEntries()
+    // usaba una instantánea de `selectedDate` tomada al invocar
+    // copyDayEntries()/copyMealEntries() (antes de cualquier `await`), no una
+    // lectura en vivo. Cada addEntry() del bucle sí comprueba
+    // get().selectedDate en el momento de aplicarse (por eso ninguna copia
+    // individual llegaba a `entries` tras la navegación), pero el `set()`
+    // final de copyEntries volvía a comprobar la instantánea vieja y pisaba
+    // `entries` con el espejo del día de destino igualmente.
+    const { diaryStore } = freshModules();
+    const server = mockFoodLogServer();
+    server.seed(sourceRow('src-1', 'Lentejas'));
+    const store = diaryStore.useDiaryStore;
+    const OTHER_DATE = '2026-09-08';
+
+    store.getState().setDate(TODAY);
+    const copyPromise = store.getState().copyDayEntries(USER_ID, YESTERDAY, TODAY);
+
+    // Antes de que la copia termine (varios `await` de por medio: el SELECT
+    // de origen, cada addEntry, el mirrorList final), el usuario navega a
+    // OTRO día — como pulsar ‹/› repetidamente mientras "Copiar de ayer"
+    // sigue en vuelo.
+    store.getState().setDate(OTHER_DATE);
+
+    await copyPromise;
+
+    expect(store.getState().selectedDate).toBe(OTHER_DATE);
+    // `entries` nunca debió recibir el contenido de TODAY: seguimos viendo
+    // OTHER_DATE, para el que no se ha hecho ningún fetchEntries todavía.
+    expect(store.getState().entries).toEqual([]);
+  });
+
+  it('11. caso normal (sin navegar): la copia sí actualiza `entries` cuando el día de destino sigue siendo el seleccionado', async () => {
+    const { diaryStore } = freshModules();
+    const server = mockFoodLogServer();
+    server.seed(sourceRow('src-1', 'Lentejas'));
+    const store = diaryStore.useDiaryStore;
+
+    store.getState().setDate(TODAY);
+    await store.getState().copyDayEntries(USER_ID, YESTERDAY, TODAY);
+
+    expect(store.getState().entries.map((e) => e.food_name)).toEqual(['Lentejas']);
+  });
+
   it('9. regresión: un alta normal y una tombstone siguen comportándose igual con el nuevo mock de servidor', async () => {
     const { db, diaryStore } = freshModules();
     const server = mockFoodLogServer();

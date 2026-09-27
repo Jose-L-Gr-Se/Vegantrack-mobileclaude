@@ -666,11 +666,11 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   },
 
   copyDayEntries: async (userId, fromDate, toDate) => {
-    return copyEntries(userId, fromDate, toDate, null, get(), set, get().addEntry);
+    return copyEntries(userId, fromDate, toDate, null, get, set, get().addEntry);
   },
 
   copyMealEntries: async (userId, fromDate, toDate, mealType) => {
-    return copyEntries(userId, fromDate, toDate, mealType, get(), set, get().addEntry);
+    return copyEntries(userId, fromDate, toDate, mealType, get, set, get().addEntry);
   },
 
   loadOverrides: async () => {
@@ -755,7 +755,7 @@ async function copyEntries(
   fromDate: string,
   toDate: string,
   mealType: string | null,
-  state: DiaryState,
+  get: () => DiaryState,
   set: (partial: Partial<DiaryState>) => void,
   addEntry: DiaryState['addEntry']
 ): Promise<{ count: number; error: string | null }> {
@@ -800,7 +800,17 @@ async function copyEntries(
     }
   }
 
-  if (state.selectedDate === toDate) {
+  // Lectura de `selectedDate` en VIVO (no una instantánea tomada al invocar
+  // copyDayEntries()/copyMealEntries()): igual que cada addEntry() del bucle
+  // de arriba ya comprueba get().selectedDate en el momento de aplicarse
+  // (auditoría del Diario, navegación por fechas), esta consolidación final
+  // debe hacer lo mismo. Con una instantánea, navegar a OTRO día mientras la
+  // copia sigue en curso (varios `await` de por medio) hacía que esta línea
+  // seguidera viendo el día de cuando se pulsó "copiar" y pisara `entries`
+  // con el espejo de ESE día, aunque el usuario ya estuviera viendo otro —
+  // el mismo bug de navegación ya cerrado para fetchEntries(), pero aquí sin
+  // cerrar porque esta consolidación nunca pasó por ese fix.
+  if (get().selectedDate === toDate) {
     const local = await mirrorList<FoodLogEntry>('food_log', userId, toDate);
     set({ entries: local.map((r) => r.payload) });
   }
