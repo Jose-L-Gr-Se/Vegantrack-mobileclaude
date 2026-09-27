@@ -168,6 +168,55 @@ describe('mirrorUpsert respeta las tombstones locales (P0 sincronización)', () 
     });
   });
 
+  describe('TEST 6 — mirrorMarkSynced no debe reactivar una fila tombstoned mientras tanto (auditoría del borrado)', () => {
+    it('editar y borrar la misma entrada casi a la vez: mirrorMarkSynced (de la edición) no debe pisar la tombstone del borrado', async () => {
+      const db = freshDb();
+      const id = 'entry-6';
+
+      // A. Alta ya sincronizada (la entrada existente que se va a editar).
+      await db.mirrorUpsert('food_log', { id, user_id: USER_ID, date: DATE, payload: foodPayload(id) }, true);
+
+      // B. "Editar" empieza: addEntry() hace su mirrorUpsert local con
+      //    synced=false (todavía no ha confirmado el intento remoto).
+      await db.mirrorUpsert('food_log', { id, user_id: USER_ID, date: DATE, payload: foodPayload(id, { calories: 450 }) }, false);
+
+      // C. Antes de que la edición confirme su upsert remoto, el usuario
+      //    borra la MISMA entrada — deleteEntry() marca la tombstone de
+      //    inmediato (no espera al lock de red).
+      await db.mirrorMarkDeleted('food_log', id);
+      expect(await db.mirrorPending('food_log', USER_ID)).toEqual([expect.objectContaining({ id, deleted: true })]);
+
+      // D. El upsert remoto de la EDICIÓN confirma ahora (llega tarde,
+      //    después del borrado) y llama a mirrorMarkSynced — sin el guard,
+      //    esto ponía synced=1 dejando deleted=1/synced=1: una tombstone
+      //    que mirrorPending() (synced=0) ya no ve, así que flushPending()
+      //    nunca reintentaría el DELETE remoto si éste fallara.
+      await db.mirrorMarkSynced('food_log', id);
+
+      // E. La tombstone debe seguir intacta y pendiente de reintento.
+      const pending = await db.mirrorPending<ReturnType<typeof foodPayload>>('food_log', USER_ID);
+      expect(pending).toEqual([expect.objectContaining({ id, deleted: true })]);
+      expect(pending[0].synced).toBe(false);
+
+      // F. Y sigue sin verse en el Diario.
+      expect(await db.mirrorList('food_log', USER_ID, DATE)).toHaveLength(0);
+    });
+
+    it('caso normal (sin borrado concurrente): mirrorMarkSynced sigue marcando synced=1 con total normalidad', async () => {
+      const db = freshDb();
+      const id = 'entry-6b';
+
+      await db.mirrorUpsert('food_log', { id, user_id: USER_ID, date: DATE, payload: foodPayload(id) }, false);
+      expect(await db.mirrorPending('food_log', USER_ID)).toEqual([expect.objectContaining({ id, deleted: false })]);
+
+      await db.mirrorMarkSynced('food_log', id);
+
+      expect(await db.mirrorPending('food_log', USER_ID)).toEqual([]);
+      const visible = await db.mirrorList('food_log', USER_ID, DATE);
+      expect(visible).toEqual([expect.objectContaining({ id, synced: true, deleted: false })]);
+    });
+  });
+
   describe('TEST 5 — una tombstone de un id no bloquea el mirror de otro id', () => {
     it('la tombstone de A no impide que B se sincronice con normalidad', async () => {
       const db = freshDb();

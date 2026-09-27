@@ -201,7 +201,19 @@ export async function mirrorUpsert(
 }
 
 export async function mirrorMarkSynced(table: MirrorTable, id: string): Promise<void> {
-  await getDb().runAsync(`UPDATE ${table} SET synced = 1 WHERE id = ?`, id);
+  // Guard simétrico al de mirrorUpsert (ver más abajo): si el id ya fue
+  // marcado para borrado (deleted=1, synced=0) MIENTRAS el upsert que llama
+  // a esta función seguía en vuelo — p. ej. editar una entrada y borrarla
+  // casi a la vez, antes de que el intento remoto de la edición confirme —
+  // no se debe "reactivar" esa fila poniendo synced=1: eso la sacaría de
+  // mirrorPending() (que sólo mira synced=0) aunque el DELETE remoto de esa
+  // tombstone todavía no haya confirmado nada. Sin este guard, un fallo
+  // transitorio justo del DELETE dejaba la tombstone atascada con
+  // synced=1/deleted=1 para siempre — nunca reintentada — y un
+  // fetchEntries/mirrorUpsert posterior (cuyo guard sólo protege
+  // deleted=1 AND synced=0) la resucitaba sin más al recibir de nuevo esa
+  // fila desde el remoto, donde el DELETE nunca llegó a aplicarse.
+  await getDb().runAsync(`UPDATE ${table} SET synced = 1 WHERE id = ? AND deleted = 0`, id);
 }
 
 /** Marca para borrado (tombstone). Se elimina de verdad cuando el delete remoto confirma. */

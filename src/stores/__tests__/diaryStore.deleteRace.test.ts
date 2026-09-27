@@ -19,6 +19,7 @@
  */
 import type * as DatabaseModule from '@/db/database';
 import type * as DiaryStoreModule from '@/stores/diaryStore';
+import type { NewFoodLogEntry } from '@/utils/foodEntry';
 
 jest.mock('expo-sqlite', () => require('@/db/__tests__/expoSqliteTestAdapter'));
 // diaryStore.ts lee el perfil de authStore.getState() para el texto del
@@ -52,6 +53,46 @@ function foodPayload(id: string, over: Record<string, unknown> = {}) {
     updated_at: '2026-09-07T00:00:00.000Z',
     ...over,
   };
+}
+
+/** Entry completa (NewFoodLogEntry) para llamar a addEntry() directamente —
+ *  foodPayload() de arriba sólo sirve para las filas del "servidor" simulado. */
+function fullEntry(id: string, over: Partial<NewFoodLogEntry> = {}): NewFoodLogEntry {
+  return {
+    id,
+    user_id: USER_ID,
+    date: DATE,
+    meal_type: 'lunch',
+    food_name: 'Lentejas',
+    barcode: null,
+    brand: null,
+    serving_size_g: 100,
+    calories: 300,
+    protein_g: 20,
+    carbs_g: 30,
+    fat_g: 5,
+    fiber_g: 8,
+    sugar_g: 2,
+    saturated_fat_g: 1,
+    sodium_mg: 10,
+    vitamin_b12_mcg: null,
+    iron_mg: null,
+    zinc_mg: null,
+    calcium_mg: null,
+    omega3_g: null,
+    vitamin_d_mcg: null,
+    vitamin_b12_known: false,
+    iron_known: false,
+    zinc_known: false,
+    calcium_known: false,
+    omega3_known: false,
+    vitamin_d_known: false,
+    source: 'openfoodfacts',
+    source_ref: null,
+    is_vegan: true,
+    image_url: null,
+    ...over,
+  } as NewFoodLogEntry;
 }
 
 /**
@@ -181,5 +222,92 @@ describe('diaryStore — deleteEntry vs fetchEntries: la fila borrada no debe re
     expect(visible.some((r) => r.id === id)).toBe(false);
     const pending = await db.mirrorPending('food_log', USER_ID);
     expect(pending).toEqual([expect.objectContaining({ id, deleted: true })]);
+  });
+
+  it('7. editar y borrar la misma entrada casi a la vez: la confirmación tardía de la edición no debe resucitar el borrado tras un fetchEntries posterior (auditoría del borrado)', async () => {
+    // Escenario: el usuario edita una entrada (ProductDetailSheet.commit()
+    // en isEdit) y, antes de que el upsert remoto de esa edición confirme,
+    // borra la MISMA entrada. Si el DELETE remoto falla de forma transitoria
+    // justo después, mirrorMarkSynced() de la edición (que llega después del
+    // mirrorMarkDeleted() del borrado) no debe reactivar la fila —
+    // debe seguir siendo una tombstone synced=0, no synced=1.
+    const { db, diaryStore } = freshModules();
+    const id = 'entry-del-3';
+    const serverRows: ReturnType<typeof foodPayload>[] = [foodPayload(id, { calories: 300 })];
+    const pendingUpserts: Array<() => void> = [];
+
+    mockFrom.mockImplementation(() => ({
+      upsert: (payload: { id: string; calories: number }) =>
+        new Promise((resolve) => {
+          pendingUpserts.push(() => {
+            const idx = serverRows.findIndex((r) => r.id === payload.id);
+            if (idx >= 0) serverRows[idx] = { ...serverRows[idx], ...payload };
+            else serverRows.push(payload as ReturnType<typeof foodPayload>);
+            resolve({ error: null });
+          });
+        }),
+      delete: () => ({
+        // El borrado remoto falla de forma transitoria (p. ej. la conexión
+        // se corta justo después de que la edición consiguiera confirmar).
+        eq: () => Promise.resolve({ error: { code: '', message: 'Network request failed' } }),
+      }),
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            order: () =>
+              Promise.resolve({
+                data: serverRows.filter((r) => r.user_id === USER_ID && r.date === DATE),
+                error: null,
+              }),
+          }),
+        }),
+      }),
+    }));
+
+    await db.mirrorUpsert('food_log', { id, user_id: USER_ID, date: DATE, payload: foodPayload(id, { calories: 300 }) }, true);
+
+    // "Editar": mismo id, contenido distinto. Su escritura LOCAL
+    // (mirrorUpsert) es lo primero que hace addEntry() y no depende de red,
+    // así que en la práctica ya ha terminado antes de que un segundo toque
+    // humano llegue a disparar deleteEntry() — se dejan pasar los
+    // microtasks para reflejar exactamente ese orden real, en vez de
+    // invocar ambas funciones en el mismo tick (que ejercitaría una carrera
+    // local distinta, de ventana muchísimo más estrecha, entre
+    // mirrorUpsert y mirrorMarkDeleted). Su upsert REMOTO, en cambio, sí
+    // queda "en vuelo" hasta que el test lo resuelva más abajo — es esa
+    // espera de red la que da tiempo real a que el usuario pulse "Eliminar".
+    const editPromise = diaryStore.useDiaryStore.getState().addEntry(fullEntry(id, { calories: 450 }));
+    await flushMicrotasks();
+    expect(await db.mirrorPending('food_log', USER_ID)).toEqual([expect.objectContaining({ id, deleted: false })]);
+
+    // Ahora, con la escritura local de la edición ya asentada, el usuario
+    // borra la MISMA entrada — deleteEntry() marca la tombstone de
+    // inmediato (no espera al lock).
+    const deletePromise = diaryStore.useDiaryStore.getState().deleteEntry(id);
+    await flushMicrotasks();
+    expect(await db.mirrorPending('food_log', USER_ID)).toEqual([expect.objectContaining({ id, deleted: true })]);
+
+    // Ahora "llega" la confirmación remota de la edición, tarde, después de
+    // la tombstone — dispara mirrorMarkSynced().
+    pendingUpserts.shift()?.();
+    const [, { error: deleteError }] = await Promise.all([editPromise, deletePromise]);
+    expect(deleteError).toBeNull(); // el fallo del DELETE es transitorio: no se muestra como error
+
+    // La tombstone debe seguir intacta y pendiente de reintento — no
+    // "reactivada" a synced=1 por la edición que confirmó después.
+    const pendingAfterRace = await db.mirrorPending<ReturnType<typeof foodPayload>>('food_log', USER_ID);
+    expect(pendingAfterRace).toEqual([expect.objectContaining({ id, deleted: true })]);
+    expect(pendingAfterRace[0].synced).toBe(false);
+
+    // Un fetchEntries posterior (el "servidor" todavía tiene la fila, porque
+    // el DELETE real nunca llegó a aplicarse ahí) no debe resucitarla: sin
+    // el fix, el guard de mirrorUpsert (deleted=1 AND synced=0) ya no
+    // protegía esta fila porque había quedado synced=1.
+    await diaryStore.useDiaryStore.getState().fetchEntries(USER_ID, DATE);
+
+    const visible = await db.mirrorList('food_log', USER_ID, DATE);
+    expect(visible.some((r) => r.id === id)).toBe(false);
+    const pendingAfterFetch = await db.mirrorPending('food_log', USER_ID);
+    expect(pendingAfterFetch).toEqual([expect.objectContaining({ id, deleted: true })]);
   });
 });
