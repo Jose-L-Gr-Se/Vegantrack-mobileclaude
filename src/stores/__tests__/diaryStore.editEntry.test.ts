@@ -173,6 +173,49 @@ describe('diaryStore.addEntry/deleteEntry — edición atómica y errores reales
     expect(await db.mirrorList('food_log', USER_ID, DATE)).toHaveLength(1);
   });
 
+  it('9. editar una entrada no la duplica en el estado en memoria ni dobla los totales del día (auditoría del flujo de edición)', async () => {
+    const { diaryStore } = freshModules();
+    mockFoodLogTable();
+    const id = 'entry-F';
+    const store = diaryStore.useDiaryStore;
+
+    // El día editado debe ser el seleccionado — mismo requisito que
+    // DiaryScreen (sólo se puede editar una entry del día que se está viendo).
+    store.getState().setDate(DATE);
+
+    await store.getState().addEntry(entry(id, { food_name: 'Lentejas', calories: 300 }));
+    expect(store.getState().entries).toHaveLength(1);
+
+    // "Edición": mismo id, contenido distinto — lo que hace
+    // ProductDetailSheet.commit() en isEdit al cambiar la cantidad/alimento.
+    await store.getState().addEntry(entry(id, { food_name: 'Lentejas con arroz', calories: 450 }));
+
+    // Antes del fix: `entries` tenía 2 filas con el mismo id (la vieja y la
+    // editada) hasta el siguiente fetchEntries() — el Diario mostraba la
+    // comida dos veces y getDaySummary() sumaba ambas.
+    const entries = store.getState().entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].food_name).toBe('Lentejas con arroz');
+    expect(entries[0].calories).toBe(450);
+
+    expect(store.getState().getDaySummary().calories).toBe(450); // no 750 (300+450)
+  });
+
+  it('10. dar de alta una entry nueva (id nunca visto) sigue añadiéndose sin tocar las demás', async () => {
+    const { diaryStore } = freshModules();
+    mockFoodLogTable();
+    const store = diaryStore.useDiaryStore;
+    store.getState().setDate(DATE);
+
+    await store.getState().addEntry(entry('entry-G1', { food_name: 'Garbanzos', calories: 200 }));
+    await store.getState().addEntry(entry('entry-G2', { food_name: 'Arroz', calories: 150 }));
+
+    const entries = store.getState().entries;
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => e.food_name).sort()).toEqual(['Arroz', 'Garbanzos']);
+    expect(store.getState().getDaySummary().calories).toBe(350);
+  });
+
   it('8. offline (fallo de red, sin código) deja la operación pendiente sin mostrar error, tanto en alta/edición como en borrado', async () => {
     const { db, diaryStore } = freshModules();
     const { upsertResults, deleteResults } = mockFoodLogTable();

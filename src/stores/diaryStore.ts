@@ -371,7 +371,16 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     // Escritura local inmediata
     await mirrorUpsert('food_log', entryToRow(full), false);
     if (get().selectedDate === entry.date) {
-      set({ entries: [...get().entries, full] });
+      // Auditoría de edición de comidas: editar una entrada reutiliza su
+      // mismo id (ProductDetailSheet.commit() en isEdit — ver buildEntry());
+      // mirrorUpsert/upsertRemote ya lo tratan como upsert por PK, pero este
+      // `set()` sólo concatenaba `full`, sin quitar la versión anterior con
+      // ese mismo id. El Diario mostraba la comida DOS veces (la vieja y la
+      // recién editada) hasta el siguiente fetchEntries(), y getDaySummary()
+      // —que suma TODO `entries`— doblaba sus macros/micros/VeganScore
+      // mientras tanto. Un alta nueva (id nunca visto en `entries`) no
+      // cambia de comportamiento: el filter no quita nada.
+      set({ entries: [...get().entries.filter((e) => e.id !== full.id), full] });
     }
     // Activación real (auditoría del funnel): se mide en el momento de la
     // escritura local, no tras confirmar red — coherente con offline-first,
