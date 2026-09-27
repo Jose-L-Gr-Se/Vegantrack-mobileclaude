@@ -58,8 +58,13 @@ export function ProgressScreen() {
     }
     if (!user) return;
     setSaving(true);
-    await weight.addLog(user.id, todayISO(), Math.round(kg * 10) / 10);
+    const { error } = await weight.addLog(user.id, todayISO(), Math.round(kg * 10) / 10);
     setSaving(false);
+    // Auditoría offline/online: `addLog()` ahora sí distingue un fallo
+    // permanente del servidor de uno transitorio de red (ver weightStore.ts)
+    // — antes esta pantalla no comprobaba `error` en absoluto, así que un
+    // rechazo permanente se veía exactamente igual que un guardado con éxito.
+    if (error) Alert.alert('Error', error);
     setInput('');
   };
 
@@ -379,7 +384,13 @@ export function ProgressScreen() {
                           {
                             text: 'Eliminar',
                             style: 'destructive',
-                            onPress: () => void weight.deleteLog(log.id),
+                            onPress: () =>
+                              void weight.deleteLog(log.id).then(({ error }) => {
+                                // Mismo criterio que `save()`: un fallo permanente
+                                // del borrado remoto ya no se trata como un
+                                // borrado con éxito silencioso.
+                                if (error) Alert.alert('Error', error);
+                              }),
                           },
                         ]
                       )

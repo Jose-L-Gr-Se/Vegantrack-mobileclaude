@@ -106,6 +106,18 @@ export const useWeightStore = create<WeightState>((set, get) => ({
 
     // Sincroniza el peso actual en el perfil (igual que la PWA)
     void useAuthStore.getState().updateProfile({ weight_kg: weightKg });
+
+    // Auditoría offline/online: a diferencia de `diaryStore.addEntry()` (que
+    // distingue un fallo transitorio de red, que queda pendiente sin avisar,
+    // de un fallo permanente del servidor, que SÍ se devuelve al llamador),
+    // aquí se devolvía siempre `error: null` — un rechazo permanente (p. ej.
+    // una violación de RLS, no un simple "sin cobertura") quedaba con el
+    // registro sólo en local, `flushPending()` reintentándolo para siempre
+    // sin éxito, y la UI dando por guardado un peso que nunca llegó al
+    // servidor. Mismo criterio exacto que `diaryStore.addEntry`.
+    if (error && !isTransientSyncError(error)) {
+      return { error: error.message || 'No se pudo guardar el peso en el servidor.' };
+    }
     return { error: null };
   },
 
@@ -131,6 +143,15 @@ export const useWeightStore = create<WeightState>((set, get) => ({
     if (remaining.length > 0) {
       const latest = remaining[remaining.length - 1];
       void useAuthStore.getState().updateProfile({ weight_kg: latest.weight_kg });
+    }
+
+    // Mismo criterio que en `addLog()` (ver comentario allí): un fallo
+    // permanente del borrado remoto no debe informarse como éxito. La fila
+    // ya se quitó de forma optimista de `logs`, así que la UI la deja de ver
+    // de inmediato; sin este `error`, nadie podía saber que el borrado
+    // remoto en realidad nunca llegó a confirmarse.
+    if (error && !isTransientSyncError(error)) {
+      return { error: error.message || 'No se pudo eliminar el registro en el servidor.' };
     }
     return { error: null };
   },
