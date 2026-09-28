@@ -16,6 +16,7 @@ import { uuidv4 } from '@/utils/uuid';
 import { useAuthStore } from '@/stores/authStore';
 import { isTransientSyncError } from '@/utils/syncError';
 import { reportError } from '@/lib/errorReporting';
+import { toISODate } from '@/utils/dates';
 import type { WeightLog } from '@/types';
 
 export interface WeightChartPoint {
@@ -66,7 +67,14 @@ export const useWeightStore = create<WeightState>((set, get) => ({
       .from('weight_logs')
       .select('*')
       .eq('user_id', userId)
-      .gte('date', yearAgo.toISOString().split('T')[0])
+      // Auditoría transversal de fechas: `date` es siempre YYYY-MM-DD LOCAL
+      // en toda la app (`todayISO()`/`toISODate()`, ver dates.ts) — usar
+      // `.toISOString()` aquí mezclaba ese mismo campo con el día en UTC,
+      // que puede ser el día anterior o siguiente al local según la hora y
+      // el huso horario del dispositivo (p. ej. España, UTC+1/+2: durante la
+      // 1ª-2ª hora tras la medianoche local, `.toISOString()` todavía
+      // devuelve el día de AYER en UTC).
+      .gte('date', toISODate(yearAgo))
       .order('date', { ascending: true });
 
     if (!error && data) {
@@ -161,14 +169,20 @@ export const useWeightStore = create<WeightState>((set, get) => ({
     if (logs.length === 0) return [];
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
-    const cutoffISO = cutoff.toISOString().split('T')[0];
+    // Mismo criterio que en fetchLogs(): `l.date` es LOCAL, así que el
+    // corte también debe serlo. Con `.toISOString()` este corte se movía un
+    // día respecto al real (auditoría transversal de fechas) en la 1ª-2ª
+    // hora tras la medianoche local en husos horarios adelantados a UTC
+    // (España incluida) — "últimos 7 días" podía mostrar 8, o "últimos 30"
+    // sólo 29, según la hora exacta a la que se abriera el gráfico.
+    const cutoffISO = toISODate(cutoff);
     const visible = logs.filter((l) => l.date >= cutoffISO);
 
     return visible.map((log) => {
       // Media móvil sobre los 7 días naturales previos (mínimo 2 puntos)
       const from = new Date(`${log.date}T12:00:00`);
       from.setDate(from.getDate() - 6);
-      const fromISO = from.toISOString().split('T')[0];
+      const fromISO = toISODate(from);
       const window = logs.filter((l) => l.date >= fromISO && l.date <= log.date);
       const avg7 =
         window.length >= 2
