@@ -298,20 +298,32 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
         // Flujo PKCE (por defecto): llega ?code=... y se intercambia por sesión.
         if (params.code) {
-          const { error: exchErr } = await supabase.auth.exchangeCodeForSession(params.code);
+          const { data: exchData, error: exchErr } = await supabase.auth.exchangeCodeForSession(params.code);
           if (exchErr) return { error: exchErr.message };
           await get().fetchProfile();
+          // Auditoría del entitlement Pro: `signIn()`/`signUp()`/`initialize()`
+          // ya inicializan RevenueCat justo tras establecer la sesión — este
+          // camino (login con Google) establecía la sesión exactamente igual
+          // pero nunca llamaba a `init()`, así que `Purchases.configure()`
+          // (que sólo ocurre ahí) no se llegaba a ejecutar en toda la sesión
+          // de la app: el paywall se quedaba sin catálogo real y el
+          // `customerInfo` en vivo (fuente 1 de `hasProEntitlement`) nunca
+          // reflejaba una compra por Google Play hasta que el webhook
+          // actualizara el perfil por separado.
+          if (exchData.user) usePurchasesStore.getState().init(exchData.user.id);
           return { error: null };
         }
 
         // Flujo implicit (compatibilidad): llegan los tokens en el fragmento #.
         if (params.access_token) {
-          const { error: sessErr } = await supabase.auth.setSession({
+          const { data: sessData, error: sessErr } = await supabase.auth.setSession({
             access_token: params.access_token,
             refresh_token: params.refresh_token ?? '',
           });
           if (sessErr) return { error: sessErr.message };
           await get().fetchProfile();
+          // Mismo motivo que en el flujo PKCE de arriba.
+          if (sessData.user) usePurchasesStore.getState().init(sessData.user.id);
           return { error: null };
         }
 
