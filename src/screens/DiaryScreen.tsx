@@ -461,7 +461,7 @@ export function DiaryScreen() {
               Empieza tu rutina
             </Text>
             <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
-              Los más habituales en dieta vegana: B12 (esencial), vitamina D,
+              Los más habituales en alimentación vegetal: B12 (esencial), vitamina D,
               omega-3 de algas y yodo. Toca para elegir uno y registrar tu primera toma.
             </Text>
           </Pressable>
@@ -755,7 +755,7 @@ function SupplementPickerSheet({
           Añadir suplemento
         </Text>
         <Text style={{ color: t.textSecondary, fontSize: 13, lineHeight: 18 }}>
-          Toca uno de los suplementos típicos en dieta vegana para ajustar la
+          Toca uno de los suplementos típicos en alimentación vegetal para ajustar la
           dosis y guardarlo. Puedes añadir el mismo varias veces si lo tomas
           en varios momentos del día (p. ej. B12 por la mañana y por la noche).
         </Text>
@@ -795,7 +795,7 @@ function SupplementPickerSheet({
             marginTop: spacing.sm,
           }}
         >
-          Suplementos típicos en dieta vegana
+          Suplementos típicos en alimentación vegetal
         </Text>
 
         {SUPPLEMENT_PRESETS.map((p, i) => (

@@ -620,20 +620,20 @@ export function ProductDetailSheet({
             )}
             {food.brand ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
             <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 4 }}>
-              {effectiveFood.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
+              {effectiveFood.is_vegan ? <Pill text="Apto para veganos" color={semantic.success} /> : null}
               {confidence === 'medium' ? (
-                <Pill text="Parece vegano" color={semantic.warning} />
+                <Pill text="Parece apto para veganos" color={semantic.warning} />
               ) : confidence === 'low' ? (
-                <Pill text="No vegano" color={semantic.danger} />
+                <Pill text="No apto para veganos" color={semantic.danger} />
               ) : confidence === 'unknown' && !effectiveFood.is_vegan ? (
-                <Pill text="Sin datos vegano" color={t.textMuted} />
+                <Pill text="Sin datos suficientes" color={t.textMuted} />
               ) : null}
             </View>
             {isAiPhoto ? (
               <View style={{ gap: 2, marginTop: 4 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' }}>
                   <Text style={{ color: t.textSecondary, fontSize: 11, fontWeight: '700' }}>
-                    ¿Es vegano?
+                    ¿Es apto para veganos?
                   </Text>
                   <Pressable
                     onPress={() => handleSetVegan(true)}

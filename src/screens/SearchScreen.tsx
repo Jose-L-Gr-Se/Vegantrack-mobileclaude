@@ -29,10 +29,10 @@ import type { FoodPer100g, MealType, OpenFoodFactsProduct, RecentFood, VeganConf
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 
 const CONFIDENCE_LABEL: Record<VeganConfidence, { text: string; color: string }> = {
-  high: { text: 'Vegano ✓', color: semantic.success },
-  medium: { text: 'Parece vegano', color: semantic.warning },
-  low: { text: 'No vegano', color: semantic.danger },
-  unknown: { text: 'Sin datos', color: '#94a3b8' },
+  high: { text: 'Apto para veganos', color: semantic.success },
+  medium: { text: 'Parece apto para veganos', color: semantic.warning },
+  low: { text: 'No apto para veganos', color: semantic.danger },
+  unknown: { text: 'Sin datos suficientes', color: '#94a3b8' },
 };
 
 function recentToPer100g(r: RecentFood): FoodPer100g {
@@ -233,7 +233,7 @@ export function SearchScreen() {
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
           <Switch value={veganOnly} onValueChange={setVeganOnly} trackColor={{ true: t.primary }} />
-          <Text style={{ color: t.textSecondary, fontWeight: '600' }}>Solo veganos</Text>
+          <Text style={{ color: t.textSecondary, fontWeight: '600' }}>Solo aptos para veganos</Text>
           {searching ? <ActivityIndicator color={t.primary} /> : null}
         </View>
 

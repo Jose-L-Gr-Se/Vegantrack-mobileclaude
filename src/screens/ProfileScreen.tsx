@@ -1334,7 +1334,7 @@ export function CustomFoodModal({ onClose }: { onClose: () => void }) {
               </View>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ color: t.text, fontWeight: '600', fontSize: 14 }}>¿Es vegano?</Text>
+              <Text style={{ color: t.text, fontWeight: '600', fontSize: 14 }}>¿Es apto para veganos?</Text>
               <Switch value={isVegan} onValueChange={setIsVegan} trackColor={{ true: t.primary }} />
             </View>
             <Button title={editingId ? 'Guardar cambios' : 'Crear alimento'} onPress={save} loading={saving} />

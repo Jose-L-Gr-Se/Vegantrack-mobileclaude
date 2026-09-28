@@ -31,12 +31,12 @@ function render(points: VeganNutritionTrendPoint[]) {
 const DAYS = ['2026-09-18', '2026-09-19', '2026-09-20', '2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24'];
 
 describe('VeganNutritionScoreTrend', () => {
-  it('muestra el título "VeganScore nutricional" (nunca "VeganScore" a secas) y la aclaración de que no incluye la racha', () => {
+  it('muestra el título "VegeScore nutricional" (nunca "VegeScore" a secas) y la aclaración de que no incluye la racha', () => {
     const points: VeganNutritionTrendPoint[] = DAYS.map((date) => ({ date, score: 70 }));
     const renderer = render(points);
 
     const texts = renderer.root.findAllByType(Text).map((t) => t.props.children);
-    expect(texts.some((c) => typeof c === 'string' && c.includes('VeganScore nutricional'))).toBe(true);
+    expect(texts.some((c) => typeof c === 'string' && c.includes('VegeScore nutricional'))).toBe(true);
     expect(texts.some((c) => typeof c === 'string' && c.includes('No incluye la racha'))).toBe(true);
     // Transparencia sobre objetivos actuales (perfil sin historial de
     // calorie_target/protein_target_g) — no se oculta en el copy.

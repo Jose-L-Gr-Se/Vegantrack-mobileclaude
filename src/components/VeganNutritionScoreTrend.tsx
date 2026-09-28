@@ -68,7 +68,7 @@ export function VeganNutritionScoreTrend({ points }: { points: VeganNutritionTre
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <View>
           <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', color: t.textMuted }}>
-            VeganScore nutricional · 7 días
+            VegeScore nutricional · 7 días
           </Text>
           {hasAnyData ? (
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
@@ -123,7 +123,7 @@ export function VeganNutritionScoreTrend({ points }: { points: VeganNutritionTre
       )}
 
       <Text style={{ color: t.textMuted, fontSize: 11, lineHeight: 15 }}>
-        No incluye la racha — el VeganScore de arriba sí la incluye. Calculado con tus objetivos actuales de
+        No incluye la racha — el VegeScore de arriba sí la incluye. Calculado con tus objetivos actuales de
         calorías y proteína.
       </Text>
     </Card>

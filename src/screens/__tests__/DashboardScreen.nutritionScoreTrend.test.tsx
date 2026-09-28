@@ -156,6 +156,6 @@ describe('DashboardScreen — bloque de histórico de VeganScore nutricional', (
     const renderer = await renderDashboard();
 
     const texts = renderer.root.findAllByType(Text).map((t) => t.props.children);
-    expect(texts.some((c) => typeof c === 'string' && c.includes('VeganScore nutricional'))).toBe(true);
+    expect(texts.some((c) => typeof c === 'string' && c.includes('VegeScore nutricional'))).toBe(true);
   });
 });

@@ -103,7 +103,7 @@ export function PostOnboardingWelcome() {
             }}
           >
             Registra tu primera comida y verás al momento tus calorías, tus
-            macros y tus nutrientes clave de dieta vegana (B12, hierro, zinc y más).
+            macros y tus nutrientes clave de alimentación vegetal (B12, hierro, zinc y más).
           </Text>
         </View>
 

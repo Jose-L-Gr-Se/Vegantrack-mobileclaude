@@ -121,7 +121,7 @@ describe('DashboardScreen — VeganScore sin ninguna comida registrada hoy no se
     const texts = allTexts(renderer);
 
     expect(texts).toContain('Sin datos aún');
-    expect(texts).toContain('Registra tu primera comida de hoy para ver tu VeganScore.');
+    expect(texts).toContain('Registra tu primera comida de hoy para ver tu VegeScore.');
     expect(texts.some((c) => typeof c === 'string' && c.includes('Mejorable'))).toBe(false);
     expect(texts.some((c) => typeof c === 'string' && c.includes('Micros clave: vitamina B12'))).toBe(false);
     // "Racha" es la etiqueta de una fila del desglose de VeganScore (a

@@ -170,7 +170,7 @@ describe('ProductDetailSheet — corrección manual de veganismo en foto-IA (aud
     act(() => noButton!.props.onPress());
 
     expect(onVeganCorrected).toHaveBeenCalledWith(false);
-    expect(renderer.root.findAllByType(Text).some((t) => t.props.children === 'Vegano ✓')).toBe(false);
+    expect(renderer.root.findAllByType(Text).some((t) => t.props.children === 'Apto para veganos')).toBe(false);
 
     pressSaveButton(renderer);
     await act(async () => {});
@@ -186,7 +186,7 @@ describe('ProductDetailSheet — corrección manual de veganismo en foto-IA (aud
     const siButton = findPressableWithText(renderer, 'Sí');
     act(() => siButton!.props.onPress());
 
-    expect(renderer.root.findAllByType(Text).some((t) => t.props.children === 'Vegano ✓')).toBe(true);
+    expect(renderer.root.findAllByType(Text).some((t) => t.props.children === 'Apto para veganos')).toBe(true);
 
     pressSaveButton(renderer);
     await act(async () => {});
@@ -227,7 +227,7 @@ describe('ProductDetailSheet — corrección manual de veganismo en foto-IA (aud
     // Corrección manual primero: el usuario marca "Sí" a mano.
     const siButton = findPressableWithText(renderer, 'Sí');
     act(() => siButton!.props.onPress());
-    expect(renderer.root.findAllByType(Text).some((t) => t.props.children === 'Vegano ✓')).toBe(true);
+    expect(renderer.root.findAllByType(Text).some((t) => t.props.children === 'Apto para veganos')).toBe(true);
 
     // Ahora corrige el nombre y pide el recálculo con IA (Pro) — debe poder
     // sobrescribir lo que el usuario acababa de marcar a mano.
@@ -240,7 +240,7 @@ describe('ProductDetailSheet — corrección manual de veganismo en foto-IA (aud
 
     expect(correctMealAnalysis).toHaveBeenCalledWith('Jaca mechada', expect.anything());
     expect(onCorrected).toHaveBeenCalledTimes(1);
-    expect(renderer.root.findAllByType(Text).some((t) => t.props.children === 'Vegano ✓')).toBe(true);
+    expect(renderer.root.findAllByType(Text).some((t) => t.props.children === 'Apto para veganos')).toBe(true);
 
     pressSaveButton(renderer);
     await act(async () => {});
@@ -270,7 +270,7 @@ describe('ProductDetailSheet — corrección manual de veganismo en foto-IA (aud
     expect(findPressableWithText(renderer, 'Sí')).toBeUndefined();
     expect(findPressableWithText(renderer, 'No')).toBeUndefined();
     expect(
-      renderer.root.findAllByType(Text).some((t) => t.props.children === '¿Es vegano?')
+      renderer.root.findAllByType(Text).some((t) => t.props.children === '¿Es apto para veganos?')
     ).toBe(false);
   });
 });
