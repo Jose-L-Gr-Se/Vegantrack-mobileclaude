@@ -330,6 +330,64 @@ describe('desactivar y volver a activar', () => {
   });
 });
 
+describe('permiso de notificaciones revocado desde Ajustes DESPUÉS de activar — autocorrige el estado local engañoso', () => {
+  it('getReminderHour() detecta el permiso revocado, apaga la preferencia y devuelve null', async () => {
+    const { reminders } = freshReminders();
+    await reminders.scheduleDailyReminder(USER_ID, HOUR); // permiso concedido en ese momento
+    await expect(reminders.getReminderHour()).resolves.toBe(HOUR);
+
+    // El usuario va a Ajustes del sistema y revoca el permiso de
+    // notificaciones — Android/Expo lo reflejan en getPermissionsAsync(),
+    // nunca en el KV local `reminder_enabled` (que nadie vuelve a tocar).
+    mockGetPermissionsAsync.mockResolvedValue({ granted: false });
+    mockCancelScheduledNotificationAsync.mockClear();
+
+    await expect(reminders.getReminderHour()).resolves.toBeNull();
+    // Autocorrección: mismo camino que disableDailyReminder(), no sólo un
+    // valor de retorno distinto — así ProfileScreen refleja "desactivado" en
+    // el interruptor en vez de seguir mostrando la hora configurada.
+    expect(mockCancelScheduledNotificationAsync).toHaveBeenCalledWith(REMINDER_ID);
+  });
+
+  it('resyncDailyReminder (abrir la app) no reprograma una notificación que el sistema ya no puede mostrar', async () => {
+    const { reminders } = freshReminders();
+    await reminders.scheduleDailyReminder(USER_ID, HOUR);
+    mockGetPermissionsAsync.mockResolvedValue({ granted: false });
+    mockScheduleNotificationAsync.mockClear();
+
+    await reminders.resyncDailyReminder(USER_ID);
+
+    expect(mockScheduleNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  it('onMealLogged (registrar una comida) tampoco reprograma con el permiso revocado', async () => {
+    const { reminders, db, dates } = freshReminders();
+    await reminders.scheduleDailyReminder(USER_ID, HOUR);
+    mockGetPermissionsAsync.mockResolvedValue({ granted: false });
+    mockScheduleNotificationAsync.mockClear();
+
+    await seedFoodToday(db, dates);
+    await reminders.onMealLogged(USER_ID, dates.todayISO());
+
+    expect(mockScheduleNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  it('si se vuelve a conceder el permiso, activar de nuevo desde Perfil funciona con normalidad', async () => {
+    const { reminders } = freshReminders();
+    await reminders.scheduleDailyReminder(USER_ID, HOUR);
+    mockGetPermissionsAsync.mockResolvedValue({ granted: false });
+    await expect(reminders.getReminderHour()).resolves.toBeNull(); // autocorregido
+
+    mockGetPermissionsAsync.mockResolvedValue({ granted: true });
+    mockScheduleNotificationAsync.mockClear();
+    const ok = await reminders.scheduleDailyReminder(USER_ID, HOUR);
+
+    expect(ok).toBe(true);
+    expect(mockScheduleNotificationAsync).toHaveBeenCalledTimes(1);
+    await expect(reminders.getReminderHour()).resolves.toBe(HOUR);
+  });
+});
+
 describe('reminderBody — texto con racha válida / sin racha', () => {
   it('con racha > 0 y último registro AYER, personaliza el texto con los días', () => {
     const { reminders, dates } = freshReminders();

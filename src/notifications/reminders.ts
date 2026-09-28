@@ -202,11 +202,27 @@ export async function disableDailyReminder(): Promise<void> {
 /**
  * `null` si el recordatorio está desactivado; si no, la hora configurada.
  * La fuente de verdad es la preferencia guardada (`reminder_enabled`), NO
- * si hay una notificación programada ahora mismo.
+ * si hay una notificación programada ahora mismo — con una excepción.
+ *
+ * Auditoría de permisos: `reminder_enabled` se ponía a `true` al activar el
+ * recordatorio y nada volvía a comprobarlo — si el usuario revocaba el
+ * permiso de notificaciones desde Ajustes DESPUÉS de activarlo, la
+ * preferencia se quedaba en `true` para siempre. El interruptor de Perfil
+ * seguía mostrándose activado y cada resync seguía "reprogramando" una
+ * notificación que el sistema nunca iba a mostrar — un permiso revocado
+ * dejando un estado local engañoso. Aquí se comprueba el permiso real y, si
+ * ya no está concedido, se autocorrige por el mismo camino que
+ * `disableDailyReminder()` y se devuelve `null`, para que tanto el
+ * interruptor como cualquier resync dejen de fingir que sigue activo.
  */
 export async function getReminderHour(): Promise<number | null> {
   const enabled = await kvGet<boolean>(ENABLED_KV_KEY);
   if (!enabled) return null;
+  const settings = await Notifications.getPermissionsAsync();
+  if (!settings.granted) {
+    await disableDailyReminder();
+    return null;
+  }
   return (await kvGet<number>(HOUR_KV_KEY)) ?? DEFAULT_REMINDER_HOUR;
 }
 
@@ -218,6 +234,10 @@ export async function getReminderHour(): Promise<number | null> {
  * abrir la app sigue teniendo un recordatorio real esperándole al día
  * siguiente. Repetible sin efecto — registrar varias comidas el mismo día
  * sólo vuelve a programar la misma ocurrencia de mañana.
+ *
+ * Resuelve "activado + hora" con `getReminderHour()` (no leyendo
+ * `reminder_enabled` directamente) para heredar su autocorrección si el
+ * permiso de notificaciones fue revocado desde Ajustes — ver ese comentario.
  */
 export async function onMealLogged(
   userId: string,
@@ -226,9 +246,8 @@ export async function onMealLogged(
 ): Promise<void> {
   if (date !== todayISO()) return;
   try {
-    const enabled = await kvGet<boolean>(ENABLED_KV_KEY);
-    if (!enabled) return;
-    const hour = (await kvGet<number>(HOUR_KV_KEY)) ?? DEFAULT_REMINDER_HOUR;
+    const hour = await getReminderHour();
+    if (hour === null) return;
     await applyState(userId, hour, streak);
   } catch {
     // Best-effort — un fallo aquí nunca debe afectar al guardado de la
@@ -243,15 +262,20 @@ export async function onMealLogged(
  * notificación. No hace nada si el recordatorio está desactivado. Repetible
  * sin efecto (mismo `identifier`, cancelar-antes-de-programar) — abrir la
  * app varias veces el mismo día nunca duplica ni acumula nada.
+ *
+ * Resuelve "activado + hora" con `getReminderHour()` (no leyendo
+ * `reminder_enabled` directamente) para heredar su autocorrección si el
+ * permiso de notificaciones fue revocado desde Ajustes — ver ese comentario.
+ * Como esto se llama al abrir la app, es el punto donde una revocación
+ * hecha fuera de la app se detecta antes.
  */
 export async function resyncDailyReminder(
   userId: string,
   streak?: ReminderStreakInfo | null
 ): Promise<void> {
   try {
-    const enabled = await kvGet<boolean>(ENABLED_KV_KEY);
-    if (!enabled) return;
-    const hour = (await kvGet<number>(HOUR_KV_KEY)) ?? DEFAULT_REMINDER_HOUR;
+    const hour = await getReminderHour();
+    if (hour === null) return;
     await applyState(userId, hour, streak);
   } catch {
     // Best-effort — un fallo aquí no debe bloquear el arranque de la app.
