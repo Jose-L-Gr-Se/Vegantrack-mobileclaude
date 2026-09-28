@@ -173,10 +173,21 @@ export function SupplementEditor({
     else onClose();
   };
 
+  // Auditoría de navegación/modales: tap fuera, tap en el handle, deslizar y
+  // el botón atrás cerraban el sheet sin comprobar `saving` — cerrar
+  // mientras `onSave()` seguía en vuelo no cancelaba nada: el suplemento se
+  // guardaba igual en segundo plano tras desaparecer la UI. El botón
+  // "Guardar" ya se deshabilita con `loading={saving}`; esto hace que el
+  // resto de formas de cerrar respeten el mismo estado.
+  const handleClose = () => {
+    if (saving) return;
+    onClose();
+  };
+
   return (
     <BottomSheet
       visible={visible}
-      onClose={onClose}
+      onClose={handleClose}
       footer={
         <View style={{ gap: spacing.sm }}>
           {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}

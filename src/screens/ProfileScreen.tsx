@@ -737,11 +737,23 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
     onClose();
   };
 
+  // Auditoría de navegación/modales: tap fuera, botón atrás del sistema y el
+  // propio "Cancelar" cerraban el modal sin comprobar `saving` — cerrar
+  // mientras `updateProfile()` seguía en vuelo no cancelaba el guardado: el
+  // perfil se actualizaba igualmente en segundo plano tras desaparecer la
+  // UI, aunque el usuario hubiera tocado "Cancelar" queriendo desistir. El
+  // botón "Guardar" ya se deshabilita con `loading={saving}`; esto hace que
+  // el resto de formas de cerrar respeten el mismo estado.
+  const handleClose = () => {
+    if (saving) return;
+    onClose();
+  };
+
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible transparent animationType="slide" onRequestClose={handleClose}>
       <Pressable
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        onPress={onClose}
+        onPress={handleClose}
       >
         <Pressable onPress={() => undefined}>
           <View
@@ -860,7 +872,7 @@ export function EditProfileModal({ onClose }: { onClose: () => void }) {
               </View>
 
               <Button title="Guardar (recalcula objetivos)" onPress={save} loading={saving} />
-              <Button title="Cancelar" variant="secondary" onPress={onClose} />
+              <Button title="Cancelar" variant="secondary" onPress={handleClose} disabled={saving} />
             </ScrollView>
           </View>
         </Pressable>
@@ -1236,8 +1248,22 @@ export function CustomFoodModal({ onClose }: { onClose: () => void }) {
 
   const showForm = editingId !== null || creating;
 
+  // Auditoría de navegación/modales: `BottomSheet` cierra por CUATRO vías
+  // (tap fuera, tap en el handle, deslizar, botón atrás) además del propio
+  // "Cancelar" del formulario — ninguna de ellas comprobaba `saving`. Cerrar
+  // el sheet mientras `save()` seguía en vuelo (p. ej. tras tocar "Guardar"
+  // y, sin esperar, deslizar el sheet hacia abajo) no cancelaba nada: el
+  // alta/edición del alimento se aplicaba igualmente en segundo plano tras
+  // desaparecer la UI, contradiciendo la intención de cerrar/cancelar del
+  // usuario. El botón "Guardar" ya se deshabilita con `loading={saving}`;
+  // esto hace que el resto de formas de cerrar respeten el mismo estado.
+  const handleClose = () => {
+    if (saving) return;
+    onClose();
+  };
+
   return (
-    <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
+    <BottomSheet visible onClose={handleClose} maxHeightFraction={0.88}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
         <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>Mis alimentos</Text>
 
