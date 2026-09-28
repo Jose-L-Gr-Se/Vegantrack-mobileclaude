@@ -202,7 +202,10 @@ export function RecipesScreen() {
   );
 }
 
-function RecipeDetail({
+// Exportado sólo para tests (mismo criterio que `CustomFoodModal` en
+// `ProfileScreen.tsx`): permite montar la vista de detalle directamente, sin
+// tener que navegar por la lista de `RecipesScreen` para llegar a ella.
+export function RecipeDetail({
   recipe,
   onBack,
   topInset,
@@ -226,6 +229,18 @@ function RecipeDetail({
   const [editName, setEditName] = useState(recipe.name);
   const [editDescription, setEditDescription] = useState(recipe.description ?? '');
   const [editServings, setEditServings] = useState(String(recipe.total_servings));
+  // Auditoría del flujo de recetas: ni "Añadir a la receta" ni "Añadir al
+  // diario" tenían protección contra doble tap (a diferencia de `create()`
+  // más arriba, ya corregido en una ronda anterior para el límite free). Dos
+  // toques rápidos en "Añadir a la receta" insertaban el MISMO ingrediente
+  // dos veces (duplicando su aporte en `computeRecipeNutrients` para
+  // siempre, hasta quitarlo a mano); dos toques en "Añadir al diario"
+  // llamaban a `logRecipe()` dos veces, cada una generando su propio id vía
+  // `buildEntry()` — dos entradas distintas en el Diario por una sola
+  // acción, doblando las calorías de esa comida. Mismo patrón exacto que
+  // `creating` arriba.
+  const [addingIngredient, setAddingIngredient] = useState(false);
+  const [loggingRecipe, setLoggingRecipe] = useState(false);
 
   const totals = computeRecipeNutrients(recipe);
   const perServing = recipe.total_servings > 0 ? totals.calories / recipe.total_servings : 0;
@@ -242,10 +257,12 @@ function RecipeDetail({
   };
 
   const addIngredient = async () => {
-    if (!pendingFood) return;
+    if (!pendingFood || addingIngredient) return;
     const g = parseFloat(grams.replace(',', '.'));
     if (!Number.isFinite(g) || g <= 0) return;
+    setAddingIngredient(true);
     const { error } = await store.addIngredient(recipe.id, pendingFood, g);
+    setAddingIngredient(false);
     if (error) Alert.alert('Error', error);
     setPendingFood(null);
     setGrams('100');
@@ -254,10 +271,12 @@ function RecipeDetail({
   };
 
   const logToDiary = async () => {
-    if (!user) return;
+    if (!user || loggingRecipe) return;
     const n = parseFloat(logServings.replace(',', '.'));
     if (!Number.isFinite(n) || n <= 0) return;
+    setLoggingRecipe(true);
     const { error } = await store.logRecipe(user.id, recipe, n, logMeal, todayISO());
+    setLoggingRecipe(false);
     if (error) Alert.alert('Error', error);
     else {
       setShowLog(false);
@@ -549,7 +568,7 @@ function RecipeDetail({
               onChangeText={setGrams}
               keyboardType="numeric"
             />
-            <Button title="Añadir a la receta" onPress={addIngredient} />
+            <Button title="Añadir a la receta" onPress={addIngredient} loading={addingIngredient} />
           </View>
         )}
       </Card>
@@ -622,7 +641,7 @@ function RecipeDetail({
               onChangeText={setLogServings}
               keyboardType="numeric"
             />
-            <Button title="Añadir al diario" onPress={logToDiary} />
+            <Button title="Añadir al diario" onPress={logToDiary} loading={loggingRecipe} />
             <Button
               title="Cancelar"
               variant="secondary"
