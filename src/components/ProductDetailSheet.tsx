@@ -133,14 +133,37 @@ function MacroRingChip({
   );
 }
 
-function MicroRow({ label, value, unit }: { label: string; value: number | null; unit: string }) {
+/**
+ * Auditoría de cantidades/escalado nutricional: el número de decimales se
+ * decidía por la MAGNITUD del valor (`<1`→2 dec., `<10`→1 dec., `≥10`→0 —
+ * redondeado a entero), no por la precisión con la que `buildEntry()` lo va
+ * a persistir en `food_log` (fibra/azúcares/grasa saturada/hierro/zinc/
+ * calcio: siempre 1 decimal; B12/vitamina D: siempre 2 — sea cual sea la
+ * magnitud). Con una ración que escalara cualquiera de estos por encima de
+ * 10, la ficha lo mostraba redondeado a entero (p. ej. "25 g" de azúcares)
+ * mientras food_log guardaba el valor con su decimal real (25,4 g) — la
+ * ficha y lo guardado dejaban de coincidir. Ahora cada llamada indica los
+ * decimales reales de ESE campo (ver los `decimals=` en cada `<MicroRow>` de
+ * abajo), y aquí sólo se formatea con ellos, sin volver a decidir nada por
+ * magnitud. */
+function MicroRow({
+  label,
+  value,
+  unit,
+  decimals,
+}: {
+  label: string;
+  value: number | null;
+  unit: string;
+  decimals: number;
+}) {
   const t = useTheme();
   if (value === null || value === undefined) return null;
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
       <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
       <Text style={{ color: t.text, fontSize: 12, fontWeight: '700' }}>
-        {value < 1 ? value.toFixed(2) : value < 10 ? value.toFixed(1) : Math.round(value)} {unit}
+        {value.toFixed(decimals)} {unit}
       </Text>
     </View>
   );
@@ -966,26 +989,32 @@ export function ProductDetailSheet({
           >
             Más detalle por ración
           </Text>
-          <MicroRow label="Fibra" value={fiber} unit="g" />
-          <MicroRow label="Azúcares" value={sugars} unit="g" />
-          <MicroRow label="Grasas saturadas" value={satFat} unit="g" />
+          {/* decimals= replica exactamente la precisión con la que buildEntry()
+              persiste cada campo en food_log (ver foodEntry.ts) — nunca la
+              decide MicroRow por la magnitud del valor (esa era la causa de
+              la discrepancia ficha↔food_log que corrige esta auditoría). */}
+          <MicroRow label="Fibra" value={fiber} unit="g" decimals={1} />
+          <MicroRow label="Azúcares" value={sugars} unit="g" decimals={1} />
+          <MicroRow label="Grasas saturadas" value={satFat} unit="g" decimals={1} />
           {salt != null ? (
-            <MicroRow label="Sal" value={salt} unit="g" />
+            <MicroRow label="Sal" value={salt} unit="g" decimals={2} />
           ) : sodium > 0 ? (
-            <MicroRow label="Sodio" value={sodium} unit="mg" />
+            <MicroRow label="Sodio" value={sodium} unit="mg" decimals={0} />
           ) : null}
-          <MicroRow label="Hierro" value={food.iron_mg != null ? food.iron_mg * scale : null} unit="mg" />
-          <MicroRow label="Calcio" value={food.calcium_mg != null ? food.calcium_mg * scale : null} unit="mg" />
-          <MicroRow label="Zinc" value={food.zinc_mg != null ? food.zinc_mg * scale : null} unit="mg" />
+          <MicroRow label="Hierro" value={food.iron_mg != null ? food.iron_mg * scale : null} unit="mg" decimals={1} />
+          <MicroRow label="Calcio" value={food.calcium_mg != null ? food.calcium_mg * scale : null} unit="mg" decimals={1} />
+          <MicroRow label="Zinc" value={food.zinc_mg != null ? food.zinc_mg * scale : null} unit="mg" decimals={1} />
           <MicroRow
             label="Vitamina B12"
             value={food.vitamin_b12_mcg != null ? food.vitamin_b12_mcg * scale : null}
             unit="mcg"
+            decimals={2}
           />
           <MicroRow
             label="Vitamina D"
             value={food.vitamin_d_mcg != null ? food.vitamin_d_mcg * scale : null}
             unit="mcg"
+            decimals={2}
           />
         </View>
 
