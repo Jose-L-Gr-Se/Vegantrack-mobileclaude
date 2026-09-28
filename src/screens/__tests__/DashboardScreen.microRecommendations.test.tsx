@@ -120,6 +120,7 @@ function mockStores(microsOverride: ReturnType<typeof micros>) {
   });
   (useDiaryStore as unknown as jest.Mock).mockReturnValue({
     selectedDate: '2026-09-19',
+    setDate: jest.fn(),
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),
     getVeganNutritionScoreTrend: jest.fn().mockResolvedValue([]),

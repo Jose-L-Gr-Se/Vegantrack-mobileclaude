@@ -17,6 +17,7 @@ import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganSc
 import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay } from '@/utils/nutrition';
 import { microRecommendationText } from '@/utils/microRecommendations';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
+import { todayISO } from '@/utils/dates';
 import type { RootStackParamList } from '@/navigation/types';
 
 export function DashboardScreen() {
@@ -43,7 +44,22 @@ export function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
-      void diary.fetchEntries(user.id, diary.selectedDate);
+      // Auditoría del VeganScore: el Dashboard no tiene selector de fecha
+      // propio — todo lo que muestra ("Macros de hoy", el VeganScore, el
+      // gráfico semanal) asume "hoy" sin más. Pero `entries`/
+      // `getDaySummary()`/`getWeekData()` leen `selectedDate`, un estado
+      // COMPARTIDO con el Diario: si el usuario había navegado el Diario a
+      // un día pasado y abría el Dashboard sin volver antes a hoy, estas
+      // tarjetas mostraban en silencio los datos de ESE día pasado bajo el
+      // rótulo "hoy" — sin ningún indicador de que no lo era, y en
+      // contradicción directa con el histórico de VeganScore nutricional de
+      // más abajo (`getVeganNutritionScoreTrend`), que sí ancla siempre su
+      // último punto en `todayISO()` real. Forzar aquí la fecha selecciona
+      // a hoy es lo único coherente con lo que el propio Dashboard afirma
+      // mostrar — no cambia la fórmula del VeganScore ni ningún criterio
+      // nutricional, sólo qué día se le pasa.
+      diary.setDate(todayISO());
+      void diary.fetchEntries(user.id, todayISO());
       void diary.getWeekData(user.id).then(setWeekData);
       void supplementStore.fetchSupplements(user.id);
       void supplementStore.fetchTodayLogs(user.id);
@@ -62,7 +78,7 @@ export function DashboardScreen() {
         )
         .then((points) => setNutritionTrend(points.map((p) => ({ date: p.date, score: p.score?.total ?? null }))));
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, diary.selectedDate, profile?.calorie_target, profile?.protein_target_g, profile?.sex])
+    }, [user?.id, profile?.calorie_target, profile?.protein_target_g, profile?.sex])
   );
 
   const summary = diary.getDaySummary();

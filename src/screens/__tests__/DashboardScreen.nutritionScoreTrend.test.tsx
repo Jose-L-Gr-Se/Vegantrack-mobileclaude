@@ -84,6 +84,7 @@ function mockStores(isPro: boolean) {
   });
   (useDiaryStore as unknown as jest.Mock).mockReturnValue({
     selectedDate: '2026-09-24',
+    setDate: jest.fn(),
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),
     getVeganNutritionScoreTrend: mockGetVeganNutritionScoreTrend,
