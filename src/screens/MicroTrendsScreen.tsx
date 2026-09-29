@@ -14,7 +14,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line, Polyline, Circle } from 'react-native-svg';
 import { Card, EmptyState } from '@/components/ui';
@@ -25,6 +25,7 @@ import { useDiaryStore, type MicroKey, type MicroTrendPoint } from '@/stores/dia
 import { usePro } from '@/hooks/usePro';
 import { formatDateHuman } from '@/utils/dates';
 import { track } from '@/lib/analytics';
+import type { RootStackParamList } from '@/navigation/types';
 
 const PERIODS = [
   { label: '7D', days: 7 },
@@ -51,6 +52,7 @@ export function MicroTrendsScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const route = useRoute<RouteProp<RootStackParamList, 'MicroTrends'>>();
   const { user, profile } = useAuthStore();
   const { isPro } = usePro();
   const getMicroTrends = useDiaryStore((s) => s.getMicroTrends);
@@ -59,7 +61,9 @@ export function MicroTrendsScreen() {
   // en vez de en uno (30D, el valor por defecto de siempre) que le
   // bloquearía al instante nada más entrar.
   const [days, setDays] = useState(isPro ? 30 : 7);
-  const [micro, setMicro] = useState<MicroKey>('vitamin_b12_mcg');
+  // Primer Nutrition Insight (Dashboard): si se llega desde una prioridad
+  // concreta, arranca centrado en ESE micro en vez de siempre en B12.
+  const [micro, setMicro] = useState<MicroKey>(route.params?.initialMicro ?? 'vitamin_b12_mcg');
   const [data, setData] = useState<MicroTrendPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPro, setShowPro] = useState(false);

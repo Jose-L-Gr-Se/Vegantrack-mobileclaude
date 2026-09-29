@@ -1,5 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { MealType } from '@/types';
+import type { MicroKey } from '@/stores/diaryStore';
 
 export type MainTabParamList = {
   /**
@@ -36,5 +37,8 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList>;
   Scanner: { mealType?: MealType } | undefined;
   Recipes: undefined;
-  MicroTrends: undefined;
+  /** `initialMicro` (primer Nutrition Insight, Dashboard): al llegar desde una
+   *  prioridad concreta del insight, abre el gráfico ya centrado en ESE
+   *  micro en vez de siempre en B12 por defecto. */
+  MicroTrends: { initialMicro?: MicroKey } | undefined;
 };

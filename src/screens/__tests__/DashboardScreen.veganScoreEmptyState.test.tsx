@@ -95,6 +95,7 @@ function mockStores(daySummary: { calories: number; protein_g: number; carbs_g: 
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),
     getVeganNutritionScoreTrend: jest.fn().mockResolvedValue([]),
+    getMicroTrends: jest.fn().mockResolvedValue([]),
     getDaySummary: () => daySummary,
   });
   (useSupplementStore as unknown as jest.Mock).mockReturnValue({

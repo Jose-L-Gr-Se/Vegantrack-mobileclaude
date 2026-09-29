@@ -88,6 +88,7 @@ function mockStores() {
   const fetchEntries = jest.fn().mockResolvedValue(undefined);
   const getWeekData = jest.fn().mockResolvedValue([]);
   const getVeganNutritionScoreTrend = jest.fn().mockResolvedValue([]);
+  const getMicroTrends = jest.fn().mockResolvedValue([]);
 
   (useAuthStore as unknown as jest.Mock).mockReturnValue({
     user: { id: 'user-1' },
@@ -106,6 +107,7 @@ function mockStores() {
     fetchEntries,
     getWeekData,
     getVeganNutritionScoreTrend,
+    getMicroTrends,
     getDaySummary: () => ({ calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, micros: emptyMicros() }),
   });
   (useSupplementStore as unknown as jest.Mock).mockReturnValue({
@@ -116,7 +118,7 @@ function mockStores() {
   });
   (usePro as unknown as jest.Mock).mockReturnValue({ isPro: false });
 
-  return { setDate, fetchEntries, getWeekData, getVeganNutritionScoreTrend };
+  return { setDate, fetchEntries, getWeekData, getVeganNutritionScoreTrend, getMicroTrends };
 }
 
 beforeEach(() => {

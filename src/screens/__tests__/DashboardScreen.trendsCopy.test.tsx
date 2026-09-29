@@ -104,6 +104,7 @@ function mockStores(isPro: boolean) {
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),
     getVeganNutritionScoreTrend: jest.fn().mockResolvedValue([]),
+    getMicroTrends: jest.fn().mockResolvedValue([]),
     getDaySummary: () => ({
       calories: 1500,
       protein_g: 60,

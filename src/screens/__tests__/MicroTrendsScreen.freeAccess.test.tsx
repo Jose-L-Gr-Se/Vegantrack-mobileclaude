@@ -29,6 +29,7 @@ jest.mock('@react-navigation/native', () => ({
     ReactActual.useEffect(() => cb(), []);
   },
   useNavigation: () => ({ goBack: jest.fn() }),
+  useRoute: () => ({ params: undefined }),
 }));
 jest.mock('@/stores/authStore', () => ({ useAuthStore: jest.fn() }));
 jest.mock('@/stores/diaryStore', () => ({ useDiaryStore: jest.fn() }));

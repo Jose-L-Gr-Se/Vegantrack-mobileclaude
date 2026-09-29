@@ -10,15 +10,21 @@ import { Card, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
 import { VeganNutritionScoreTrend, type VeganNutritionTrendPoint } from '@/components/VeganNutritionScoreTrend';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
-import { useDiaryStore, type WeekDay } from '@/stores/diaryStore';
+import { useDiaryStore, type MicroKey, type MicroTrendPoint, type WeekDay } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
 import { usePro } from '@/hooks/usePro';
 import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
-import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay } from '@/utils/nutrition';
+import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay, type MicroDisplay } from '@/utils/nutrition';
 import { microRecommendationText } from '@/utils/microRecommendations';
+import { buildNutritionInsight } from '@/utils/nutritionInsight';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
 import { todayISO } from '@/utils/dates';
 import type { RootStackParamList } from '@/navigation/types';
+
+/** Días previos a hoy que pide `getMicroTrends` para poder distinguir "bajo
+ *  hoy" de "bajo varios días seguidos" en el Nutrition Insight — 2 días
+ *  antes + hoy (calculado en vivo, no desde el histórico) = 3 en total. */
+const INSIGHT_HISTORY_DAYS = 3;
 
 export function DashboardScreen() {
   const t = useTheme();
@@ -34,11 +40,16 @@ export function DashboardScreen() {
   // ve 7 días en Tendencias; ampliar esto a 30/90 para Pro queda para una
   // ronda futura, no es parte de este bloque).
   const [nutritionTrend, setNutritionTrend] = useState<VeganNutritionTrendPoint[]>([]);
+  // Primer Nutrition Insight: los 2 días ANTERIORES a hoy (hoy se calcula en
+  // vivo más abajo, igual que el resto de la pantalla) — sólo para saber si
+  // un micro bajo hoy también lo estaba esos días, y así poder distinguir
+  // "bajo hoy" de "bajo varios días seguidos" sin inventar nada.
+  const [microHistory, setMicroHistory] = useState<MicroTrendPoint[]>([]);
 
   // La pantalla decide internamente qué rango puede ver cada usuario (7 días
   // para Free, 7/30/90 para Pro) — este punto de entrada ya no bloquea.
-  const openMicroTrends = () => {
-    navigation.navigate('MicroTrends');
+  const openMicroTrends = (initialMicro?: MicroKey) => {
+    navigation.navigate('MicroTrends', initialMicro ? { initialMicro } : undefined);
   };
 
   useFocusEffect(
@@ -77,6 +88,14 @@ export function DashboardScreen() {
           profile?.sex ?? null
         )
         .then((points) => setNutritionTrend(points.map((p) => ({ date: p.date, score: p.score?.total ?? null }))));
+      // Primer Nutrition Insight: reutiliza exactamente el mismo
+      // `getMicroTrends()` ya usado por "Tendencias de micros" — ninguna
+      // consulta ni agregación nueva. El último punto (hoy) se descarta: el
+      // insight usa el `today` calculado en vivo más abajo, igual que el
+      // resto del Dashboard; sólo se guardan los días ANTERIORES.
+      void diary
+        .getMicroTrends(user.id, INSIGHT_HISTORY_DAYS, profile?.sex ?? null)
+        .then((points) => setMicroHistory(points.slice(0, -1)));
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, profile?.calorie_target, profile?.protein_target_g, profile?.sex])
   );
@@ -112,6 +131,26 @@ export function DashboardScreen() {
   ];
 
   const suppContrib = supplementStore.getTodayContributions();
+
+  // Un único `MicroDisplay` por nutriente, calculado UNA vez — lo consume
+  // tanto la tarjeta "Micronutrientes (RDA)" de abajo como el Nutrition
+  // Insight, para que nunca puedan mostrar cifras distintas del mismo día.
+  const todayMicroDisplays = Object.fromEntries(
+    (Object.keys(MICRO_RDA) as MicroKey[]).map((key) => {
+      const rda = key === 'iron_mg' ? ironRdaForSex(profile?.sex) : MICRO_RDA[key].rda;
+      const fromSupp = (suppContrib[key] as number | undefined) ?? 0;
+      return [key, resolveMicroDisplay(summary.micros[key], fromSupp, rda)];
+    })
+  ) as Record<MicroKey, MicroDisplay>;
+
+  // Primer Nutrition Insight (PRODUCT.md §8/§9): hasta 3 prioridades de hoy,
+  // sólo cuando el dato es suficientemente fiable — `buildNutritionInsight`
+  // reutiliza exactamente la misma regla que ya decide la recomendación bajo
+  // cada barra de micro, así que sin comida registrada hoy (o con datos
+  // insuficientes en los 6) esta lista sale vacía de forma natural, sin
+  // ninguna comprobación aparte.
+  const insightPriorities = buildNutritionInsight(todayMicroDisplays, microHistory);
+
   const maxCal = Math.max(...weekData.map((d) => d.calories), profile?.calorie_target ?? 0, 1);
 
   const calTarget = profile?.calorie_target ?? 0;
@@ -241,6 +280,45 @@ export function DashboardScreen() {
         </View>
       </Card>
 
+      {/* Primer Nutrition Insight — "¿qué debería vigilar hoy?" (PRODUCT.md
+          §8/§9, Pilar C). Sólo aparece con datos suficientes: si hoy no hay
+          comida registrada, o los 6 micros están bien o con dato insuficiente,
+          `insightPriorities` sale vacío y la tarjeta no se pinta — nunca un
+          "todo bien" ni una alarma sin base real. */}
+      {insightPriorities.length > 0 ? (
+        <Card style={{ gap: spacing.md }}>
+          <SectionHeader title="Qué vigilar hoy" />
+          <Text style={{ color: t.textMuted, fontSize: 11, marginTop: -spacing.sm }}>
+            Basado en lo que has registrado hoy — no es un diagnóstico.
+          </Text>
+          {insightPriorities.map((p) => (
+            <Pressable
+              key={p.key}
+              onPress={() => openMicroTrends(p.key)}
+              style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}
+            >
+              <Ionicons
+                name={(p.urgency === 'pattern' ? 'trending-down' : 'alert-circle-outline') as never}
+                size={18}
+                color={semantic.warning}
+                style={{ marginTop: 2 }}
+              />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }}>
+                  {p.label}{' '}
+                  <Text style={{ color: t.textMuted, fontWeight: '600', fontSize: 12 }}>
+                    · {p.urgency === 'pattern' ? 'bajo varios días seguidos' : 'bajo hoy'} · {Math.round(p.pct * 100)}%
+                    {' '}del objetivo
+                  </Text>
+                </Text>
+                <Text style={{ color: t.textSecondary, fontSize: 12 }}>{p.reason}</Text>
+              </View>
+              <Ionicons name={'chevron-forward' as never} size={16} color={t.textMuted} style={{ marginTop: 2 }} />
+            </Pressable>
+          ))}
+        </Card>
+      ) : null}
+
       {/* Histórico de VeganScore nutricional — sin racha, ver componente */}
       <VeganNutritionScoreTrend points={nutritionTrend} />
 
@@ -260,9 +338,9 @@ export function DashboardScreen() {
         {(Object.keys(MICRO_RDA) as (keyof typeof MICRO_RDA)[]).map((key) => {
           const info = MICRO_RDA[key];
           const rda = key === 'iron_mg' ? ironRdaForSex(profile?.sex) : info.rda;
-          const agg = summary.micros[key];
-          const fromSupp = (suppContrib[key] as number | undefined) ?? 0;
-          const display = resolveMicroDisplay(agg, fromSupp, rda);
+          // Mismo MicroDisplay que usa el Nutrition Insight de arriba — una
+          // única fuente, nunca dos cálculos que puedan divergir.
+          const display = todayMicroDisplays[key];
           // pct siempre viene del conocido real (comida + suplemento): la
           // barra refleja progreso real hacia la RDA, nunca se recorta por
           // baja cobertura. El color de la barra depende SÓLO de pct — la
@@ -344,7 +422,7 @@ export function DashboardScreen() {
       ) : null}
 
       {/* Tendencias de micros — 7 días gratis, 30/90 días con Pro */}
-      <Pressable onPress={openMicroTrends}>
+      <Pressable onPress={() => openMicroTrends()}>
         <Card
           style={{
             flexDirection: 'row',
