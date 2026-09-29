@@ -16,7 +16,7 @@ import { usePro } from '@/hooks/usePro';
 import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
 import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay, type MicroDisplay } from '@/utils/nutrition';
 import { microRecommendationText } from '@/utils/microRecommendations';
-import { buildNutritionInsight } from '@/utils/nutritionInsight';
+import { buildNutritionInsight, describeInsightPriority } from '@/utils/nutritionInsight';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
 import { todayISO } from '@/utils/dates';
 import type { RootStackParamList } from '@/navigation/types';
@@ -42,10 +42,10 @@ export function DashboardScreen() {
   // ve 7 días en Tendencias; ampliar esto a 30/90 para Pro queda para una
   // ronda futura, no es parte de este bloque).
   const [nutritionTrend, setNutritionTrend] = useState<VeganNutritionTrendPoint[]>([]);
-  // Primer Nutrition Insight: los 2 días ANTERIORES a hoy (hoy se calcula en
+  // Nutrition Insight: los hasta 6 días ANTERIORES a hoy (hoy se calcula en
   // vivo más abajo, igual que el resto de la pantalla) — sólo para saber si
-  // un micro bajo hoy también lo estaba esos días, y así poder distinguir
-  // "bajo hoy" de "bajo varios días seguidos" sin inventar nada.
+  // un micro bajo hoy también lo estuvo en lo registrado esos días, y así
+  // poder distinguir "hoy" de "patrón" sin inventar nada.
   const [microHistory, setMicroHistory] = useState<MicroTrendPoint[]>([]);
 
   // La pantalla decide internamente qué rango puede ver cada usuario (7 días
@@ -298,7 +298,7 @@ export function DashboardScreen() {
         <Card style={{ gap: spacing.md }}>
           <SectionHeader title="Qué vigilar hoy" />
           <Text style={{ color: t.textMuted, fontSize: 11, marginTop: -spacing.sm }}>
-            Basado en lo que has registrado hoy — no es un diagnóstico.
+            Observaciones sobre lo que has registrado, no sobre toda tu alimentación. No es un diagnóstico.
           </Text>
           {insightPriorities.map((p) => (
             <Pressable
@@ -316,13 +316,7 @@ export function DashboardScreen() {
                 <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }}>
                   {p.label}{' '}
                   <Text style={{ color: t.textMuted, fontWeight: '600', fontSize: 12 }}>
-                    {/* Denominador SIEMPRE real (auditoría del sistema de
-                        patrones): `validDays` son los días con datos
-                        suficientes de la ventana, nunca el tamaño de la
-                        ventana en sí — un patrón con 4 días válidos dice
-                        "de los últimos 4 días con datos", nunca "7". */}
-                    · {p.urgency === 'pattern' ? `bajo en ${p.lowDays} de los últimos ${p.validDays} días con datos` : 'bajo hoy'}
-                    {' '}· {Math.round(p.pct * 100)}% del objetivo
+                    · {describeInsightPriority(p)}
                   </Text>
                 </Text>
                 <Text style={{ color: t.textSecondary, fontSize: 12 }}>{p.reason}</Text>

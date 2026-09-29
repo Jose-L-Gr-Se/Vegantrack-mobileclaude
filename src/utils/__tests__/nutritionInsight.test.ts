@@ -7,7 +7,12 @@
 jest.mock('@/lib/supabase', () => ({ supabase: {} }));
 jest.mock('@/db/database', () => ({ kvGet: jest.fn(), kvSet: jest.fn() }));
 
-import { buildNutritionInsight, type HistoricalMicroDay } from '@/utils/nutritionInsight';
+import {
+  buildNutritionInsight,
+  describeInsightPriority,
+  type HistoricalMicroDay,
+  type NutritionInsightPriority,
+} from '@/utils/nutritionInsight';
 import { MICRO_FOOD_SOURCES } from '@/utils/microRecommendations';
 import { MICRO_RDA, type MicroConfidence, type MicroDisplay } from '@/utils/nutrition';
 import type { MicroKey } from '@/stores/diaryStore';
@@ -233,5 +238,53 @@ describe('buildNutritionInsight — "hoy" vs "patrón" (ventana de 7 días, evid
     const byKey = Object.fromEntries(result.map((p) => [p.key, p.urgency]));
     expect(byKey.iron_mg).toBe('pattern'); // 4/4 válidos bajos
     expect(byKey.zinc_mg).toBe('today'); // 0/4 válidos bajos
+  });
+});
+
+describe('describeInsightPriority — el copy describe lo REGISTRADO, con el denominador real', () => {
+  const base: NutritionInsightPriority = { key: 'iron_mg', label: 'Hierro', pct: 0.32, urgency: 'today', reason: 'x' };
+
+  it('"hoy": observación del registro de hoy, con el % del objetivo', () => {
+    expect(describeInsightPriority(base)).toBe('lo registrado hoy es bajo · 32 % del objetivo');
+  });
+
+  it('patrón con 7 días válidos: "5 de los últimos 7 días con datos"', () => {
+    const p = { ...base, urgency: 'pattern' as const, lowDays: 5, validDays: 7 };
+    expect(describeInsightPriority(p)).toBe(
+      'lo registrado quedó bajo en 5 de los últimos 7 días con datos · 32 % del objetivo hoy'
+    );
+  });
+
+  it('patrón con 4 días válidos: el denominador es 4, NUNCA 7', () => {
+    const p = { ...base, urgency: 'pattern' as const, lowDays: 3, validDays: 4 };
+    const text = describeInsightPriority(p);
+    expect(text).toBe('lo registrado quedó bajo en 3 de los últimos 4 días con datos · 32 % del objetivo hoy');
+    expect(text).not.toContain('7');
+  });
+
+  it('el denominador sale de `validDays` del motor, no del tamaño de la ventana (integración con buildNutritionInsight)', () => {
+    // Hoy + 3 previos válidos (2 bajos, 1 cubierto) + 3 días sin datos → 3 de 4, no "de 7".
+    const previousDays = [lowValidDay(), lowValidDay(), goodValidDay(), noDataDay(), noDataDay(), noDataDay()];
+    const [p] = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(describeInsightPriority(p)).toContain('3 de los últimos 4 días con datos');
+  });
+
+  it('nunca usa lenguaje de déficit, carencia ni diagnóstico, ni afirma nada sobre la ingesta real', () => {
+    const variants: NutritionInsightPriority[] = [
+      base,
+      { ...base, urgency: 'pattern', lowDays: 5, validDays: 7 },
+      { ...base, urgency: 'pattern', lowDays: 3, validDays: 4 },
+    ];
+    for (const p of variants) {
+      const text = describeInsightPriority(p).toLowerCase();
+      expect(text).not.toMatch(/d[eé]ficit|carencia|deficien|riesgo|enferm|diagn[oó]st/);
+      expect(text).toContain('registrado');
+    }
+  });
+
+  it('un patrón sin lowDays/validDays (no debería ocurrir) degrada a la frase de "hoy", nunca a "undefined"', () => {
+    const text = describeInsightPriority({ ...base, urgency: 'pattern' });
+    expect(text).toBe('lo registrado hoy es bajo · 32 % del objetivo');
+    expect(text).not.toContain('undefined');
   });
 });
