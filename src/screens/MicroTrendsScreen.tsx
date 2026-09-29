@@ -1,13 +1,20 @@
 /**
- * Tendencias de micros (Pro): evolución diaria de B12, hierro, zinc, calcio,
+ * Tendencias de micros: evolución diaria de B12, hierro, zinc, calcio,
  * vitamina D y omega-3 como % de la RDA, sumando comida y suplementos. Permite
  * elegir periodo (7/30/90 días) y micro a graficar, y muestra la media del
  * periodo por nutriente.
+ *
+ * Contrato Free/Pro (auditoría de experiencia de retorno 3/7/14 días): Free
+ * puede ver el rango de 7 días — es la única ventana de progreso de
+ * nutrición a lo largo del tiempo que existía en el producto y que antes
+ * estaba completamente cerrada, incluso para 7 días. 30 y 90 días siguen
+ * siendo Pro. El selector de periodo está siempre visible y funcional,
+ * también sin Pro, para poder volver a 7D sin salir de la pantalla.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line, Polyline, Circle } from 'react-native-svg';
 import { Card, EmptyState } from '@/components/ui';
@@ -17,6 +24,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type MicroKey, type MicroTrendPoint } from '@/stores/diaryStore';
 import { usePro } from '@/hooks/usePro';
 import { formatDateHuman } from '@/utils/dates';
+import { track } from '@/lib/analytics';
+import type { RootStackParamList } from '@/navigation/types';
 
 const PERIODS = [
   { label: '7D', days: 7 },
@@ -43,19 +52,38 @@ export function MicroTrendsScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const route = useRoute<RouteProp<RootStackParamList, 'MicroTrends'>>();
   const { user, profile } = useAuthStore();
   const { isPro } = usePro();
   const getMicroTrends = useDiaryStore((s) => s.getMicroTrends);
 
-  const [days, setDays] = useState(30);
-  const [micro, setMicro] = useState<MicroKey>('vitamin_b12_mcg');
+  // Quien no es Pro aterriza directamente en el rango que sí puede ver (7D),
+  // en vez de en uno (30D, el valor por defecto de siempre) que le
+  // bloquearía al instante nada más entrar.
+  const [days, setDays] = useState(isPro ? 30 : 7);
+  // Primer Nutrition Insight (Dashboard): si se llega desde una prioridad
+  // concreta, arranca centrado en ESE micro en vez de siempre en B12.
+  const [micro, setMicro] = useState<MicroKey>(route.params?.initialMicro ?? 'vitamin_b12_mcg');
   const [data, setData] = useState<MicroTrendPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPro, setShowPro] = useState(false);
 
+  // Free: 7 días. 30 y 90 siguen siendo Pro.
+  const allowed = isPro || days === 7;
+
+  // Sólo mide un intento REAL de acceder a contenido Pro (30/90 días) — con
+  // 7 días ya abierto a Free, entrar y quedarse en 7D no es un intento de
+  // acceder a Pro, así que no debe contar como paywall_viewed. Cubre tanto
+  // quien llega directo a 30/90 (deep link, o el valor con el que un Pro que
+  // acaba de expirar podría haberse quedado) como quien cambia de rango
+  // dentro de la propia pantalla.
+  useEffect(() => {
+    if (!allowed) track('paywall_viewed', { source: 'trends' });
+  }, [allowed]);
+
   useFocusEffect(
     useCallback(() => {
-      if (!user || !isPro) {
+      if (!user || !allowed) {
         setLoading(false);
         return;
       }
@@ -88,29 +116,17 @@ export function MicroTrendsScreen() {
     </View>
   );
 
-  if (!isPro) {
-    return (
-      <View style={{ flex: 1, backgroundColor: t.background }}>
-        {header}
-        <View style={{ flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}>
-          <EmptyState emoji="👑" text="Las tendencias de micros forman parte de Pro. Desbloquéalas para ver tu evolución de B12, hierro y omega-3 semana a semana." />
-          <Pressable
-            onPress={() => setShowPro(true)}
-            style={{ backgroundColor: t.primary, borderRadius: 999, paddingVertical: 14, alignItems: 'center' }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Ver planes Pro</Text>
-          </Pressable>
-        </View>
-        {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
-      </View>
-    );
-  }
-
-  // Serie del micro seleccionado
-  const series = (data ?? []).map((p) => p.micros[micro].pct);
-  const hasData = series.some((v) => v > 0);
+  // Serie del micro seleccionado. El trazado sigue mostrando todos los días
+  // (una serie con huecos exige un gráfico más complejo, fuera de alcance de
+  // esta fase), pero la MEDIA excluye los días sin ningún registro relevante
+  // (`hasEntries=false` y sin aporte de suplemento): un día sin datos no debe
+  // contarse como un 0 confirmado (docs/NUTRICION-MICRONUTRIENTES.md).
+  const seriesPoints = (data ?? []).map((p) => p.micros[micro]);
+  const series = seriesPoints.map((m) => m.pct);
+  const knownPoints = seriesPoints.filter((m) => m.hasEntries || m.value > 0);
+  const hasData = knownPoints.length > 0;
   const avgPct =
-    series.length > 0 ? series.reduce((s, v) => s + v, 0) / series.length : 0;
+    knownPoints.length > 0 ? knownPoints.reduce((s, m) => s + m.pct, 0) / knownPoints.length : 0;
   const capY = Math.max(1.2, ...series, 0.1);
 
   const W = 300;
@@ -148,7 +164,17 @@ export function MicroTrendsScreen() {
           ))}
         </View>
 
-        {loading ? (
+        {!allowed ? (
+          <View style={{ padding: spacing.lg, gap: spacing.lg }}>
+            <EmptyState emoji="👑" text="El histórico de 30 y 90 días forma parte de Pro. Ya puedes ver los últimos 7 días gratis — desbloquea Pro para ver más." />
+            <Pressable
+              onPress={() => setShowPro(true)}
+              style={{ backgroundColor: t.primary, borderRadius: 999, paddingVertical: 14, alignItems: 'center' }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Ver planes Pro</Text>
+            </Pressable>
+          </View>
+        ) : loading ? (
           <View style={{ paddingVertical: spacing.xxl, alignItems: 'center' }}>
             <ActivityIndicator color={t.primary} size="large" />
           </View>
@@ -186,10 +212,18 @@ export function MicroTrendsScreen() {
                   {selected.label} · media del periodo
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                  <Text style={{ fontSize: 40, fontWeight: '800', color: coverageColor(avgPct) }}>
-                    {Math.round(avgPct * 100)}%
-                  </Text>
-                  <Text style={{ color: t.textMuted, fontSize: 13 }}>de la RDA</Text>
+                  {hasData ? (
+                    <>
+                      <Text style={{ fontSize: 40, fontWeight: '800', color: coverageColor(avgPct) }}>
+                        {Math.round(avgPct * 100)}%
+                      </Text>
+                      <Text style={{ color: t.textMuted, fontSize: 13 }}>de la RDA</Text>
+                    </>
+                  ) : (
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: t.textMuted }}>
+                      Sin datos en este periodo
+                    </Text>
+                  )}
                 </View>
               </View>
 
@@ -227,8 +261,10 @@ export function MicroTrendsScreen() {
                 Media por nutriente · {days} días
               </Text>
               {MICROS.map((m) => {
-                const vals = (data ?? []).map((p) => p.micros[m.key].pct);
-                const avg = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : 0;
+                const points = (data ?? []).map((p) => p.micros[m.key]);
+                const known = points.filter((v) => v.hasEntries || v.value > 0);
+                const hasAvg = known.length > 0;
+                const avg = hasAvg ? known.reduce((s, v) => s + v.pct, 0) / known.length : 0;
                 const pctClamped = Math.min(1, avg);
                 return (
                   <Pressable key={m.key} onPress={() => setMicro(m.key)} style={{ gap: 6 }}>
@@ -236,10 +272,18 @@ export function MicroTrendsScreen() {
                       <Text style={{ color: m.key === micro ? t.primary : t.textSecondary, fontSize: 13, fontWeight: '600' }}>
                         {m.label}
                       </Text>
-                      <Text style={{ color: t.textMuted, fontSize: 12 }}>{Math.round(avg * 100)}%</Text>
+                      <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                        {hasAvg ? `${Math.round(avg * 100)}%` : 'Sin datos'}
+                      </Text>
                     </View>
                     <View style={{ height: 6, borderRadius: 3, backgroundColor: t.separator, overflow: 'hidden' }}>
-                      <View style={{ width: `${pctClamped * 100}%`, height: 6, backgroundColor: coverageColor(avg) }} />
+                      <View
+                        style={{
+                          width: `${pctClamped * 100}%`,
+                          height: 6,
+                          backgroundColor: hasAvg ? coverageColor(avg) : t.separator,
+                        }}
+                      />
                     </View>
                   </Pressable>
                 );
@@ -251,6 +295,7 @@ export function MicroTrendsScreen() {
           </>
         )}
       </ScrollView>
+      {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
     </View>
   );
 }

@@ -13,6 +13,15 @@ import { deviceLanguage, preferredLanguages } from '@/utils/locale';
 
 const BASE_URL = 'https://world.openfoodfacts.net';
 
+/**
+ * OFF exige/recomienda identificar la app con un User-Agent propio en toda
+ * petición a su API (no sólo en /api/v2/product) — hoy los tres fetch() de
+ * este fichero iban sin ninguno. `hola@vegantrack.app` es el contacto ya
+ * verificado del proyecto (usado como remitente de los correos transaccionales,
+ * ver supabase/functions/_shared/email.ts), no uno inventado para esto.
+ */
+export const OFF_USER_AGENT = 'VeganTrack/1.0 (hola@vegantrack.app)';
+
 // Idiomas cuyos textos (nombre / ingredientes) pedimos siempre, además del
 // idioma del dispositivo. Cubren la mayoría del mercado europeo.
 const BASE_LANGS = ['en', 'es', 'fr', 'de', 'it', 'pt', 'ca'];
@@ -54,6 +63,15 @@ function createTimeout(ms = 10000): { signal: AbortSignal; clear: () => void } {
   return { signal: controller.signal, clear: () => clearTimeout(id) };
 }
 
+/**
+ * RequestInit común a las tres llamadas a la API de OFF: mismo signal (para
+ * que createTimeout() lo siga abortando igual que antes) y mismo
+ * User-Agent — única fuente, para que los tres fetch() no puedan divergir.
+ */
+export function offRequestInit(signal: AbortSignal): RequestInit {
+  return { signal, headers: { 'User-Agent': OFF_USER_AGENT } };
+}
+
 export async function getProductByBarcode(barcode: string): Promise<OpenFoodFactsProduct | null> {
   // 1. Caché local SQLite (TTL 7 días)
   try {
@@ -68,7 +86,7 @@ export async function getProductByBarcode(barcode: string): Promise<OpenFoodFact
   try {
     const res = await fetch(
       `${BASE_URL}/api/v2/product/${barcode}?lc=${deviceLanguage()}&fields=${offFields()}`,
-      { signal }
+      offRequestInit(signal)
     );
     clear();
     if (!res.ok) return null;
@@ -95,7 +113,7 @@ export async function searchProducts(
     if (veganOnly) {
       url += '&tagtype_0=labels&tag_contains_0=contains&tag_0=en:vegan';
     }
-    const res = await fetch(url, { signal });
+    const res = await fetch(url, offRequestInit(signal));
     clear();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -351,7 +369,7 @@ export async function findVeganAlternatives(
     try {
       const res = await fetch(
         `${BASE_URL}/cgi/search.pl?search_terms=${encodeURIComponent(q)}&json=1&lc=${deviceLanguage()}&page_size=15&fields=${offFields()}`,
-        { signal }
+        offRequestInit(signal)
       );
       clear();
       if (!res.ok) continue;
@@ -487,7 +505,15 @@ export function productToFoodPer100g(product: OpenFoodFactsProduct): FoodPer100g
     brand: product.brands || null,
     barcode: product.code || null,
     image_url: product.image_front_url || null,
-    is_vegan: isProductVegan(product),
+    // No usar isProductVegan() (solo sello de la comunidad): OFF también
+    // marca 'en:vegan' vía análisis automático de ingredientes sin sello, y
+    // getVeganConfidence() ya trata ambas señales como 'high'. Si is_vegan se
+    // quedara en el sello estricto, el producto se guardaría con
+    // is_vegan: false pese a que la ficha (ProductDetailSheet) lo muestre
+    // como "Vegano ✓" — y como esa pantalla no dibuja ningún indicador propio
+    // para 'high' (delega en is_vegan), el usuario no vería ningún aviso en
+    // absoluto pese a que OFF sí tiene una señal de alta confianza.
+    is_vegan: getVeganConfidence(product) === 'high',
     source: product.code ? 'openfoodfacts' : 'manual',
     source_ref: product.code || null,
     calories: n['energy-kcal_100g'],

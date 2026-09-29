@@ -2,9 +2,13 @@
  * Estado Pro y límites del plan free.
  * - En Android: comprueba el entitlement de RevenueCat (Google Play Billing).
  * - Fallback: perfil de Supabase para suscriptores de la web (Stripe).
+ *
+ * La regla de decisión vive en `@/utils/proEntitlement` como función pura para
+ * poder cubrirla con tests: es la que decide quién tiene acceso de pago.
  */
 import { useAuthStore } from '@/stores/authStore';
-import { usePurchasesStore, ENTITLEMENT_PRO } from '@/stores/purchasesStore';
+import { usePurchasesStore } from '@/stores/purchasesStore';
+import { hasProEntitlement } from '@/utils/proEntitlement';
 
 export const FREE_HISTORY_DAYS = 14;
 export const FREE_RECIPE_LIMIT = 3;
@@ -14,14 +18,5 @@ export function usePro(): { isPro: boolean } {
   const profile = useAuthStore((s) => s.profile);
   const customerInfo = usePurchasesStore((s) => s.customerInfo);
 
-  // RevenueCat / Google Play Billing
-  const rcPro = customerInfo?.entitlements.active[ENTITLEMENT_PRO] !== undefined;
-
-  // Supabase: suscriptores web (Stripe) que no compraron desde la app
-  const supabasePro =
-    profile?.subscription_tier === 'pro' &&
-    (!profile.subscription_expires_at ||
-      new Date(profile.subscription_expires_at).getTime() > Date.now());
-
-  return { isPro: rcPro || supabasePro };
+  return { isPro: hasProEntitlement({ profile, customerInfo }) };
 }

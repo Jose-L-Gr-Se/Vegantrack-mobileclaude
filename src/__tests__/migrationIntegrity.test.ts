@@ -1,0 +1,296 @@
+/**
+ * Regresión de las migraciones de consolidación de entitlement
+ * (…000001_consolidate_subscription_guard.sql / …000002_rollback…) y de
+ * cierre del vector de INSERT (…000003_close_insert_vector.sql /
+ * …000004_rollback…).
+ *
+ * No ejecuta SQL: comprueba, sobre el texto de los ficheros, las propiedades
+ * que hacen segura esta migración concreta — que no se puede verificar en
+ * ejecución porque nadie debe aplicarla contra una base de datos de prueba
+ * automatizada (habla de `service_role`, `auth.role()`, RLS real).
+ *
+ * Ver docs/SEGURIDAD-SUSCRIPCION.md §6-10.
+ */
+declare const __dirname: string;
+declare const require: (id: string) => any;
+
+const fs = require('fs') as { readFileSync(f: string, enc: 'utf8'): string };
+const path = require('path') as { join(...p: string[]): string };
+
+const REPO = path.join(__dirname, '..', '..');
+const MIGRATIONS = path.join(REPO, 'supabase', 'migrations');
+
+const CONSOLIDATE = fs.readFileSync(
+  path.join(MIGRATIONS, '20260901000001_consolidate_subscription_guard.sql'),
+  'utf8'
+);
+const ROLLBACK = fs.readFileSync(
+  path.join(MIGRATIONS, '20260901000002_rollback_consolidation.sql'),
+  'utf8'
+);
+const CLOSE_INSERT = fs.readFileSync(
+  path.join(MIGRATIONS, '20260901000003_close_insert_vector.sql'),
+  'utf8'
+);
+const ROLLBACK_INSERT = fs.readFileSync(
+  path.join(MIGRATIONS, '20260901000004_rollback_close_insert_vector.sql'),
+  'utf8'
+);
+const VERIFY = fs.readFileSync(
+  path.join(REPO, 'supabase', 'verify-subscription-guard.sql'),
+  'utf8'
+);
+const DIAGNOSE_INSERT = fs.readFileSync(
+  path.join(REPO, 'supabase', 'diagnose-insert-policy.sql'),
+  'utf8'
+);
+
+/** Cuenta cuántas veces aparece una sentencia de control de transacción sola en su línea. */
+function count(sql: string, stmt: RegExp): number {
+  return (sql.match(stmt) ?? []).length;
+}
+
+/** Índice de la primera aparición de `needle`, o -1. Falla el test de forma legible si no aparece. */
+function mustFind(sql: string, needle: string, label: string): number {
+  const i = sql.indexOf(needle);
+  if (i < 0) throw new Error(`No se encontró "${label}" en el fichero`);
+  return i;
+}
+
+/**
+ * Cada sentencia (separada por `;`), tras quitar los comentarios `--`, debe
+ * empezar por SELECT. A diferencia de buscar la palabra "insert" en cualquier
+ * parte del texto, esto no da falsos positivos con literales de cadena como
+ * `privilege_type = 'INSERT'`, que este fichero necesita usar legítimamente.
+ */
+function allStatementsAreSelect(sql: string): string[] {
+  const sinComentarios = sql
+    .split('\n')
+    .map((line) => line.replace(/--.*$/, ''))
+    .join('\n');
+
+  return sinComentarios
+    .split(';')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .filter((s) => !/^select\b/i.test(s));
+}
+
+describe('20260901000001_consolidate_subscription_guard.sql', () => {
+  it('es transaccional: exactamente un begin y un commit', () => {
+    expect(count(CONSOLIDATE, /^begin;/gim)).toBe(1);
+    expect(count(CONSOLIDATE, /^commit;/gim)).toBe(1);
+    // Nunca debe quedar en rollback: es la migración que SÍ se aplica de verdad.
+    expect(count(CONSOLIDATE, /^rollback;/gim)).toBe(0);
+  });
+
+  it('extiende protect_subscription_fields a las tres columnas de entitlement', () => {
+    expect(CONSOLIDATE).toContain('new.subscription_tier = old.subscription_tier');
+    expect(CONSOLIDATE).toContain('new.subscription_expires_at = old.subscription_expires_at');
+    expect(CONSOLIDATE).toContain('new.stripe_customer_id = old.stripe_customer_id');
+  });
+
+  it('conserva la condición de decisión validada contra el webhook real (D10)', () => {
+    expect(CONSOLIDATE).toContain("auth.role() is distinct from 'service_role'");
+  });
+
+  it('retira el mecanismo redundante: el trigger y su función', () => {
+    expect(CONSOLIDATE).toContain('drop trigger if exists trg_profiles_entitlement_guard');
+    expect(CONSOLIDATE).toContain(
+      'drop function if exists public.enforce_profile_entitlement_guard()'
+    );
+  });
+
+  it('la autoridad consolidada se crea/extiende ANTES de retirar la redundante (sin ventana sin protección)', () => {
+    const posExtiende = mustFind(
+      CONSOLIDATE,
+      'create or replace function public.protect_subscription_fields()',
+      'creación de protect_subscription_fields'
+    );
+    const posRetira = mustFind(
+      CONSOLIDATE,
+      'drop trigger if exists trg_profiles_entitlement_guard',
+      'retirada de trg_profiles_entitlement_guard'
+    );
+    expect(posExtiende).toBeLessThan(posRetira);
+  });
+
+  it('no amplía protect_subscription_fields_trigger a INSERT (fuera de alcance, sin evidencia de vector)', () => {
+    expect(CONSOLIDATE).toContain('before update on public.profiles');
+    expect(CONSOLIDATE).not.toContain('before insert or update on public.profiles');
+    expect(CONSOLIDATE).not.toContain('before insert on public.profiles');
+  });
+
+  it('no toca los privilegios por columna (capa 1): ni un GRANT ni un REVOKE', () => {
+    const sinComentarios = CONSOLIDATE.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toMatch(/\bgrant\b/i);
+    expect(sinComentarios).not.toMatch(/\brevoke\b/i);
+  });
+
+  it('no borra filas: ningún DELETE ni TRUNCATE', () => {
+    const sinComentarios = CONSOLIDATE.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toMatch(/\bdelete\s+from\b/i);
+    expect(sinComentarios).not.toMatch(/\btruncate\b/i);
+  });
+
+  it('deja documentado en el propio esquema qué protege cada columna', () => {
+    expect(CONSOLIDATE).toContain('comment on column public.profiles.subscription_tier');
+    expect(CONSOLIDATE).toContain('comment on column public.profiles.subscription_expires_at');
+    expect(CONSOLIDATE).toContain('comment on column public.profiles.stripe_customer_id');
+  });
+});
+
+describe('20260901000002_rollback_consolidation.sql', () => {
+  it('es transaccional: exactamente un begin y un commit, nunca un rollback', () => {
+    expect(count(ROLLBACK, /^begin;/gim)).toBe(1);
+    expect(count(ROLLBACK, /^commit;/gim)).toBe(1);
+    expect(count(ROLLBACK, /^rollback;/gim)).toBe(0);
+  });
+
+  it('restaura protect_subscription_fields a su forma original (SIN stripe_customer_id)', () => {
+    expect(ROLLBACK).toContain('NEW.subscription_tier = OLD.subscription_tier');
+    expect(ROLLBACK).toContain('NEW.subscription_expires_at = OLD.subscription_expires_at');
+    // La línea que sí extendía la función no debe reaparecer: si aparece,
+    // este fichero ha dejado de ser una reversión fiel.
+    expect(ROLLBACK).not.toContain('NEW.stripe_customer_id = OLD.stripe_customer_id');
+  });
+
+  it('recrea el mecanismo retirado por la consolidación', () => {
+    expect(ROLLBACK).toContain('create or replace function public.enforce_profile_entitlement_guard');
+    expect(ROLLBACK).toContain('create trigger trg_profiles_entitlement_guard');
+    expect(ROLLBACK).toContain('before insert or update on public.profiles');
+  });
+
+  it('tampoco toca los privilegios por columna', () => {
+    const sinComentarios = ROLLBACK.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toMatch(/\bgrant\b/i);
+    expect(sinComentarios).not.toMatch(/\brevoke\b/i);
+  });
+});
+
+describe('diagnose-insert-policy.sql', () => {
+  it('es íntegramente de sólo lectura: toda sentencia es un SELECT', () => {
+    const noSelect = allStatementsAreSelect(DIAGNOSE_INSERT);
+    expect(noSelect).toEqual([]);
+  });
+
+  it('responde a las 7 preguntas de la investigación de INSERT', () => {
+    // I1 RLS habilitada · I2 policies INSERT/ALL · I3 privilegio de tabla ·
+    // I4 trigger sobre auth.users · I5 su código · I6 otras funciones SECURITY DEFINER
+    expect(DIAGNOSE_INSERT).toContain('relrowsecurity');
+    expect(DIAGNOSE_INSERT).toContain("polcmd in ('a', '*')");
+    expect(DIAGNOSE_INSERT).toContain("privilege_type = 'INSERT'");
+    expect(DIAGNOSE_INSERT).toContain("nspname = 'auth'");
+    expect(DIAGNOSE_INSERT).toContain('pg_get_functiondef');
+    expect(DIAGNOSE_INSERT).toContain('security_definer');
+  });
+
+  it('regresión: no vuelve el patrón que causó ERROR 42809 "array_agg is an aggregate function"', () => {
+    // string_agg(...) agregando sobre unnest(polroles) dentro de una
+    // subconsulta escalar correlacionada falló contra el proyecto real. La
+    // consulta I2 debe seguir agregando sobre una tabla real (pg_roles
+    // filtrada con `= any(...)`), nunca sobre `unnest(polroles)`.
+    //
+    // Se comprueba sobre el SQL sin comentarios: el comentario que explica
+    // este mismo arreglo cita a propósito el código roto como ejemplo, y
+    // buscarlo sobre el texto crudo del fichero encontraría esa cita, no SQL
+    // ejecutable.
+    const sinComentarios = DIAGNOSE_INSERT.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toContain('unnest(polroles)');
+    expect(sinComentarios).not.toMatch(/\barray_agg\s*\(/);
+    expect(sinComentarios).toContain('from pg_roles pr');
+    expect(sinComentarios).toContain('pr.oid = any(pol.polroles)');
+  });
+});
+
+describe('20260901000003_close_insert_vector.sql', () => {
+  it('es transaccional: exactamente un begin y un commit, nunca un rollback', () => {
+    expect(count(CLOSE_INSERT, /^begin;/gim)).toBe(1);
+    expect(count(CLOSE_INSERT, /^commit;/gim)).toBe(1);
+    expect(count(CLOSE_INSERT, /^rollback;/gim)).toBe(0);
+  });
+
+  it('revoca INSERT a anon y authenticated', () => {
+    expect(CLOSE_INSERT).toContain('revoke insert on public.profiles from anon, authenticated');
+  });
+
+  it('retira la policy que permitía el INSERT del cliente', () => {
+    expect(CLOSE_INSERT).toContain('drop policy if exists "Users can insert own profile"');
+  });
+
+  it('no ejecuta ninguna sentencia DDL contra UPDATE, RLS, handle_new_user ni service_role', () => {
+    // El `comment on table` sí NOMBRA handle_new_user y service_role como
+    // documentación (es correcto, no algo que evitar); lo que no debe
+    // aparecer es una sentencia que los TOQUE.
+    const sinComentarios = CLOSE_INSERT.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toMatch(/\bgrant\s+update\b/i);
+    expect(sinComentarios).not.toMatch(/\brevoke\s+update\b/i);
+    expect(sinComentarios).not.toMatch(/\balter\s+function\s+.*handle_new_user/i);
+    expect(sinComentarios).not.toMatch(/\bdrop\s+function\s+.*handle_new_user/i);
+    expect(sinComentarios).not.toMatch(/\bcreate\s+or\s+replace\s+function\s+.*handle_new_user/i);
+    expect(sinComentarios).not.toMatch(/\bgrant\b.*\bservice_role\b/i);
+    expect(sinComentarios).not.toMatch(/\brevoke\b.*\bservice_role\b/i);
+    expect(sinComentarios).not.toMatch(/\benable\s+row\s+level\s+security\b/i);
+    expect(sinComentarios).not.toMatch(/\bdisable\s+row\s+level\s+security\b/i);
+  });
+
+  it('no borra filas: ningún DELETE ni TRUNCATE', () => {
+    const sinComentarios = CLOSE_INSERT.split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    expect(sinComentarios).not.toMatch(/\bdelete\s+from\b/i);
+    expect(sinComentarios).not.toMatch(/\btruncate\b/i);
+  });
+});
+
+describe('20260901000004_rollback_close_insert_vector.sql', () => {
+  it('es transaccional: exactamente un begin y un commit, nunca un rollback', () => {
+    expect(count(ROLLBACK_INSERT, /^begin;/gim)).toBe(1);
+    expect(count(ROLLBACK_INSERT, /^commit;/gim)).toBe(1);
+    expect(count(ROLLBACK_INSERT, /^rollback;/gim)).toBe(0);
+  });
+
+  it('recrea la policy con el with_check exacto capturado en el diagnóstico', () => {
+    expect(ROLLBACK_INSERT).toContain('create policy "Users can insert own profile"');
+    expect(ROLLBACK_INSERT).toContain('with check (auth.uid() = id)');
+  });
+
+  it('devuelve el privilegio de tabla a ambos roles', () => {
+    expect(ROLLBACK_INSERT).toContain('grant insert on public.profiles to anon, authenticated');
+  });
+});
+
+describe('verify-subscription-guard.sql · cobertura de INSERT (escenarios 8-9, A6-A10)', () => {
+  it('el título de la Parte B refleja las 9 filas, no las 7 de antes de esta ronda', () => {
+    expect(VERIFY).toContain('Devuelve una tabla de 9 filas');
+    expect(VERIFY).not.toContain('Devuelve una tabla de 7 filas');
+  });
+
+  it('el escenario 8 intenta un INSERT directo y exige 42501, no cualquier error', () => {
+    expect(VERIFY).toContain('insert into public.profiles (id, subscription_tier, subscription_expires_at)');
+    expect(VERIFY).toContain('when insufficient_privilege then');
+  });
+
+  it('el escenario 9 comprueba que no queda ninguna policy de INSERT/ALL', () => {
+    expect(VERIFY).toContain('no queda ninguna policy de INSERT/ALL apuntando a profiles');
+  });
+
+  it('A10 comprueba la premisa de que postgres puede seguir insertando (superusuario o propietario)', () => {
+    expect(VERIFY).toContain('es_superusuario');
+    expect(VERIFY).toContain('es_propietario_profiles');
+  });
+
+  it('el escenario 8 usa un id nuevo (gen_random_uuid), no el perfil de pruebas', () => {
+    expect(VERIFY).toContain('v_new_id := gen_random_uuid()');
+  });
+});

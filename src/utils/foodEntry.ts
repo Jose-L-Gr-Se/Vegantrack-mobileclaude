@@ -5,6 +5,7 @@
  */
 import type { FoodLogEntry, FoodPer100g, MealType } from '@/types';
 import { uuidv4 } from '@/utils/uuid';
+import { validateProductNutrition } from '@/utils/productNutritionValidation';
 
 function round(value: number, decimals: number): number {
   const f = Math.pow(10, decimals);
@@ -23,19 +24,38 @@ export function buildEntry(
   grams: number,
   mealType: MealType,
   date: string,
-  userId: string
+  userId: string,
+  // Opcional: reutiliza un id existente en vez de generar uno nuevo — lo usa
+  // la edición de entradas (ProductDetailSheet.commit()) para actualizar in
+  // situ en vez de borrar y volver a crear (auditoría del Diario, Bug A).
+  // Todas las demás llamadas (alta nueva, recetas, AddFoodModal) lo omiten
+  // y siguen generando un uuidv4() nuevo exactamente como siempre.
+  existingId?: string
 ): NewFoodLogEntry {
   const ratio = grams / 100;
 
-  const b12 = scaleOrNull(food.vitamin_b12_known ? food.vitamin_b12_mcg : null, ratio, 2);
-  const iron = scaleOrNull(food.iron_known ? food.iron_mg : null, ratio, 1);
-  const zinc = scaleOrNull(food.zinc_known ? food.zinc_mg : null, ratio, 1);
-  const calcium = scaleOrNull(food.calcium_known ? food.calcium_mg : null, ratio, 1);
-  const omega3 = scaleOrNull(food.omega3_known ? food.omega3_g : null, ratio, 3);
-  const vitD = scaleOrNull(food.vitamin_d_known ? food.vitamin_d_mcg : null, ratio, 2);
+  // Un micronutriente 'impossible' (p. ej. el caso de la auditoría: hierro
+  // introducido en la unidad equivocada y multiplicado ×1000) no debe
+  // contaminar food_log/summarizeEntries/VeganScore/tendencias — pero
+  // tampoco debe convertirse en 0 en silencio. Se trata exactamente igual
+  // que un dato que OFF nunca reportó: null + *_known=false, el mismo
+  // mecanismo que ya existe y que el resto del motor nutricional ya sabe
+  // interpretar como "no cuenta para la cobertura", sin tocar
+  // summarizeEntries/VeganScore/tendencias. Las macros no tienen hoy una
+  // representación de "desconocido" en food_log (son NOT NULL) — quedan
+  // fuera de este guard, ver nota en productNutritionValidation.ts.
+  const quality = validateProductNutrition(food);
+  const isUsable = (field: keyof typeof quality.fields) => quality.fields[field].status !== 'impossible';
+
+  const b12 = scaleOrNull(food.vitamin_b12_known && isUsable('vitamin_b12_mcg') ? food.vitamin_b12_mcg : null, ratio, 2);
+  const iron = scaleOrNull(food.iron_known && isUsable('iron_mg') ? food.iron_mg : null, ratio, 1);
+  const zinc = scaleOrNull(food.zinc_known && isUsable('zinc_mg') ? food.zinc_mg : null, ratio, 1);
+  const calcium = scaleOrNull(food.calcium_known && isUsable('calcium_mg') ? food.calcium_mg : null, ratio, 1);
+  const omega3 = scaleOrNull(food.omega3_known && isUsable('omega3_g') ? food.omega3_g : null, ratio, 3);
+  const vitD = scaleOrNull(food.vitamin_d_known && isUsable('vitamin_d_mcg') ? food.vitamin_d_mcg : null, ratio, 2);
 
   return {
-    id: uuidv4(),
+    id: existingId ?? uuidv4(),
     user_id: userId,
     date,
     meal_type: mealType,
@@ -68,4 +88,26 @@ export function buildEntry(
     is_vegan: food.is_vegan,
     image_url: food.image_url,
   };
+}
+
+/**
+ * Comida por defecto según la hora del día — sólo para preseleccionar el
+ * selector de comida en el resultado de foto-IA (auditoría IA→resultado→
+ * guardar): antes no había ningún valor por defecto y el usuario tenía que
+ * elegir uno obligatoriamente antes de poder guardar. Es sólo un punto de
+ * partida editable, nunca un valor fijo — el usuario puede cambiarlo con el
+ * mismo selector de siempre.
+ *
+ * Franjas horarias (hora local, 0-23), sin solapamiento ni huecos:
+ *   00-04  snack      (madrugada)
+ *   05-10  breakfast
+ *   11-16  lunch
+ *   17-22  dinner
+ *   23     snack
+ */
+export function mealTypeForHour(hour: number): MealType {
+  if (hour >= 5 && hour < 11) return 'breakfast';
+  if (hour >= 11 && hour < 17) return 'lunch';
+  if (hour >= 17 && hour < 23) return 'dinner';
+  return 'snack';
 }

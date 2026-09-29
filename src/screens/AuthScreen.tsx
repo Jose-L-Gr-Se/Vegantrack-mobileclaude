@@ -21,7 +21,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 const FEATURES = [
   { icon: '📱', label: 'Offline-first' },
-  { icon: '🌱', label: '100% vegano' },
+  { icon: '🌱', label: '100% vegetal' },
   { icon: '🔒', label: 'Privado' },
 ];
 

@@ -9,6 +9,8 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, Input, SectionHeader } from '@/components/ui';
 import { MEAL_LABELS } from '@/components/AddFoodModal';
+import { ProModal } from '@/components/ProModal';
+import { track } from '@/lib/analytics';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { computeRecipeNutrients, useRecipeStore } from '@/stores/recipeStore';
@@ -29,9 +31,18 @@ export function RecipesScreen() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showPro, setShowPro] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [servings, setServings] = useState('2');
+  // Auditoría de límites Free/Pro: `create()` no tenía ningún guard contra
+  // doble tap. Con el límite free comprobado sólo al ENTRAR a la función
+  // (`store.recipes.length >= FREE_RECIPE_LIMIT`), dos toques rápidos en
+  // "Crear" con exactamente 2 recetas (una por debajo del límite) veían
+  // ambos `length === 2` y creaban las dos — dejando 4 recetas para una
+  // cuenta free con límite 3. Mismo patrón que ya usa el resto de flujos de
+  // guardado de la app (`ProductDetailSheet.commit()`, `SupplementEditor`).
+  const [creating, setCreating] = useState(false);
 
   const selected = store.recipes.find((r) => r.id === selectedId) ?? null;
 
@@ -43,16 +54,23 @@ export function RecipesScreen() {
   );
 
   const create = async () => {
-    if (!user || !name.trim()) return;
+    if (!user || !name.trim() || creating) return;
     if (!isPro && store.recipes.length >= FREE_RECIPE_LIMIT) {
+      track('paywall_viewed', { source: 'recipes_limit' });
       Alert.alert(
         'Límite alcanzado',
-        `El plan free permite ${FREE_RECIPE_LIMIT} recetas. Hazte Pro para recetas ilimitadas.`
+        `El plan free permite ${FREE_RECIPE_LIMIT} recetas. Hazte Pro para recetas ilimitadas.`,
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          { text: 'Ver Pro', onPress: () => setShowPro(true) },
+        ]
       );
       return;
     }
+    setCreating(true);
     const n = Math.max(1, parseFloat(servings.replace(',', '.')) || 1);
     const { error } = await store.createRecipe(user.id, name.trim(), description.trim() || null, n);
+    setCreating(false);
     if (error) Alert.alert('Error', error);
     else {
       setShowCreate(false);
@@ -168,20 +186,26 @@ export function RecipesScreen() {
               onChangeText={setServings}
               keyboardType="numeric"
             />
-            <Button title="Crear" onPress={create} />
+            <Button title="Crear" onPress={create} loading={creating} />
             <Button
               title="Cancelar"
               variant="secondary"
               onPress={() => setShowCreate(false)}
+              disabled={creating}
             />
           </Card>
         </View>
       </Modal>
+
+      {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
     </ScrollView>
   );
 }
 
-function RecipeDetail({
+// Exportado sólo para tests (mismo criterio que `CustomFoodModal` en
+// `ProfileScreen.tsx`): permite montar la vista de detalle directamente, sin
+// tener que navegar por la lista de `RecipesScreen` para llegar a ella.
+export function RecipeDetail({
   recipe,
   onBack,
   topInset,
@@ -205,6 +229,18 @@ function RecipeDetail({
   const [editName, setEditName] = useState(recipe.name);
   const [editDescription, setEditDescription] = useState(recipe.description ?? '');
   const [editServings, setEditServings] = useState(String(recipe.total_servings));
+  // Auditoría del flujo de recetas: ni "Añadir a la receta" ni "Añadir al
+  // diario" tenían protección contra doble tap (a diferencia de `create()`
+  // más arriba, ya corregido en una ronda anterior para el límite free). Dos
+  // toques rápidos en "Añadir a la receta" insertaban el MISMO ingrediente
+  // dos veces (duplicando su aporte en `computeRecipeNutrients` para
+  // siempre, hasta quitarlo a mano); dos toques en "Añadir al diario"
+  // llamaban a `logRecipe()` dos veces, cada una generando su propio id vía
+  // `buildEntry()` — dos entradas distintas en el Diario por una sola
+  // acción, doblando las calorías de esa comida. Mismo patrón exacto que
+  // `creating` arriba.
+  const [addingIngredient, setAddingIngredient] = useState(false);
+  const [loggingRecipe, setLoggingRecipe] = useState(false);
 
   const totals = computeRecipeNutrients(recipe);
   const perServing = recipe.total_servings > 0 ? totals.calories / recipe.total_servings : 0;
@@ -221,10 +257,12 @@ function RecipeDetail({
   };
 
   const addIngredient = async () => {
-    if (!pendingFood) return;
+    if (!pendingFood || addingIngredient) return;
     const g = parseFloat(grams.replace(',', '.'));
     if (!Number.isFinite(g) || g <= 0) return;
+    setAddingIngredient(true);
     const { error } = await store.addIngredient(recipe.id, pendingFood, g);
+    setAddingIngredient(false);
     if (error) Alert.alert('Error', error);
     setPendingFood(null);
     setGrams('100');
@@ -233,10 +271,12 @@ function RecipeDetail({
   };
 
   const logToDiary = async () => {
-    if (!user) return;
+    if (!user || loggingRecipe) return;
     const n = parseFloat(logServings.replace(',', '.'));
     if (!Number.isFinite(n) || n <= 0) return;
+    setLoggingRecipe(true);
     const { error } = await store.logRecipe(user.id, recipe, n, logMeal, todayISO());
+    setLoggingRecipe(false);
     if (error) Alert.alert('Error', error);
     else {
       setShowLog(false);
@@ -528,7 +568,7 @@ function RecipeDetail({
               onChangeText={setGrams}
               keyboardType="numeric"
             />
-            <Button title="Añadir a la receta" onPress={addIngredient} />
+            <Button title="Añadir a la receta" onPress={addIngredient} loading={addingIngredient} />
           </View>
         )}
       </Card>
@@ -601,7 +641,7 @@ function RecipeDetail({
               onChangeText={setLogServings}
               keyboardType="numeric"
             />
-            <Button title="Añadir al diario" onPress={logToDiary} />
+            <Button title="Añadir al diario" onPress={logToDiary} loading={loggingRecipe} />
             <Button
               title="Cancelar"
               variant="secondary"

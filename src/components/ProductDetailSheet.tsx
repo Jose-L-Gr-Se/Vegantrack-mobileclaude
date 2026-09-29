@@ -15,15 +15,23 @@
  * típico de recientes y entradas guardadas— los recupera de OpenFoodFacts
  * (caché local, instantáneo) y los fusiona. Así la ficha es consistente.
  */
-import React, { useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Button, Pill, ProgressRing } from '@/components/ui';
+import { Button, Input, Pill, ProgressRing } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
 import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBadges';
 import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
-import { buildEntry } from '@/utils/foodEntry';
+import { buildEntry, mealTypeForHour } from '@/utils/foodEntry';
+import { track } from '@/lib/analytics';
+import {
+  FIELDS_WITHOUT_UNKNOWN_REPRESENTATION,
+  NUTRITION_QUALITY_IMPOSSIBLE_TEXT,
+  NUTRITION_QUALITY_SUSPICIOUS_TEXT,
+  isSafeToPersist,
+  validateProductNutrition,
+} from '@/utils/productNutritionValidation';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useCustomFoodStore } from '@/stores/customFoodStore';
@@ -32,7 +40,7 @@ import {
   getProductByBarcode,
   getVeganConfidence,
 } from '@/lib/openfoodfacts';
-import { analysisToFood, correctMealAnalysis, type MealAnalysis } from '@/lib/mealVision';
+import { analysisToFood, correctMealAnalysis, manualVeganConfidence, type MealAnalysis } from '@/lib/mealVision';
 import { MEAL_ICONS, MEAL_LABELS } from '@/components/AddFoodModal';
 import type {
   FoodLogEntry,
@@ -44,6 +52,23 @@ import type {
 
 const SERVING_PRESETS = [50, 100, 150, 200];
 const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+type MacroFieldName = (typeof FIELDS_WITHOUT_UNKNOWN_REPRESENTATION)[number];
+
+/** Sólo para foto-IA: cuando una macro/energía/sodio estimada por la IA es
+ *  'impossible', se ofrece edición manual de ese campo concreto — nunca se
+ *  corrige sola. Misma lista de campos que el guard de guardado, importada,
+ *  no reinventada. */
+const MACRO_FIELD_LABELS: Record<MacroFieldName, string> = {
+  calories: 'Calorías (kcal) por 100 g',
+  protein_g: 'Proteína (g) por 100 g',
+  carbs_g: 'Carbohidratos (g) por 100 g',
+  fat_g: 'Grasa (g) por 100 g',
+  fiber_g: 'Fibra (g) por 100 g',
+  sugar_g: 'Azúcares (g) por 100 g',
+  saturated_fat_g: 'Grasa saturada (g) por 100 g',
+  sodium_mg: 'Sodio (mg) por 100 g',
+};
 
 /** Convierte una entry del diario a su forma per-100g para reusar la ficha. */
 function entryToPer100g(e: FoodLogEntry): FoodPer100g {
@@ -108,14 +133,37 @@ function MacroRingChip({
   );
 }
 
-function MicroRow({ label, value, unit }: { label: string; value: number | null; unit: string }) {
+/**
+ * Auditoría de cantidades/escalado nutricional: el número de decimales se
+ * decidía por la MAGNITUD del valor (`<1`→2 dec., `<10`→1 dec., `≥10`→0 —
+ * redondeado a entero), no por la precisión con la que `buildEntry()` lo va
+ * a persistir en `food_log` (fibra/azúcares/grasa saturada/hierro/zinc/
+ * calcio: siempre 1 decimal; B12/vitamina D: siempre 2 — sea cual sea la
+ * magnitud). Con una ración que escalara cualquiera de estos por encima de
+ * 10, la ficha lo mostraba redondeado a entero (p. ej. "25 g" de azúcares)
+ * mientras food_log guardaba el valor con su decimal real (25,4 g) — la
+ * ficha y lo guardado dejaban de coincidir. Ahora cada llamada indica los
+ * decimales reales de ESE campo (ver los `decimals=` en cada `<MicroRow>` de
+ * abajo), y aquí sólo se formatea con ellos, sin volver a decidir nada por
+ * magnitud. */
+function MicroRow({
+  label,
+  value,
+  unit,
+  decimals,
+}: {
+  label: string;
+  value: number | null;
+  unit: string;
+  decimals: number;
+}) {
   const t = useTheme();
   if (value === null || value === undefined) return null;
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
       <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
       <Text style={{ color: t.text, fontSize: 12, fontWeight: '700' }}>
-        {value < 1 ? value.toFixed(2) : value < 10 ? value.toFixed(1) : Math.round(value)} {unit}
+        {value.toFixed(decimals)} {unit}
       </Text>
     </View>
   );
@@ -138,6 +186,7 @@ export function ProductDetailSheet({
   isPro,
   analysis,
   onCorrected,
+  onVeganCorrected,
 }: {
   food?: FoodPer100g | null;
   editEntry?: FoodLogEntry | null;
@@ -161,10 +210,12 @@ export function ProductDetailSheet({
   isPro?: boolean;
   analysis?: MealAnalysis | null;
   onCorrected?: (analysis: MealAnalysis) => void;
+  /** Corrección manual (gratis) de si el plato es vegano — auditoría del paywall de foto-IA, P1. */
+  onVeganCorrected?: (isVegan: boolean) => void;
 }) {
   const t = useTheme();
   const user = useAuthStore((s) => s.user);
-  const { addEntry, deleteEntry, selectedDate } = useDiaryStore();
+  const { addEntry, selectedDate } = useDiaryStore();
   const createCustomFood = useCustomFoodStore((s) => s.createCustomFood);
 
   const isEdit = !!editEntry;
@@ -172,25 +223,46 @@ export function ProductDetailSheet({
     () => (editEntry ? entryToPer100g(editEntry) : foodProp ?? null),
     [editEntry, foodProp]
   );
+  // Sólo activo cuando el alimento viene de la IA por foto (movido aquí,
+  // antes de `meal`, porque su preselección por hora lo necesita).
+  const isAiPhoto = baseFood?.source === 'ai_photo' && !isEdit;
 
   const [food, setFood] = useState<FoodPer100g | null>(baseFood);
   const [offProduct, setOffProduct] = useState<OpenFoodFactsProduct | null>(offProductProp ?? null);
   const [confidence, setConfidence] = useState<VeganConfidence | undefined>(veganConfidence);
 
   const [grams, setGrams] = useState(String(initialGrams ?? editEntry?.serving_size_g ?? 100));
+  // Resultado de foto-IA: preselecciona una comida por hora (editable, nunca
+  // bloqueada — a diferencia de `lockedMealType`, que oculta el selector
+  // entero) para que guardar no exija siempre un toque extra obligatorio
+  // (auditoría IA→resultado→guardar). Otros flujos (búsqueda, código de
+  // barras, edición) no se ven afectados: siguen arrancando en `null` salvo
+  // que ya vinieran con `lockedMealType`/`editEntry.meal_type`.
   const [meal, setMeal] = useState<MealType | null>(
-    lockedMealType ?? editEntry?.meal_type ?? null
+    lockedMealType ?? editEntry?.meal_type ?? (isAiPhoto ? mealTypeForHour(new Date().getHours()) : null)
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [imageBroken, setImageBroken] = useState(false);
   const [infoKind, setInfoKind] = useState<ScoreKind | null>(null);
 
+  // Ediciones manuales de macros — sólo relevantes cuando la estimación de
+  // foto-IA resulta 'impossible' (ver más abajo). Se guarda el texto tal
+  // cual lo escribe el usuario (nunca el número ya parseado) para no pelear
+  // con decimales a medio escribir, igual que ya hace `grams` en esta misma
+  // pantalla. Nunca corrige nada sola: sólo aplica lo que el usuario tecleó.
+  const [macroEdits, setMacroEdits] = useState<Partial<Record<MacroFieldName, string>>>({});
+
+  // Corrección manual (gratis) de si el plato es vegano — auditoría del
+  // paywall de foto-IA, cierre del P1: `is_vegan`/`vegan_confidence` no
+  // tenían ninguna vía de corrección sin Pro, a diferencia de las macros.
+  // Mismo patrón que `macroEdits`: null = sin corrección, no se toca `food`.
+  const [veganOverride, setVeganOverride] = useState<boolean | null>(null);
+
   // — Edición del nombre y opción "guardar como habitual" —
-  // Sólo activo cuando el alimento viene de la IA por foto: así el usuario
+  // (`isAiPhoto` ya se calculó más arriba, junto a `baseFood`) así el usuario
   // puede corregir un fallo de etiquetado ("carne" → "seitán con verduras") y
   // persistirlo para no volver a gastar tokens la próxima vez.
-  const isAiPhoto = baseFood?.source === 'ai_photo' && !isEdit;
   const [editedName, setEditedName] = useState(baseFood?.food_name ?? '');
   const [saveAsCustom, setSaveAsCustom] = useState(false);
 
@@ -219,11 +291,70 @@ export function ProductDetailSheet({
     setFood((prev) => ({ ...analysisToFood(res.analysis), ...(prev?.image_url ? { image_url: prev.image_url } : {}) }));
     setEditedName(res.analysis.food_name);
     setConfidence(res.analysis.vegan_confidence);
+    setMacroEdits({}); // nueva estimación de la IA: las ediciones de la anterior ya no aplican
+    // El recálculo trae su propio veredicto de veganismo — sustituye a
+    // cualquier corrección manual previa, no se acumulan (auditoría, test 4).
+    setVeganOverride(null);
+  };
+
+  /** Corrección manual, gratis, de si el plato es vegano — nunca llama a Gemini. */
+  const handleSetVegan = (isVegan: boolean) => {
+    setVeganOverride(isVegan);
+    setConfidence(manualVeganConfidence(isVegan));
+    onVeganCorrected?.(isVegan);
+  };
+
+  // Instrumentación del resultado de foto-IA (auditoría IA→resultado→
+  // guardar): "visto" una vez por resultado mostrado, y "descartado" si el
+  // sheet se cierra sin haber guardado — sin importar cuántos de los 4
+  // gestos de cierre del BottomSheet (tap fuera/handle/swipe/atrás) lo
+  // disparen, porque todos acaban desmontando este componente una única vez,
+  // y el cleanup de un efecto sólo corre una vez por desmontaje. `savedRef`
+  // (no state: no debe causar un re-render ni resetearse entre renders) es
+  // lo único que decide si ese cierre cuenta como guardado o como
+  // descartado. Nunca incluye nombre/macros/imagen/barcode — sólo mide que
+  // el paso ocurrió.
+  const savedRef = useRef(false);
+  useEffect(() => {
+    if (!isAiPhoto) return;
+    track('photo_result_viewed');
+    return () => {
+      if (!savedRef.current) track('photo_result_discarded');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auditoría del flujo de foto-IA: cerrar este resultado sin guardar tira
+  // el análisis entero — para Free (1 a la semana) eso significa repetir la
+  // única foto de la semana, y a cualquiera le cuesta una llamada a Gemini
+  // ya gastada. Un toque accidental en el fondo, en el handle, o el propio
+  // gesto de deslizar hacia abajo (los 4 gestos de cierre del BottomSheet)
+  // lo perdían sin ningún aviso. Sólo se pregunta en este caso concreto —
+  // foto-IA con un análisis todavía sin guardar; el resto de la ficha
+  // (búsqueda, código de barras, edición) sigue cerrándose igual que
+  // siempre, sin ningún paso de más. Cuando SÍ se guarda, `commit()` marca
+  // `savedRef` antes de llamar a `onClose()` directamente (sin pasar por
+  // aquí), así que un guardado con éxito nunca dispara esta confirmación.
+  const handleRequestClose = () => {
+    if (isAiPhoto && !savedRef.current) {
+      Alert.alert(
+        '¿Descartar este análisis?',
+        'Si sales ahora perderás este resultado y tendrás que volver a analizar la foto.',
+        [
+          { text: 'Seguir aquí', style: 'cancel' },
+          { text: 'Descartar', style: 'destructive', onPress: onClose },
+        ]
+      );
+      return;
+    }
+    onClose();
   };
 
   useEffect(() => {
     setFood(baseFood);
     setEditedName(baseFood?.food_name ?? '');
+    setMacroEdits({});
+    setVeganOverride(null);
     if (!baseFood) return;
     const needsRich =
       !baseFood.nutriscore_grade && !baseFood.ecoscore_grade && !baseFood.nova_group && !baseFood.ingredients_text;
@@ -255,47 +386,104 @@ export function ProductDetailSheet({
 
   if (!food) return null;
 
+  // Aplica las ediciones manuales de macros (sólo relevantes en foto-IA,
+  // ver `macroEdits` más arriba) sobre `food` SIN mutarlo ni tocar
+  // normalizeProduct/FoodPer100g — `food` conserva siempre la estimación
+  // original de la IA; `effectiveFood` es lo que se valida y, si procede,
+  // lo que se guarda. Se ignora en silencio cualquier texto no parseable
+  // (p. ej. a medio escribir) en vez de "corregirlo": simplemente no se
+  // aplica todavía, se sigue mostrando el valor anterior.
+  const effectiveFood: FoodPer100g = { ...food };
+  for (const field of FIELDS_WITHOUT_UNKNOWN_REPRESENTATION) {
+    const raw = macroEdits[field];
+    if (raw === undefined) continue;
+    const parsed = parseFloat(raw.replace(',', '.'));
+    if (Number.isFinite(parsed)) effectiveFood[field] = parsed;
+  }
+  // Corrección manual de veganismo (ver `veganOverride` más arriba): mismo
+  // criterio que las macros — sólo se aplica si el usuario la ha tocado.
+  if (veganOverride !== null) effectiveFood.is_vegan = veganOverride;
+
+  // Cálculo puro y barato (comparaciones numéricas, sin red ni estado) — no
+  // necesita memoización; se recalcula con cada render igual que `cal`/`prot`
+  // más abajo, que ya siguen el mismo patrón.
+  const nutritionQuality = validateProductNutrition(effectiveFood);
+  const impossibleMacroFields = isAiPhoto
+    ? FIELDS_WITHOUT_UNKNOWN_REPRESENTATION.filter((f) => nutritionQuality.fields[f].status === 'impossible')
+    : [];
+
   const g = parseFloat(grams.replace(',', '.')) || 0;
   const scale = g / 100;
 
-  const cal = Math.round(food.calories * scale);
-  const prot = Math.round(food.protein_g * scale * 10) / 10;
-  const carb = Math.round(food.carbs_g * scale * 10) / 10;
-  const fat = Math.round(food.fat_g * scale * 10) / 10;
+  const cal = Math.round(effectiveFood.calories * scale);
+  const prot = Math.round(effectiveFood.protein_g * scale * 10) / 10;
+  const carb = Math.round(effectiveFood.carbs_g * scale * 10) / 10;
+  const fat = Math.round(effectiveFood.fat_g * scale * 10) / 10;
 
   const calTarget = profile?.calorie_target ?? 0;
   const protTarget = profile?.protein_target_g ?? 0;
   const carbTarget = profile?.carbs_target_g ?? 0;
   const fatTarget = profile?.fat_target_g ?? 0;
 
-  const sugars = Math.round(food.sugar_g * scale * 10) / 10;
-  const satFat = Math.round(food.saturated_fat_g * scale * 10) / 10;
-  const fiber = Math.round(food.fiber_g * scale * 10) / 10;
+  const sugars = Math.round(effectiveFood.sugar_g * scale * 10) / 10;
+  const satFat = Math.round(effectiveFood.saturated_fat_g * scale * 10) / 10;
+  const fiber = Math.round(effectiveFood.fiber_g * scale * 10) / 10;
   const salt = food.salt_g != null ? Math.round(food.salt_g * scale * 100) / 100 : null;
-  const sodium = Math.round(food.sodium_mg * scale);
+  const sodium = Math.round(effectiveFood.sodium_mg * scale);
 
   const commit = async () => {
     const parsed = parseFloat(grams.replace(',', '.'));
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setError('Introduce una cantidad válida en gramos');
+      if (isAiPhoto) track('photo_entry_save_failed', { reason: 'invalid_grams' });
       return;
     }
     const target = lockedMealType ?? meal;
     if (!target) {
       setError('Elige a qué comida añadirlo (desayuno, comida, cena o snack).');
+      if (isAiPhoto) track('photo_entry_save_failed', { reason: 'meal_not_selected' });
       return;
     }
     if (!user) return;
 
-    // En modo foto-IA, sustituimos el nombre por el corregido por el usuario.
-    const finalName = isAiPhoto ? editedName.trim() || food.food_name : food.food_name;
-    const finalFood: FoodPer100g = { ...food, food_name: finalName };
+    // En modo foto-IA, sustituimos el nombre por el corregido por el usuario,
+    // y usamos effectiveFood (con las correcciones manuales de macros ya
+    // aplicadas, si las hubo) en vez de food — es lo único que puede volver
+    // 'impossible' un dato en 'valid'/'suspicious': nunca se corrige solo.
+    const finalName = isAiPhoto ? editedName.trim() || effectiveFood.food_name : effectiveFood.food_name;
+    const finalFood: FoodPer100g = { ...effectiveFood, food_name: finalName };
+
+    // P0 plausibilidad: un producto con una MACRO (o energía/sodio)
+    // 'impossible' no debe poder convertirse en entry — a diferencia de los
+    // 6 micronutrientes (que buildEntry() ya excluye campo a campo,
+    // persistiéndolos como "desconocido" sin tocar el resto), las macros
+    // son NOT NULL en food_log hoy: no hay forma de "guardar sin ese
+    // campo", así que aquí, antes de llegar a buildEntry()/addEntry(), se
+    // bloquea el guardado entero. Un micronutriente impossible por sí solo
+    // NO bloquea (isSafeToPersist lo distingue) — sigue el mismo camino de
+    // siempre. 'suspicious' nunca bloquea, en ningún campo (el banner de
+    // arriba ya avisa).
+    if (!isSafeToPersist(nutritionQuality)) {
+      setError(
+        isAiPhoto
+          ? 'Corrige los valores marcados arriba antes de guardar.'
+          : 'No se puede guardar: algunos datos nutricionales de este producto parecen incorrectos.'
+      );
+      if (isAiPhoto) track('photo_entry_save_failed', { reason: 'nutrition_impossible' });
+      return;
+    }
 
     setBusy(true);
 
     if (isEdit && editEntry) {
-      await deleteEntry(editEntry.id);
-      const next = buildEntry(finalFood, parsed, target, editEntry.date, user.id);
+      // Edición atómica (auditoría del Diario, Bug A): reutiliza el MISMO
+      // id de la entry original en vez de borrarla y crear una nueva — sin
+      // esto, un fallo permanente justo entre el delete y el insert podía
+      // perder la entrada por completo (ni la vieja ni la nueva llegaban a
+      // Supabase). addEntry() ahora hace un upsert remoto por id: si el id
+      // ya existe en el servidor lo actualiza, si no (p. ej. nunca llegó a
+      // sincronizar estando offline) lo crea — un único intento, atómico.
+      const next = buildEntry(finalFood, parsed, target, editEntry.date, user.id, editEntry.id);
       const { error: err } = await addEntry(next);
       setBusy(false);
       if (err) setError(err);
@@ -332,8 +520,14 @@ export function ProductDetailSheet({
     const entry = buildEntry(finalFood, parsed, target, selectedDate, user.id);
     const { error: err } = await addEntry(entry);
     setBusy(false);
-    if (err) setError(err);
-    else {
+    if (err) {
+      setError(err);
+      if (isAiPhoto) track('photo_entry_save_failed', { reason: 'server_error' });
+    } else {
+      // Marca el resultado como guardado ANTES de cerrar: el cleanup del
+      // efecto de arriba lee `savedRef` al desmontar y no debe contar este
+      // cierre (disparado por el propio guardado) como un descarte.
+      savedRef.current = true;
       onAdded?.(`${finalName} añadido a ${MEAL_LABELS[target]}`);
       onClose();
     }
@@ -346,7 +540,7 @@ export function ProductDetailSheet({
   return (
     <BottomSheet
       visible={true}
-      onClose={onClose}
+      onClose={handleRequestClose}
       footer={
         <View style={{ gap: spacing.sm }}>
           {error ? <Text style={{ color: semantic.danger, fontSize: 13 }}>{error}</Text> : null}
@@ -449,15 +643,69 @@ export function ProductDetailSheet({
             )}
             {food.brand ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
             <View style={{ flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginTop: 4 }}>
-              {food.is_vegan ? <Pill text="Vegano ✓" color={semantic.success} /> : null}
+              {effectiveFood.is_vegan ? <Pill text="Apto para veganos" color={semantic.success} /> : null}
               {confidence === 'medium' ? (
-                <Pill text="Parece vegano" color={semantic.warning} />
+                <Pill text="Parece apto para veganos" color={semantic.warning} />
               ) : confidence === 'low' ? (
-                <Pill text="No vegano" color={semantic.danger} />
-              ) : confidence === 'unknown' && !food.is_vegan ? (
-                <Pill text="Sin datos vegano" color={t.textMuted} />
+                <Pill text="No apto para veganos" color={semantic.danger} />
+              ) : confidence === 'unknown' && !effectiveFood.is_vegan ? (
+                <Pill text="Sin datos suficientes" color={t.textMuted} />
               ) : null}
             </View>
+            {isAiPhoto ? (
+              <View style={{ gap: 2, marginTop: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' }}>
+                  <Text style={{ color: t.textSecondary, fontSize: 11, fontWeight: '700' }}>
+                    ¿Es apto para veganos?
+                  </Text>
+                  <Pressable
+                    onPress={() => handleSetVegan(true)}
+                    style={{
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: 3,
+                      borderRadius: radii.pill,
+                      borderWidth: 1.5,
+                      borderColor: effectiveFood.is_vegan ? semantic.success : t.cardBorder,
+                      backgroundColor: effectiveFood.is_vegan ? t.primarySoft : 'transparent',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '700',
+                        color: effectiveFood.is_vegan ? semantic.success : t.textSecondary,
+                      }}
+                    >
+                      Sí
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleSetVegan(false)}
+                    style={{
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: 3,
+                      borderRadius: radii.pill,
+                      borderWidth: 1.5,
+                      borderColor: !effectiveFood.is_vegan ? semantic.danger : t.cardBorder,
+                      backgroundColor: !effectiveFood.is_vegan ? t.card : 'transparent',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '700',
+                        color: !effectiveFood.is_vegan ? semantic.danger : t.textSecondary,
+                      }}
+                    >
+                      No
+                    </Text>
+                  </Pressable>
+                </View>
+                <Text style={{ color: t.textMuted, fontSize: 10 }}>
+                  Corrige aquí si crees que la IA se ha equivocado — es tu corrección, no una verificación.
+                </Text>
+              </View>
+            ) : null}
             {isAiPhoto ? (
               <Text style={{ color: t.textMuted, fontSize: 11, marginTop: 2 }}>
                 Toca para corregir el nombre si la IA se ha confundido.
@@ -512,6 +760,55 @@ export function ProductDetailSheet({
             </View>
             <Text style={{ color: t.textMuted, fontSize: 11, paddingHorizontal: 2 }}>
               Toca cualquier indicador para entender qué significa.
+            </Text>
+          </View>
+        ) : null}
+
+        {/* ── Aviso de plausibilidad nutricional (P0) ─────────────────
+            Señal mínima y honesta: nunca "0 mg de hierro" cuando el dato es
+            impossible/desconocido — sólo un aviso genérico, salvo en
+            foto-IA con una macro impossible, donde además se ofrece
+            corregirla a mano (única fuente que puede producir ese error:
+            la estimación de la IA, no un dato de terceros como OFF). Mismo
+            patrón visual que "needs_review"/"unsupported" en
+            SupplementEditor. */}
+        {impossibleMacroFields.length > 0 ? (
+          <View style={{ gap: spacing.sm }}>
+            <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+              <Ionicons name={'close-circle-outline' as never} size={15} color={semantic.danger} style={{ marginTop: 1 }} />
+              <Text style={{ color: semantic.danger, fontSize: 12, fontWeight: '600', flex: 1 }}>
+                La IA estimó algunos valores de forma poco fiable. Corrígelos para poder guardar esta comida.
+              </Text>
+            </View>
+            {impossibleMacroFields.map((fieldName) => (
+              <Input
+                key={fieldName}
+                label={MACRO_FIELD_LABELS[fieldName]}
+                keyboardType="decimal-pad"
+                value={macroEdits[fieldName] ?? String(food[fieldName])}
+                onChangeText={(text) => setMacroEdits((prev) => ({ ...prev, [fieldName]: text }))}
+              />
+            ))}
+          </View>
+        ) : nutritionQuality.overall !== 'clean' ? (
+          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+            <Ionicons
+              name={(nutritionQuality.overall === 'has_impossible' ? 'close-circle-outline' : 'alert-circle-outline') as never}
+              size={15}
+              color={nutritionQuality.overall === 'has_impossible' ? semantic.danger : semantic.warning}
+              style={{ marginTop: 1 }}
+            />
+            <Text
+              style={{
+                color: nutritionQuality.overall === 'has_impossible' ? semantic.danger : semantic.warning,
+                fontSize: 12,
+                fontWeight: '600',
+                flex: 1,
+              }}
+            >
+              {nutritionQuality.overall === 'has_impossible'
+                ? NUTRITION_QUALITY_IMPOSSIBLE_TEXT
+                : NUTRITION_QUALITY_SUSPICIOUS_TEXT}
             </Text>
           </View>
         ) : null}
@@ -692,26 +989,32 @@ export function ProductDetailSheet({
           >
             Más detalle por ración
           </Text>
-          <MicroRow label="Fibra" value={fiber} unit="g" />
-          <MicroRow label="Azúcares" value={sugars} unit="g" />
-          <MicroRow label="Grasas saturadas" value={satFat} unit="g" />
+          {/* decimals= replica exactamente la precisión con la que buildEntry()
+              persiste cada campo en food_log (ver foodEntry.ts) — nunca la
+              decide MicroRow por la magnitud del valor (esa era la causa de
+              la discrepancia ficha↔food_log que corrige esta auditoría). */}
+          <MicroRow label="Fibra" value={fiber} unit="g" decimals={1} />
+          <MicroRow label="Azúcares" value={sugars} unit="g" decimals={1} />
+          <MicroRow label="Grasas saturadas" value={satFat} unit="g" decimals={1} />
           {salt != null ? (
-            <MicroRow label="Sal" value={salt} unit="g" />
+            <MicroRow label="Sal" value={salt} unit="g" decimals={2} />
           ) : sodium > 0 ? (
-            <MicroRow label="Sodio" value={sodium} unit="mg" />
+            <MicroRow label="Sodio" value={sodium} unit="mg" decimals={0} />
           ) : null}
-          <MicroRow label="Hierro" value={food.iron_mg != null ? food.iron_mg * scale : null} unit="mg" />
-          <MicroRow label="Calcio" value={food.calcium_mg != null ? food.calcium_mg * scale : null} unit="mg" />
-          <MicroRow label="Zinc" value={food.zinc_mg != null ? food.zinc_mg * scale : null} unit="mg" />
+          <MicroRow label="Hierro" value={food.iron_mg != null ? food.iron_mg * scale : null} unit="mg" decimals={1} />
+          <MicroRow label="Calcio" value={food.calcium_mg != null ? food.calcium_mg * scale : null} unit="mg" decimals={1} />
+          <MicroRow label="Zinc" value={food.zinc_mg != null ? food.zinc_mg * scale : null} unit="mg" decimals={1} />
           <MicroRow
             label="Vitamina B12"
             value={food.vitamin_b12_mcg != null ? food.vitamin_b12_mcg * scale : null}
             unit="mcg"
+            decimals={2}
           />
           <MicroRow
             label="Vitamina D"
             value={food.vitamin_d_mcg != null ? food.vitamin_d_mcg * scale : null}
             unit="mcg"
+            decimals={2}
           />
         </View>
 

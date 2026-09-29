@@ -31,6 +31,7 @@ móvil con la misma cuenta y los mismos datos.
 | Pro (Stripe) | ✅ | Checkout vía web (mismas APIs Vercel) |
 | Deep linking | ✅ | `vegantrack://diary` y `https://vegantrack.app/*` |
 | Dark mode | ✅ | Automático según el sistema |
+| Crash reporting | ✅ | Sentry + ErrorBoundary raíz (ver `src/lib/errorReporting.ts`) |
 
 ## Arquitectura
 
@@ -64,6 +65,12 @@ src/
 - **Paridad**: las fórmulas (Mifflin-St Jeor, VeganScore, redondeos por
   nutriente, conversión de unidades de OFF) están portadas literalmente y
   cubiertas por tests para que un mismo día dé el mismo resultado en PWA y móvil.
+- **Observabilidad**: `ErrorBoundary` raíz (`src/components/ErrorBoundary.tsx`)
+  + Sentry (`src/lib/errorReporting.ts`) como único punto de contacto con el
+  SDK. Sólo detección de crashes/errores de render — sin analítica de
+  comportamiento, sin screenshots, sin comida/peso/macros/suplementos en el
+  payload. Requiere `EXPO_PUBLIC_SENTRY_DSN` (ver `.env.example`); sin DSN
+  configurado queda desactivado sin romper el arranque.
 
 ## Setup
 

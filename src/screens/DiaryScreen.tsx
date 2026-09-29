@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, EmptyState, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
@@ -19,9 +19,11 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
+import { useUiStore } from '@/stores/uiStore';
 import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore';
+import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
 import { useMealPhoto } from '@/hooks/useMealPhoto';
-import { track, trackAppOpenOnce } from '@/lib/analytics';
+import { track } from '@/lib/analytics';
 import { FREE_HISTORY_DAYS, FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import { addDays, daysBetween, formatDateHuman, todayISO } from '@/utils/dates';
 import type { FoodLogEntry, MealType, Supplement } from '@/types';
@@ -33,19 +35,54 @@ export function DiaryScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList, 'Diary'>>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Diary'>>();
   const { user, profile } = useAuthStore();
-  const { entries, selectedDate, setDate, fetchEntries, deleteEntry, getDaySummary, copyDayEntries, copyMealEntries, loadOverrides } = useDiaryStore();
+  const { entries, selectedDate, setDate, fetchEntries, deleteEntry, getDaySummary, copyDayEntries, copyMealEntries, loadOverrides, flushPending } = useDiaryStore();
   const supplements = useSupplementStore();
   const { isPro } = usePro();
   const photo = useMealPhoto();
+  const showMealSavedToast = useUiStore((s) => s.showMealSavedToast);
   const [refreshing, setRefreshing] = useState(false);
+  // Protección mínima contra doble tap mientras una copia está en curso
+  // (auditoría del Diario, Bugs D/E) — estado local de esta pantalla, no un
+  // sistema global nuevo.
+  const [copying, setCopying] = useState(false);
   const [editing, setEditing] = useState<FoodLogEntry | null>(null);
   const [mealSheetMode, setMealSheetMode] = useState<MealSheetMode | null>(null);
+  // Bloque 1 de activación (Product Audit v2): recuerda si el intento de
+  // análisis con IA en curso viene de la pantalla de activación
+  // post-onboarding (`startAction: 'photo'`, ver efecto más abajo), para
+  // llevar al usuario al Dashboard sólo esa vez al guardar la comida, en vez
+  // del destino normal (quedarse en el Diario).
+  const [fromActivation, setFromActivation] = useState(false);
+
+  // Fases 5 y 6 del P0 de unidades: suplementos configurados (tomados hoy o
+  // no) cuya dosis es needs_review o unsupported, con la etiqueta accesible
+  // ya resuelta para cada uno. Misma función que usa ProfileScreen — nunca
+  // se reimplementa el filtro combinado por pantalla.
+  const attentionLabelById = useMemo(
+    () => attentionLabelsBySupplementId(supplements.supplements),
+    [supplements.supplements]
+  );
 
   // Abre el paywall cuando se agota la cuota gratuita de fotos.
   useEffect(() => {
     if (photo.quotaBlocked) track('paywall_viewed', { source: 'photo_quota' });
   }, [photo.quotaBlocked]);
+
+  // Bloque 1 de activación: al llegar desde la pantalla post-onboarding con
+  // `startAction: 'photo'`, abre el picker directamente — misma vía que el
+  // CTA "Analizar plato con IA" de esta pantalla (`startPhoto`), sin lógica
+  // nueva. Se consume una sola vez (mismo criterio que `openSupplementId`/
+  // `openSupplements` en ProfileScreen).
+  useEffect(() => {
+    if (route.params?.startAction === 'photo') {
+      setFromActivation(true);
+      setMealSheetMode('picker');
+      navigation.setParams({ startAction: undefined });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.startAction]);
 
   // Muestra el error sheet cuando el análisis falla.
   useEffect(() => {
@@ -63,6 +100,7 @@ export function DiaryScreen() {
   const handleMealSheetClose = () => {
     photo.clearError();
     setMealSheetMode(null);
+    setFromActivation(false);
   };
 
   const sheetProfile =
@@ -78,21 +116,27 @@ export function DiaryScreen() {
         }
       : null;
 
-  // Aviso de la ficha tras analizar una foto: si hay ingredientes de origen
-  // animal, se muestra como dato suave e informativo (no bloquea ni juzga);
-  // si no, los supuestos de la estimación.
-  const photoNotice: { tone: 'warn' | 'info'; text: string } | null = photo.analysis
-    ? !photo.analysis.is_vegan && photo.analysis.non_vegan_ingredients?.length
-      ? {
-          tone: 'info',
-          text: `Posibles ingredientes de origen animal: ${photo.analysis.non_vegan_ingredients.join(
-            ', '
-          )} (sólo informativo).`,
-        }
-      : photo.analysis.notes
-      ? { tone: 'info', text: photo.analysis.notes }
-      : null
-    : null;
+  // Aviso de la ficha tras analizar una foto: ingredientes de origen animal
+  // (dato suave e informativo, no bloquea ni juzga) y los supuestos/
+  // incertidumbres que la propia IA señala en `notes` — auditoría del flujo
+  // de foto-IA: antes `notes` sólo se mostraba cuando NO había ingredientes
+  // no veganos que avisar, así que un plato marcado como no vegano ocultaba
+  // en silencio cualquier duda que Gemini hubiera apuntado (p. ej. "no se
+  // aprecia bien la ración" o "no se identifica con certeza la salsa") —
+  // justo la información que hace falta para confiar en la estimación.
+  // Ambos avisos son independientes entre sí, así que se muestran los dos
+  // cuando los dos existen, no uno sustituyendo al otro.
+  const photoNotice: { tone: 'warn' | 'info'; text: string } | null = (() => {
+    if (!photo.analysis) return null;
+    const parts: string[] = [];
+    if (!photo.analysis.is_vegan && photo.analysis.non_vegan_ingredients?.length) {
+      parts.push(
+        `Posibles ingredientes de origen animal: ${photo.analysis.non_vegan_ingredients.join(', ')} (sólo informativo).`
+      );
+    }
+    if (photo.analysis.notes) parts.push(photo.analysis.notes);
+    return parts.length > 0 ? { tone: 'info', text: parts.join(' ') } : null;
+  })();
 
   // Editor de suplementos en línea desde el Diario (sin ir a Perfil).
   // Estado posible:
@@ -104,12 +148,18 @@ export function DiaryScreen() {
   const [suppEditor, setSuppEditor] = useState<
     null | 'picker' | 'new' | { preset: number } | Supplement
   >(null);
+  const [showSupplementPaywall, setShowSupplementPaywall] = useState(false);
 
   const tryAddSupplement = (open: () => void) => {
     if (!isPro && supplements.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
+      track('paywall_viewed', { source: 'supplements_limit' });
       Alert.alert(
         'Límite alcanzado',
-        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`
+        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Hazte Pro para añadir más.`,
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          { text: 'Ver Pro', onPress: () => setShowSupplementPaywall(true) },
+        ]
       );
       return;
     }
@@ -123,8 +173,16 @@ export function DiaryScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
-      trackAppOpenOnce();
+      // `app_open` ya no se dispara aquí (auditoría de medición de sesiones):
+      // ahora vive en el arranque general de la app (RootNavigator), no
+      // atado a que el usuario visite el Diario en concreto.
       void fetchEntries(user.id, selectedDate);
+      // Fase 3 del P1 de sincronización: además de traer lo remoto, reintenta
+      // lo pendiente cada vez que se entra al Diario — junto a los disparos ya
+      // existentes (login/arranque, vuelta a primer plano). flushPending ya es
+      // segura ante llamadas concurrentes (mutex de la Fase 1); fire-and-forget,
+      // igual que el resto de llamadas de este efecto.
+      void flushPending(user.id);
       void supplements.fetchSupplements(user.id);
       void supplements.fetchTodayLogs(user.id);
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,20 +215,33 @@ export function DiaryScreen() {
   };
 
   const copyFromYesterday = (mealType?: MealType) => {
-    if (!user) return;
+    if (!user || copying) return; // doble tap mientras hay una copia en curso: ignorado
+    setCopying(true);
     const from = addDays(selectedDate, -1);
     const action = mealType
       ? copyMealEntries(user.id, from, selectedDate, mealType)
       : copyDayEntries(user.id, from, selectedDate);
-    void action.then(({ count, error }) => {
-      if (error) Alert.alert('Error', error);
-      else if (count === 0) Alert.alert('Nada que copiar', 'Ayer no hay registros para copiar.');
-    });
+    void action
+      .then(({ count, error }) => {
+        if (error) Alert.alert('Error', error);
+        else if (count === 0) Alert.alert('Nada que copiar', 'Ayer no hay registros para copiar.');
+      })
+      .catch(() => {
+        // Red de seguridad: nunca dejar la promesa sin capturar (no debería
+        // ocurrir en circunstancias normales tras el rediseño de
+        // copyEntries, pero antes un fallo local aquí quedaba en silencio).
+        Alert.alert('Error', 'No se ha podido completar la copia.');
+      })
+      .finally(() => setCopying(false));
   };
 
   const onRefresh = async () => {
     if (!user) return;
     setRefreshing(true);
+    // Fase 3: el pull-to-refresh también reintenta lo pendiente, no sólo trae
+    // lo remoto. Fire-and-forget — no debe alargar el spinner del refresh,
+    // que sigue dependiendo únicamente de fetchEntries.
+    void flushPending(user.id);
     await fetchEntries(user.id, selectedDate);
     setRefreshing(false);
   };
@@ -297,7 +368,7 @@ export function DiaryScreen() {
               }
             />
             {mealEntries.length === 0 ? (
-              <Pressable onLongPress={() => copyFromYesterday(type)}>
+              <Pressable onLongPress={() => copyFromYesterday(type)} disabled={copying}>
                 <Text style={{ color: t.textMuted, fontSize: 13 }}>
                   Sin registros · mantén pulsado para copiar de ayer
                 </Text>
@@ -390,7 +461,7 @@ export function DiaryScreen() {
               Empieza tu rutina
             </Text>
             <Text style={{ color: t.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 16 }}>
-              Los más habituales en dieta vegana: B12 (esencial), vitamina D,
+              Los más habituales en alimentación vegetal: B12 (esencial), vitamina D,
               omega-3 de algas y yodo. Toca para elegir uno y registrar tu primera toma.
             </Text>
           </Pressable>
@@ -437,9 +508,21 @@ export function DiaryScreen() {
                     >
                       {s.name}
                     </Text>
-                    <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                      {s.dose_amount} {s.dose_unit}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                        {s.dose_amount} {s.dose_unit}
+                      </Text>
+                      {attentionLabelById.has(s.id) ? (
+                        <Pressable
+                          onPress={() => setSuppEditor(s)}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={attentionLabelById.get(s.id)}
+                        >
+                          <Ionicons name={'alert-circle-outline' as any} size={14} color={semantic.warning} />
+                        </Pressable>
+                      ) : null}
+                    </View>
                   </View>
 
                   {/* Botón para abrir el editor sin esperar al long-press */}
@@ -476,9 +559,23 @@ export function DiaryScreen() {
         )}
       </Card>
 
-      <Button title="Copiar todo el día de ayer" variant="secondary" onPress={() => copyFromYesterday()} />
+      <Button
+        title="Copiar todo el día de ayer"
+        variant="secondary"
+        onPress={() => copyFromYesterday()}
+        loading={copying}
+      />
 
-      {entries.length === 0 && <EmptyState emoji="🥗" text="Aún no has registrado nada hoy. Toca ＋ en una comida para buscar alimentos." />}
+      {entries.length === 0 && (
+        <EmptyState
+          emoji="🥗"
+          text={
+            selectedDate === todayISO()
+              ? 'Aún no has registrado nada hoy. Toca ＋ en una comida para buscar alimentos.'
+              : 'No hay nada registrado este día. Toca ＋ en una comida para añadir algo.'
+          }
+        />
+      )}
 
       {editing ? (
         <ProductDetailSheet
@@ -513,11 +610,31 @@ export function DiaryScreen() {
           isPro={isPro}
           analysis={photo.analysis}
           onCorrected={(analysis) => photo.applyCorrection(analysis)}
-          onClose={photo.reset}
-          onAdded={() => {
+          onVeganCorrected={(isVegan) => photo.applyManualVeganCorrection(isVegan)}
+          onClose={() => {
+            setFromActivation(false);
+            photo.reset();
+          }}
+          onAdded={(msg) => {
             track('photo_entry_saved', {});
             if (user) void fetchEntries(user.id, selectedDate);
+            // Auditoría del loop "siguiente comida": este flujo (analizar
+            // con IA) se queda en el propio Diario, pero antes no daba
+            // ninguna confirmación de que la comida se había guardado —
+            // el usuario sólo lo sabía si se fijaba en que la entrada
+            // apareciera en la lista. Mismo mensaje ("X añadido a Y") que ya
+            // usa el resto de flujos de guardado.
+            showMealSavedToast(msg);
             photo.reset();
+            // Bloque 1 de activación: sólo cuando este análisis vino de la
+            // pantalla de activación post-onboarding, tras guardar la
+            // primera comida se lleva al usuario al resumen (Dashboard),
+            // que ahora ya tiene datos reales que mostrar. El resto de
+            // fotos del día a día se quedan en el Diario, como siempre.
+            if (fromActivation) {
+              setFromActivation(false);
+              navigation.navigate('Dashboard');
+            }
           }}
         />
       ) : null}
@@ -525,13 +642,33 @@ export function DiaryScreen() {
       {/* Paywall al agotar la cuota gratuita de fotos */}
       {photo.quotaBlocked ? <ProModal isPro={isPro} onClose={photo.clearQuota} /> : null}
 
+      {/* Paywall al alcanzar el límite free de suplementos (dead-end de la auditoría) */}
+      {showSupplementPaywall ? (
+        <ProModal isPro={isPro} onClose={() => setShowSupplementPaywall(false)} />
+      ) : null}
+
       {/* Sheet premium: selector de fuente de foto + errores de análisis */}
       <MealPhotoSheet
         mode={mealSheetMode}
         error={photo.error}
         onCamera={() => handlePhotoSource('camera')}
         onGallery={() => handlePhotoSource('library')}
-        onRetry={() => { photo.clearError(); setMealSheetMode('picker'); }}
+        onRetry={() => {
+          // Auditoría del flujo de foto-IA: un fallo transitorio del
+          // servidor (IA saturada, límite de peticiones, corte global...)
+          // no tiene nada que ver con la foto en sí — repetir el análisis
+          // con la MISMA foto, sin volver a pasar por cámara/galería, evita
+          // rehacer un paso que ya se había completado bien. `no_food` es la
+          // única excepción real (`error.retryable === false`): si la IA no
+          // vio comida, hace falta una foto distinta.
+          if (photo.error?.retryable) {
+            setMealSheetMode(null);
+            void photo.retry();
+            return;
+          }
+          photo.clearError();
+          setMealSheetMode('picker');
+        }}
         onClose={handleMealSheetClose}
       />
 
@@ -618,7 +755,7 @@ function SupplementPickerSheet({
           Añadir suplemento
         </Text>
         <Text style={{ color: t.textSecondary, fontSize: 13, lineHeight: 18 }}>
-          Toca uno de los suplementos típicos en dieta vegana para ajustar la
+          Toca uno de los suplementos típicos en alimentación vegetal para ajustar la
           dosis y guardarlo. Puedes añadir el mismo varias veces si lo tomas
           en varios momentos del día (p. ej. B12 por la mañana y por la noche).
         </Text>
@@ -658,7 +795,7 @@ function SupplementPickerSheet({
             marginTop: spacing.sm,
           }}
         >
-          Suplementos típicos en dieta vegana
+          Suplementos típicos en alimentación vegetal
         </Text>
 
         {SUPPLEMENT_PRESETS.map((p, i) => (

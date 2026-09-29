@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.vegantrack.app",
-      "versionCode": 5,
+      "versionCode": 7,
       "adaptiveIcon": {
         "backgroundColor": "#2f5d41",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -82,7 +82,8 @@
           "photosPermission": "VegeTrack usa tus fotos para analizar platos y calcular sus nutrientes.",
           "cameraPermission": "VegeTrack usa la cámara para fotografiar tus platos y analizarlos con IA."
         }
-      ]
+      ],
+      "@sentry/react-native/expo"
     ]
   }
 }

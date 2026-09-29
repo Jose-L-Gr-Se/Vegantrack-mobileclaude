@@ -14,7 +14,11 @@ import { useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useWeightStore } from '@/stores/weightStore';
+import { attachAppStateFlushListener } from '@/navigation/appStateSync';
+import { trackAppOpenOnce } from '@/lib/analytics';
+import { resyncDailyReminder } from '@/notifications/reminders';
 import { AuthScreen } from '@/screens/AuthScreen';
+import { AuthRecoveryScreen } from '@/screens/AuthRecoveryScreen';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
 import { DiaryScreen } from '@/screens/DiaryScreen';
 import { SearchScreen } from '@/screens/SearchScreen';
@@ -25,6 +29,9 @@ import { ScannerScreen } from '@/screens/ScannerScreen';
 import { RecipesScreen } from '@/screens/RecipesScreen';
 import { MicroTrendsScreen } from '@/screens/MicroTrendsScreen';
 import { PostOnboardingWelcome } from '@/components/PostOnboardingWelcome';
+import { FirstEntryReminderOffer } from '@/components/FirstEntryReminderOffer';
+import { MealSavedToast } from '@/components/MealSavedToast';
+import { resolveRootRoute, shouldTrackAppOpen } from '@/navigation/rootRoute';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 import type { LinkingOptions } from '@react-navigation/native';
 
@@ -79,12 +86,17 @@ function MainTabs() {
   );
 }
 
-/** Tabs + overlay de bienvenida post-onboarding (se auto-muestra una vez). */
+/** Tabs + overlays de app (bienvenida post-onboarding, oferta de
+ * recordatorio tras la primera comida, y confirmación de comida guardada),
+ * montados una única vez para cualquier pestaña activa — ver
+ * `FirstEntryReminderOffer`/`MealSavedToast`. */
 function MainWithWelcome() {
   return (
     <View style={{ flex: 1 }}>
       <MainTabs />
       <PostOnboardingWelcome />
+      <FirstEntryReminderOffer />
+      <MealSavedToast />
     </View>
   );
 }
@@ -109,7 +121,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 export function RootNavigator() {
   const t = useTheme();
-  const { user, profile, initialized, profileResolved, initialize } = useAuthStore();
+  const { user, profile, authPhase, initialize } = useAuthStore();
 
   useEffect(() => {
     void initialize();
@@ -123,10 +135,51 @@ export function RootNavigator() {
     }
   }, [user]);
 
-  // Mostramos el spinner mientras arranca la app O mientras, habiendo sesión,
-  // el perfil todavía no se ha resuelto. Así evitamos el "flash" en el que se
-  // ve el diario un instante antes de saltar al onboarding.
-  if (!initialized || (user && !profileResolved)) {
+  // Fase 2 del P1 de sincronización: además del disparo de arriba, reintenta
+  // lo pendiente al volver la app a primer plano. Suscripción única (deps
+  // vacías) — ver `appStateSync.ts` para por qué no depende de `user`.
+  useEffect(() => attachAppStateFlushListener(), []);
+
+  // `authPhase` es la única fuente de verdad del arranque (auditoría del
+  // bloqueo de auth/perfil) — nunca más de un booleano paralelo aquí, y la
+  // decisión de a dónde navegar vive en `resolveRootRoute`, no aquí.
+  const route = resolveRootRoute({ authPhase, user, profile });
+
+  // `app_open` (auditoría de medición de sesiones/retención): se dispara
+  // desde el arranque/entrada general de la app, no desde una pantalla en
+  // concreto — así no depende de qué pestaña visite el usuario primero.
+  // `shouldTrackAppOpen` es pura y testeable por separado (mismo criterio
+  // que `resolveRootRoute`); `trackAppOpenOnce` deduplica por usuario y día
+  // natural (persistido en SQLite), así que un cambio de pestaña, un ciclo
+  // de segundo plano/primer plano o varios renders de este componente el
+  // mismo día no generan más de un evento — sólo un cambio real de día (o de
+  // usuario) sí.
+  useEffect(() => {
+    const userId = shouldTrackAppOpen(route, user);
+    if (userId) void trackAppOpenOnce(userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, user?.id]);
+
+  // Recordatorio contextual (P1 de retención): reevalúa el estado de HOY
+  // cada vez que se llega al árbol autenticado normal — "abrir la app" es
+  // el evento que sí controla la app; una notificación ya programada no
+  // puede ejecutar JS al sonar para decidir si hace falta. Reutiliza el
+  // mismo `shouldTrackAppOpen` que ya decide "¿hemos llegado a main con un
+  // usuario?" (misma condición, otro consumidor). Repetible sin efecto —
+  // `reminders.ts` cancela-antes-de-programar con un único `identifier`,
+  // así que varias aperturas el mismo día nunca duplican nada.
+  useEffect(() => {
+    const userId = shouldTrackAppOpen(route, user);
+    if (userId) {
+      void resyncDailyReminder(
+        userId,
+        profile ? { streakCount: profile.streak_count, lastLogDate: profile.last_log_date } : null
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, user?.id]);
+
+  if (route === 'loading') {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.background }}>
         <ActivityIndicator size="large" color={t.primary} />
@@ -134,18 +187,20 @@ export function RootNavigator() {
     );
   }
 
+  if (route === 'recovery') {
+    return <AuthRecoveryScreen cachedProfileName={profile?.display_name} onRetry={initialize} />;
+  }
+
   const navTheme = t.dark
     ? { ...DarkTheme, colors: { ...DarkTheme.colors, background: t.background, primary: t.primary } }
     : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: t.background, primary: t.primary } };
 
-  const needsOnboarding = user && profile && !profile.calorie_target;
-
   return (
     <NavigationContainer theme={navTheme} linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!user ? (
+        {route === 'auth' ? (
           <Stack.Screen name="Auth" component={AuthScreen} />
-        ) : needsOnboarding ? (
+        ) : route === 'onboarding' ? (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         ) : (
           <>

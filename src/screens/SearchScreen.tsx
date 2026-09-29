@@ -13,6 +13,7 @@ import { ProductDetailSheet } from '@/components/ProductDetailSheet';
 import { semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
+import { useUiStore } from '@/stores/uiStore';
 import { customFoodToPer100g, useCustomFoodStore } from '@/stores/customFoodStore';
 import {
   canSuggestVeganAlternative,
@@ -24,14 +25,16 @@ import {
 } from '@/lib/openfoodfacts';
 import { freshItemToProduct, searchFreshProduce } from '@/lib/freshProduce';
 import { normalizeProduct } from '@/lib/openfoodfacts';
+import { MICRO_RDA } from '@/utils/nutrition';
+import { MICRO_FOOD_SOURCES } from '@/utils/microRecommendations';
 import type { FoodPer100g, MealType, OpenFoodFactsProduct, RecentFood, VeganConfidence } from '@/types';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 
 const CONFIDENCE_LABEL: Record<VeganConfidence, { text: string; color: string }> = {
-  high: { text: 'Vegano ✓', color: semantic.success },
-  medium: { text: 'Parece vegano', color: semantic.warning },
-  low: { text: 'No vegano', color: semantic.danger },
-  unknown: { text: 'Sin datos', color: '#94a3b8' },
+  high: { text: 'Apto para veganos', color: semantic.success },
+  medium: { text: 'Parece apto para veganos', color: semantic.warning },
+  low: { text: 'No apto para veganos', color: semantic.danger },
+  unknown: { text: 'Sin datos suficientes', color: '#94a3b8' },
 };
 
 function recentToPer100g(r: RecentFood): FoodPer100g {
@@ -75,6 +78,7 @@ export function SearchScreen() {
   const profile = useAuthStore((s) => s.profile);
   const { recentFoods, fetchRecentFoods } = useDiaryStore();
   const customFoodStore = useCustomFoodStore();
+  const showMealSavedToast = useUiStore((s) => s.showMealSavedToast);
 
   const [query, setQuery] = useState('');
   const [veganOnly, setVeganOnly] = useState(false);
@@ -85,6 +89,12 @@ export function SearchScreen() {
   const [selectedProduct, setSelectedProduct] = useState<OpenFoodFactsProduct | null>(null);
   const [selectedConfidence, setSelectedConfidence] = useState<VeganConfidence | undefined>(undefined);
   const [lockedMeal, setLockedMeal] = useState<MealType | null>(null);
+  // Sólo se rellena al elegir un Reciente (auditoría de fricción del
+  // registro recurrente): la ración que el usuario usó la última vez para
+  // ese alimento, para no tener que volver a escribirla. El resto de
+  // caminos (búsqueda, frescos, custom, código de barras) no la tocan y
+  // `ProductDetailSheet` sigue cayendo a su default de 100 g.
+  const [selectedInitialGrams, setSelectedInitialGrams] = useState<number | undefined>(undefined);
   const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -109,11 +119,13 @@ export function SearchScreen() {
 
   // Al SALIR de Buscar limpiamos el lock y el param, de modo que volver a
   // entrar tocando la pestaña (sin intención de comida) vuelva a preguntar.
+  // `nutrient` (Nutrition Insight accionable) se limpia igual: el aviso de
+  // contexto sólo debe verse en la visita que llegó desde esa prioridad.
   useFocusEffect(
     useCallback(() => {
       return () => {
         setLockedMeal(null);
-        navigation.setParams({ mealType: undefined } as never);
+        navigation.setParams({ mealType: undefined, nutrient: undefined } as never);
       };
     }, [navigation])
   );
@@ -130,6 +142,7 @@ export function SearchScreen() {
       if (product) {
         setSelectedProduct(product);
         setSelectedConfidence(getVeganConfidence(product));
+        setSelectedInitialGrams(undefined);
         setSelected(productToFoodPer100g(product));
       } else {
         setToast('Producto no encontrado en OpenFoodFacts');
@@ -171,6 +184,7 @@ export function SearchScreen() {
   const selectProduct = (p: OpenFoodFactsProduct) => {
     setSelectedProduct(p);
     setSelectedConfidence(getVeganConfidence(p));
+    setSelectedInitialGrams(undefined);
     setSelected(productToFoodPer100g(p));
   };
 
@@ -178,6 +192,7 @@ export function SearchScreen() {
     setSelected(null);
     setSelectedProduct(null);
     setSelectedConfidence(undefined);
+    setSelectedInitialGrams(undefined);
   };
 
   const freshMatches = searchFreshProduce(query);
@@ -203,6 +218,19 @@ export function SearchScreen() {
         contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md, gap: spacing.lg, paddingBottom: spacing.xxl }}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Contexto del Nutrition Insight accionable (Dashboard → "Ver
+            alimentos"): mismas fuentes que ya se ven bajo la barra de ese
+            micro, nunca resultados filtrados ni una búsqueda automática —
+            el usuario sigue escribiendo y decidiendo qué añadir. */}
+        {route.params?.nutrient ? (
+          <Card style={{ gap: 4 }}>
+            <Text style={{ color: t.text, fontWeight: '700', fontSize: 13 }}>
+              Buscando ideas para {MICRO_RDA[route.params.nutrient].label.toLowerCase()}
+            </Text>
+            <Text style={{ color: t.textSecondary, fontSize: 12 }}>{MICRO_FOOD_SOURCES[route.params.nutrient]}</Text>
+          </Card>
+        ) : null}
+
         <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-end' }}>
           <View style={{ flex: 1 }}>
             <Input
@@ -222,7 +250,7 @@ export function SearchScreen() {
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
           <Switch value={veganOnly} onValueChange={setVeganOnly} trackColor={{ true: t.primary }} />
-          <Text style={{ color: t.textSecondary, fontWeight: '600' }}>Solo veganos</Text>
+          <Text style={{ color: t.textSecondary, fontWeight: '600' }}>Solo aptos para veganos</Text>
           {searching ? <ActivityIndicator color={t.primary} /> : null}
         </View>
 
@@ -245,7 +273,10 @@ export function SearchScreen() {
             {freshMatches.slice(0, 6).map((item) => (
               <Pressable
                 key={item.id}
-                onPress={() => setSelected(productToFoodPer100g(normalizeProduct(freshItemToProduct(item))))}
+                onPress={() => {
+                  setSelectedInitialGrams(undefined);
+                  setSelected(productToFoodPer100g(normalizeProduct(freshItemToProduct(item))));
+                }}
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}
               >
                 <Text style={{ color: t.text, fontWeight: '600' }}>
@@ -264,7 +295,10 @@ export function SearchScreen() {
             {customMatches.slice(0, 6).map((f) => (
               <Pressable
                 key={f.id}
-                onPress={() => setSelected(customFoodToPer100g(f))}
+                onPress={() => {
+                  setSelectedInitialGrams(undefined);
+                  setSelected(customFoodToPer100g(f));
+                }}
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}
               >
                 <Text style={{ color: t.text, fontWeight: '600' }}>{f.name}</Text>
@@ -323,7 +357,13 @@ export function SearchScreen() {
             {recentFoods.map((r, i) => (
               <Pressable
                 key={`${r.food_name}-${i}`}
-                onPress={() => setSelected(recentToPer100g(r))}
+                onPress={() => {
+                  // Auditoría de fricción del registro recurrente: precarga
+                  // la ración que se usó la última vez para este alimento,
+                  // en vez de forzar a escribirla otra vez.
+                  setSelectedInitialGrams(r.last_serving_g);
+                  setSelected(recentToPer100g(r));
+                }}
                 style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, alignItems: 'center' }}
               >
                 <View style={{ flex: 1, paddingRight: spacing.md }}>
@@ -350,14 +390,27 @@ export function SearchScreen() {
           food={selected}
           offProduct={selectedProduct}
           lockedMealType={lockedMeal}
+          initialGrams={selectedInitialGrams}
           veganConfidence={selectedConfidence}
           profile={sheetProfile}
           onClose={closeSheet}
           onAdded={(msg) => {
-            setToast(msg);
+            // Auditoría del loop "siguiente comida": este toast se ponía en
+            // estado LOCAL de SearchScreen justo antes de navegar fuera de
+            // esta pestaña — quedaba oculto al instante, así que nunca se
+            // veía. `showMealSavedToast` vive en `useUiStore`, montado en la
+            // raíz, y sobrevive al cambio de pestaña.
+            showMealSavedToast(msg);
             setQuery('');
             if (user) void fetchRecentFoods(user.id);
-            navigation.navigate('Main', { screen: 'Diary' });
+            // Bloque 1 de activación (Product Audit v2): si se llegó a
+            // buscar desde la pantalla de activación post-onboarding
+            // (`fromActivation`), tras guardar la primera comida se va al
+            // resumen (Dashboard), que ya tiene datos reales que mostrar —
+            // en cualquier otro caso, el destino de siempre es el Diario.
+            navigation.navigate('Main', {
+              screen: route.params?.fromActivation ? 'Dashboard' : 'Diary',
+            });
           }}
           onShowAlternatives={(product) => {
             closeSheet();

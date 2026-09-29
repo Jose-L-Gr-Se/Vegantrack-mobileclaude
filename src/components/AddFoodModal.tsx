@@ -77,7 +77,7 @@ export function AddFoodModal({
             <View style={{ gap: 4 }}>
               <Text style={{ fontSize: 20, fontWeight: '700', color: t.text }}>{food.food_name}</Text>
               {food.brand ? <Text style={{ color: t.textMuted, fontSize: 13 }}>{food.brand}</Text> : null}
-              {food.is_vegan ? <Pill text="Vegano ✓" /> : null}
+              {food.is_vegan ? <Pill text="Apto para veganos" /> : null}
             </View>
 
             <Input

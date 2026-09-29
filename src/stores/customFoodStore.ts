@@ -13,6 +13,9 @@ interface CustomFoodState {
   createCustomFood: (userId: string, food: Omit<CustomFood, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => Promise<{ error: string | null }>;
   updateCustomFood: (id: string, patch: Partial<Omit<CustomFood, 'id' | 'user_id' | 'created_at' | 'updated_at'>>) => Promise<{ error: string | null }>;
   deleteCustomFood: (id: string) => Promise<{ error: string | null }>;
+  /** Auditoría del ciclo de vida de la cuenta — ver el mismo `reset()` en
+   * `diaryStore.ts`. */
+  reset: () => void;
 }
 
 const normalize = (s: string) =>
@@ -78,6 +81,8 @@ export const useCustomFoodStore = create<CustomFoodState>((set, get) => ({
     }
     return { error: null };
   },
+
+  reset: () => set({ customFoods: [], loading: false }),
 }));
 
 /** Adapta un CustomFood al formato común por-100g para loguearlo. */

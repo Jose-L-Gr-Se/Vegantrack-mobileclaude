@@ -4,7 +4,7 @@ jest.mock('@/lib/supabase', () => ({
   WEB_BASE_URL: 'https://example.test',
 }));
 
-import { analysisToFood, type MealAnalysis } from '@/lib/mealVision';
+import { analysisToFood, correctVeganManually, manualVeganConfidence, type MealAnalysis } from '@/lib/mealVision';
 
 const analysis: MealAnalysis = {
   is_food: true,
@@ -57,5 +57,50 @@ describe('analysisToFood', () => {
     // Sigue siendo un alimento válido y guardable (macros presentes).
     expect(f.calories).toBeGreaterThan(0);
     expect(f.source).toBe('ai_photo');
+  });
+});
+
+/**
+ * Auditoría del paywall de foto-IA — cierre del P1: corrección manual
+ * (gratis) de si el plato es vegano, sin llamar a Gemini. Pura, sin React
+ * ni hooks — ver el comentario de `correctVeganManually` sobre por qué la
+ * lógica vive aquí y no dentro de `useMealPhoto`.
+ */
+describe('correctVeganManually', () => {
+  const wronglyNonVegan: MealAnalysis = {
+    ...analysis,
+    food_name: 'Seitán a la plancha',
+    is_vegan: false,
+    vegan_confidence: 'low',
+    non_vegan_ingredients: ['posible carne'],
+  };
+
+  it('marcar vegano: is_vegan=true y limpia non_vegan_ingredients', () => {
+    const corrected = correctVeganManually(wronglyNonVegan, true);
+    expect(corrected.is_vegan).toBe(true);
+    expect(corrected.non_vegan_ingredients).toEqual([]);
+    expect(corrected.vegan_confidence).toBe('high');
+  });
+
+  it('marcar no vegano: is_vegan=false y conserva los ingredientes ya reportados', () => {
+    const wronglyVegan: MealAnalysis = { ...analysis, is_vegan: true, non_vegan_ingredients: [] };
+    const corrected = correctVeganManually(wronglyVegan, false);
+    expect(corrected.is_vegan).toBe(false);
+    expect(corrected.vegan_confidence).toBe('low');
+    // No se inventa una lista de ingredientes — el usuario sólo corrigió el
+    // booleano, no describió qué ingrediente concreto falla.
+    expect(corrected.non_vegan_ingredients).toEqual([]);
+  });
+
+  it('no toca nombre ni macros — sólo los tres campos de veganismo', () => {
+    const corrected = correctVeganManually(wronglyNonVegan, true);
+    expect(corrected.food_name).toBe(wronglyNonVegan.food_name);
+    expect(corrected.per_100g).toEqual(wronglyNonVegan.per_100g);
+    expect(corrected.estimated_grams).toBe(wronglyNonVegan.estimated_grams);
+  });
+
+  it('nunca produce un valor de confianza distinto de high/low (ninguna falsa precisión numérica)', () => {
+    expect(manualVeganConfidence(true)).toBe('high');
+    expect(manualVeganConfidence(false)).toBe('low');
   });
 });

@@ -3,10 +3,11 @@
  * recordatorio diario, exportación CSV, Pro y logout.
  */
 import React, { useEffect, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Input, Pill, SectionHeader } from '@/components/ui';
 import { radii, semantic, spacing, useTheme } from '@/theme';
@@ -16,19 +17,33 @@ import { SUPPLEMENT_PRESETS, useSupplementStore } from '@/stores/supplementStore
 import { useCustomFoodStore } from '@/stores/customFoodStore';
 import { useThemeStore, type ThemePreference } from '@/stores/themeStore';
 import { calculateTargets } from '@/utils/nutrition';
+import {
+  birthDateMessage,
+  HEIGHT_CM_RANGE,
+  numericFieldMessage,
+  validateBirthDate,
+  validateHeightCm,
+  validateWeightKg,
+  WEIGHT_KG_RANGE,
+} from '@/utils/profileValidation';
+import { DateField } from '@/components/DateField';
+import { toUserFacingError } from '@/utils/userFacingError';
 import { exportDiaryCsv } from '@/utils/exportCsv';
+import { attentionLabelsBySupplementId } from '@/utils/supplementDoseCopy';
+import { track } from '@/lib/analytics';
 import { FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import {
-  cancelDailyReminder,
   DEFAULT_REMINDER_HOUR,
+  disableDailyReminder,
   getReminderHour,
   scheduleDailyReminder,
+  type ReminderStreakInfo,
 } from '@/notifications/reminders';
 import { ProModal } from '@/components/ProModal';
 import { BottomSheet } from '@/components/BottomSheet';
 import { SupplementEditor } from '@/components/SupplementEditor';
-import type { ActivityLevel, CustomFood, Goal, Supplement } from '@/types';
-import type { RootStackParamList } from '@/navigation/types';
+import type { ActivityLevel, CustomFood, Goal, Sex, Supplement } from '@/types';
+import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 
 const ACTIVITY_LABELS: Record<ActivityLevel, string> = {
   sedentary: 'Sedentario',
@@ -45,7 +60,10 @@ const GOAL_LABELS: Record<Goal, string> = {
 };
 
 /** A reusable row inside a Card — 52px tall with icon, label+subtitle, and optional right element. */
-function MenuRow({
+/** Exportado sólo para tests (mismo criterio que `EditProfileModal`/
+ * `SupplementsModal`): se testea en aislamiento, sin montar el resto de
+ * `ProfileScreen`. */
+export function MenuRow({
   iconName,
   label,
   subtitle,
@@ -54,6 +72,10 @@ function MenuRow({
   iconBg,
   iconColor,
   danger,
+  loading,
+  disabled,
+  accessibilityLabel,
+  accessibilityHint,
 }: {
   iconName: string;
   label: string;
@@ -63,19 +85,30 @@ function MenuRow({
   iconBg?: string;
   iconColor?: string;
   danger?: boolean;
+  /** Muestra un indicador de carga en vez del chevron y bloquea la pulsación. */
+  loading?: boolean;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }) {
   const t = useTheme();
   const bg = iconBg ?? t.primarySoft;
   const ic = iconColor ?? t.primary;
+  const isDisabled = disabled || loading;
   return (
     <Pressable
       onPress={onPress}
+      disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
       style={({ pressed }) => ({
         height: 52,
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
-        opacity: pressed ? 0.7 : 1,
+        opacity: pressed ? 0.7 : isDisabled ? 0.5 : 1,
       })}
     >
       <View
@@ -116,7 +149,9 @@ function MenuRow({
           <Text style={{ color: t.primary, fontSize: 11, fontWeight: '700' }}>{badge}</Text>
         </View>
       ) : null}
-      {!danger ? (
+      {loading ? (
+        <ActivityIndicator size="small" color={t.textMuted} />
+      ) : !danger ? (
         <Ionicons name={'chevron-forward' as any} size={16} color={t.textMuted} />
       ) : null}
     </Pressable>
@@ -127,6 +162,7 @@ export function ProfileScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Profile'>>();
   const { user, profile, updateProfile, signOut, deleteAccount } = useAuthStore();
   const supplementStore = useSupplementStore();
   const customFoods = useCustomFoodStore();
@@ -134,6 +170,7 @@ export function ProfileScreen() {
 
   const [editing, setEditing] = useState(false);
   const [showSupplements, setShowSupplements] = useState(false);
+  const [pendingSupplementId, setPendingSupplementId] = useState<string | undefined>(undefined);
   const [showCustomFood, setShowCustomFood] = useState(false);
   const [reminderHour, setReminderHour] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -148,9 +185,30 @@ export function ProfileScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Fase 5 del P0 de unidades de suplementos: si se llega desde el aviso de
+  // Dashboard, abre la pantalla de gestión de suplementos (y, si venía un
+  // suplemento concreto, su editor) — se consume una sola vez.
+  useEffect(() => {
+    const { openSupplementId, openSupplements } = route.params ?? {};
+    if (!openSupplementId && !openSupplements) return;
+    setPendingSupplementId(openSupplementId);
+    setShowSupplements(true);
+    navigation.setParams({ openSupplementId: undefined, openSupplements: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.openSupplementId, route.params?.openSupplements]);
+
+  // Recordatorio contextual (P1 de retención): la racha real de `profile`
+  // viaja con cada programación para que el texto se personalice sólo
+  // cuando siga viva — `reminders.ts` decide el "válida o no", aquí sólo se
+  // reúnen los dos campos que necesita.
+  const streakInfo: ReminderStreakInfo | null = profile
+    ? { streakCount: profile.streak_count, lastLogDate: profile.last_log_date }
+    : null;
+
   const toggleReminder = async (enabled: boolean) => {
     if (enabled) {
-      const ok = await scheduleDailyReminder(DEFAULT_REMINDER_HOUR);
+      if (!user) return;
+      const ok = await scheduleDailyReminder(user.id, DEFAULT_REMINDER_HOUR, streakInfo);
       if (ok) setReminderHour(DEFAULT_REMINDER_HOUR);
       else
         Alert.alert(
@@ -158,29 +216,36 @@ export function ProfileScreen() {
           'Activa las notificaciones de VegeTrack en Ajustes de Android.'
         );
     } else {
-      await cancelDailyReminder();
+      await disableDailyReminder();
       setReminderHour(null);
     }
   };
 
   const changeReminderHour = (delta: number) => {
-    if (reminderHour === null) return;
+    if (reminderHour === null || !user) return;
     const next = (reminderHour + delta + 24) % 24;
     setReminderHour(next);
-    void scheduleDailyReminder(next);
+    void scheduleDailyReminder(user.id, next, streakInfo);
   };
 
   const onExport = async () => {
-    if (!user) return;
+    // `exporting` corta el doble-tap: una segunda pulsación mientras la
+    // primera exportación sigue en curso no debe disparar una segunda
+    // consulta ni una segunda hoja de compartir superpuesta (auditoría de
+    // CSV, P1).
+    if (!user || exporting) return;
     setExporting(true);
     const { error } = await exportDiaryCsv(user.id, isPro);
     setExporting(false);
+    // `error` ya viene sin detalle técnico crudo (exportDiaryCsv lo sanea) —
+    // CLAUDE.md §5.
     if (error) Alert.alert('Error', error);
   };
 
+  // La pantalla decide internamente qué rango puede ver cada usuario (7 días
+  // para Free, 7/30/90 para Pro) — este punto de entrada ya no bloquea.
   const openMicroTrends = () => {
-    if (isPro) navigation.navigate('MicroTrends');
-    else setShowPro(true);
+    navigation.navigate('MicroTrends');
   };
 
   // Avatar initials
@@ -338,7 +403,7 @@ export function ProfileScreen() {
           <MenuRow
             iconName="trending-up-outline"
             label="Tendencias de micros"
-            subtitle={isPro ? undefined : 'Pro'}
+            subtitle={isPro ? undefined : '7 días gratis · Pro desbloquea 30 y 90 días'}
             onPress={openMicroTrends}
           />
         </Card>
@@ -411,13 +476,20 @@ export function ProfileScreen() {
           <MenuRow
             iconName="document-text-outline"
             label="Exportar diario CSV"
+            subtitle={exporting ? 'Exportando…' : undefined}
             onPress={onExport}
+            loading={exporting}
+            accessibilityLabel="Exportar diario a CSV"
+            accessibilityHint="Genera un archivo CSV de tu diario y abre el menú para compartirlo"
           />
           {!isPro && (
             <>
               <View style={{ height: 1, backgroundColor: t.separator }} />
               <Pressable
-                onPress={() => setShowPro(true)}
+                onPress={() => {
+                  track('paywall_viewed', { source: 'profile_banner' });
+                  setShowPro(true);
+                }}
                 style={({ pressed }) => ({
                   marginVertical: spacing.sm,
                   borderRadius: radii.lg,
@@ -520,7 +592,15 @@ export function ProfileScreen() {
 
       {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
       {editing && <EditProfileModal onClose={() => setEditing(false)} />}
-      {showSupplements && <SupplementsModal onClose={() => setShowSupplements(false)} />}
+      {showSupplements && (
+        <SupplementsModal
+          onClose={() => {
+            setShowSupplements(false);
+            setPendingSupplementId(undefined);
+          }}
+          initialEditId={pendingSupplementId}
+        />
+      )}
       {showCustomFood && <CustomFoodModal onClose={() => setShowCustomFood(false)} />}
     </ScrollView>
   );
@@ -564,24 +644,67 @@ function OptionRow({
   );
 }
 
-function EditProfileModal({ onClose }: { onClose: () => void }) {
+// Exportado sólo para poder testear la validación de altura/peso en
+// aislamiento (auditoría de onboarding, Bugs B2/B4) sin montar el resto de
+// ProfileScreen (suplementos, alimentos propios, recordatorios, Pro...).
+export function EditProfileModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { profile, updateProfile } = useAuthStore();
   const [height, setHeight] = useState(profile?.height_cm ? String(profile.height_cm) : '');
   const [weight, setWeight] = useState(profile?.weight_kg ? String(profile.weight_kg) : '');
   const [name, setName] = useState(profile?.display_name ?? '');
+  const [birthDate, setBirthDate] = useState(profile?.birth_date ?? '');
+  const [sex, setSex] = useState<Sex | null>(profile?.sex ?? null);
   const [activity, setActivity] = useState<ActivityLevel>(profile?.activity_level ?? 'moderate');
   const [goal, setGoal] = useState<Goal>(profile?.goal ?? 'maintain');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
+    // Auditoría de onboarding, Bugs B2/B4: mismo validador y mismo criterio
+    // de coma/punto que el onboarding — un valor no numérico o fuera de
+    // rango nunca se guarda en silencio ni cae de vuelta al valor anterior;
+    // se avisa y no se hace ningún UPDATE.
+    const heightValidation = validateHeightCm(height);
+    const weightValidation = validateWeightKg(weight);
+    // Auditoría de perfil/objetivos: fecha de nacimiento y sexo se pedían en
+    // el onboarding pero no había forma de corregirlos después — un error al
+    // rellenarlos (fecha equivocada, sexo equivocado) quedaba fijo para
+    // siempre, afectando en silencio el TDEE/BMR (edad, sexo) y la RDA de
+    // hierro (8 mg ♂ / 18 mg ♀, más del doble de diferencia) durante toda la
+    // vida de la cuenta. Mismo criterio de validación que el onboarding:
+    // nunca se guarda un valor no válido ni se revierte en silencio.
+    const birthDateValidation = validateBirthDate(birthDate);
+    if (heightValidation.status !== 'empty' && heightValidation.status !== 'valid') {
+      Alert.alert(
+        'Altura no válida',
+        numericFieldMessage(heightValidation.status, 'Altura', HEIGHT_CM_RANGE)
+      );
+      return;
+    }
+    if (weightValidation.status !== 'empty' && weightValidation.status !== 'valid') {
+      Alert.alert(
+        'Peso no válido',
+        numericFieldMessage(weightValidation.status, 'Peso', WEIGHT_KG_RANGE)
+      );
+      return;
+    }
+    if (birthDateValidation.status !== 'empty' && birthDateValidation.status !== 'valid') {
+      Alert.alert('Fecha de nacimiento no válida', birthDateMessage(birthDateValidation.status));
+      return;
+    }
+
     setSaving(true);
     const base = {
       ...profile,
       display_name: name.trim() || null,
-      height_cm: parseFloat(height.replace(',', '.')) || profile?.height_cm || null,
-      weight_kg: parseFloat(weight.replace(',', '.')) || profile?.weight_kg || null,
+      // Campo vacío = el usuario lo ha borrado a propósito: se persiste como
+      // "sin dato" (null), nunca se revierte en silencio al valor anterior
+      // (antes: `parseFloat(...) || profile?.height_cm || null`).
+      height_cm: heightValidation.status === 'valid' ? heightValidation.value : null,
+      weight_kg: weightValidation.status === 'valid' ? weightValidation.value : null,
+      birth_date: birthDateValidation.status === 'valid' ? birthDate : null,
+      sex,
       activity_level: activity,
       goal,
     };
@@ -590,6 +713,8 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
       display_name: base.display_name,
       height_cm: base.height_cm,
       weight_kg: base.weight_kg,
+      birth_date: base.birth_date,
+      sex: base.sex,
       activity_level: activity,
       goal,
       ...(targets
@@ -602,15 +727,33 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
         : {}),
     });
     setSaving(false);
-    if (error) Alert.alert('Error', error);
-    else onClose();
+    if (error) {
+      // Detalle técnico sólo en consola de desarrollo — nunca en la UI
+      // (CLAUDE.md §5, auditoría de onboarding Bug B3).
+      if (__DEV__) console.warn('[EditProfileModal] updateProfile error:', error);
+      Alert.alert('Error', toUserFacingError(error));
+      return;
+    }
+    onClose();
+  };
+
+  // Auditoría de navegación/modales: tap fuera, botón atrás del sistema y el
+  // propio "Cancelar" cerraban el modal sin comprobar `saving` — cerrar
+  // mientras `updateProfile()` seguía en vuelo no cancelaba el guardado: el
+  // perfil se actualizaba igualmente en segundo plano tras desaparecer la
+  // UI, aunque el usuario hubiera tocado "Cancelar" queriendo desistir. El
+  // botón "Guardar" ya se deshabilita con `loading={saving}`; esto hace que
+  // el resto de formas de cerrar respeten el mismo estado.
+  const handleClose = () => {
+    if (saving) return;
+    onClose();
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible transparent animationType="slide" onRequestClose={handleClose}>
       <Pressable
         style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}
-        onPress={onClose}
+        onPress={handleClose}
       >
         <Pressable onPress={() => undefined}>
           <View
@@ -648,6 +791,37 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
                 onChangeText={setWeight}
                 keyboardType="numeric"
               />
+
+              {/* Auditoría de perfil/objetivos: fecha de nacimiento y sexo ya
+                  se piden en el onboarding (afectan al TDEE/BMR y a la RDA de
+                  hierro), pero hasta ahora no había forma de corregirlos
+                  aquí si el usuario se equivocaba al rellenarlos. */}
+              <DateField label="Fecha de nacimiento" value={birthDate} onChange={setBirthDate} />
+
+              <View style={{ gap: spacing.sm }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: '700',
+                    letterSpacing: 0.8,
+                    color: t.textMuted,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Sexo biológico
+                </Text>
+                <Text style={{ color: t.textMuted, fontSize: 12, marginTop: -4 }}>
+                  Se usa solo para calcular tu metabolismo y la dosis de hierro recomendada.
+                </Text>
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <OptionRow selected={sex === 'male'} label="Hombre" icon="👨" onPress={() => setSex('male')} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <OptionRow selected={sex === 'female'} label="Mujer" icon="👩" onPress={() => setSex('female')} />
+                  </View>
+                </View>
+              </View>
 
               <View style={{ gap: spacing.sm }}>
                 <Text
@@ -698,7 +872,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
               </View>
 
               <Button title="Guardar (recalcula objetivos)" onPress={save} loading={saving} />
-              <Button title="Cancelar" variant="secondary" onPress={onClose} />
+              <Button title="Cancelar" variant="secondary" onPress={handleClose} disabled={saving} />
             </ScrollView>
           </View>
         </Pressable>
@@ -707,19 +881,47 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SupplementsModal({ onClose }: { onClose: () => void }) {
+/** Exportado sólo para tests (mismo criterio que `EditProfileModal`): se
+ * testea en aislamiento, sin montar el resto de `ProfileScreen`. */
+export function SupplementsModal({
+  onClose,
+  initialEditId,
+}: {
+  onClose: () => void;
+  /** Fase 5: si viene del aviso de Dashboard con un único suplemento needs_review, lo abre directamente. */
+  initialEditId?: string;
+}) {
   const t = useTheme();
   const { user } = useAuthStore();
   const store = useSupplementStore();
   const { isPro } = usePro();
 
   const [editing, setEditing] = React.useState<Supplement | 'new' | { preset: number } | null>(null);
+  const [showPro, setShowPro] = React.useState(false);
+
+  // Fases 5 y 6 del P0 de unidades: needs_review + unsupported, con la
+  // etiqueta accesible ya resuelta — misma función que usa DiaryScreen.
+  const attentionLabelById = React.useMemo(
+    () => attentionLabelsBySupplementId(store.supplements),
+    [store.supplements]
+  );
+
+  React.useEffect(() => {
+    if (!initialEditId) return;
+    const match = store.supplements.find((s) => s.id === initialEditId);
+    if (match) setEditing(match);
+  }, [initialEditId, store.supplements]);
 
   const tryAdd = (open: () => void) => {
     if (!isPro && store.supplements.length >= FREE_SUPPLEMENT_LIMIT) {
+      track('paywall_viewed', { source: 'supplements_limit' });
       Alert.alert(
         'Límite alcanzado',
-        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Házte Pro para añadir más.`
+        `El plan free permite ${FREE_SUPPLEMENT_LIMIT} suplementos. Házte Pro para añadir más.`,
+        [
+          { text: 'Ahora no', style: 'cancel' },
+          { text: 'Ver Pro', onPress: () => setShowPro(true) },
+        ]
       );
       return;
     }
@@ -784,6 +986,7 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <>
     <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -842,9 +1045,16 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
                   <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
                     {s.name}
                   </Text>
-                  <Text style={{ color: t.textMuted, fontSize: 12 }}>
-                    {s.dose_amount} {s.dose_unit}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <Text style={{ color: t.textMuted, fontSize: 12 }}>
+                      {s.dose_amount} {s.dose_unit}
+                    </Text>
+                    {attentionLabelById.has(s.id) ? (
+                      <View accessible accessibilityLabel={attentionLabelById.get(s.id)}>
+                        <Ionicons name={'alert-circle-outline' as any} size={14} color={semantic.warning} />
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
                 <Ionicons name={'pencil-outline' as any} size={16} color={t.textMuted} />
               </Pressable>
@@ -926,10 +1136,12 @@ function SupplementsModal({ onClose }: { onClose: () => void }) {
         </View>
       </View>
     </BottomSheet>
+    {showPro && <ProModal isPro={isPro} onClose={() => setShowPro(false)} />}
+    </>
   );
 }
 
-function CustomFoodModal({ onClose }: { onClose: () => void }) {
+export function CustomFoodModal({ onClose }: { onClose: () => void }) {
   const t = useTheme();
   const { user } = useAuthStore();
   const store = useCustomFoodStore();
@@ -944,12 +1156,22 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
   const [fiber, setFiber] = useState('');
   const [sugar, setSugar] = useState('');
   const [satFat, setSatFat] = useState('');
+  // Auditoría de alimentos personalizados: antes `is_vegan` se guardaba
+  // SIEMPRE como `true` al crear (y ni se tocaba al editar) — un alimento
+  // personalizado no vegano (p. ej. "Caldo de pollo casero", creado sólo para
+  // llevar la cuenta de sus calorías) se marcaba "Vegano ✓" sin que hubiera
+  // ninguna forma, en ningún punto de la app, de corregirlo: `ProductDetailSheet`
+  // sólo ofrece corrección manual de veganismo para el flujo de foto-IA
+  // (`isAiPhoto`), nunca para `source: 'custom'`. Ahora es un campo más del
+  // formulario, igual de editable que las macros.
+  const [isVegan, setIsVegan] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const num = (s: string) => parseFloat(s.replace(',', '.')) || 0;
 
   const resetForm = () => {
     setName(''); setKcal(''); setProtein(''); setCarbs('');
-    setFat(''); setFiber(''); setSugar(''); setSatFat('');
+    setFat(''); setFiber(''); setSugar(''); setSatFat(''); setIsVegan(true);
   };
 
   const startEdit = (f: CustomFood) => {
@@ -963,6 +1185,7 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
     setFiber(f.fiber_per_100g ? String(f.fiber_per_100g) : '');
     setSugar(f.sugar_per_100g ? String(f.sugar_per_100g) : '');
     setSatFat(f.saturated_fat_per_100g ? String(f.saturated_fat_per_100g) : '');
+    setIsVegan(f.is_vegan);
   };
 
   const startCreate = () => {
@@ -972,7 +1195,14 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
   };
 
   const save = async () => {
-    if (!user || !name.trim()) return;
+    // Auditoría de alimentos personalizados: `save()` no tenía ninguna
+    // protección contra doble tap (a diferencia de `ProductDetailSheet.commit()`
+    // o `DiaryScreen.copyFromYesterday()`, que sí deshabilitan su botón
+    // mientras la operación está en curso) — un doble toque podía disparar
+    // `createCustomFood()` dos veces antes de que el primero terminara,
+    // dejando dos alimentos idénticos guardados.
+    if (!user || !name.trim() || saving) return;
+    setSaving(true);
     const foodData = {
       name: name.trim(),
       calories_per_100g: num(kcal),
@@ -982,10 +1212,12 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
       fiber_per_100g: num(fiber),
       sugar_per_100g: num(sugar),
       saturated_fat_per_100g: num(satFat),
+      is_vegan: isVegan,
     };
 
     if (editingId) {
       const { error } = await store.updateCustomFood(editingId, foodData);
+      setSaving(false);
       if (error) Alert.alert('Error', error);
       else { setEditingId(null); resetForm(); }
     } else {
@@ -999,9 +1231,9 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
         calcium_mg_per_100g: null,
         vitamin_d_mcg_per_100g: null,
         omega3_g_per_100g: null,
-        is_vegan: true,
         image_url: null,
       });
+      setSaving(false);
       if (error) Alert.alert('Error', error);
       else { setCreating(false); resetForm(); }
     }
@@ -1016,8 +1248,22 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
 
   const showForm = editingId !== null || creating;
 
+  // Auditoría de navegación/modales: `BottomSheet` cierra por CUATRO vías
+  // (tap fuera, tap en el handle, deslizar, botón atrás) además del propio
+  // "Cancelar" del formulario — ninguna de ellas comprobaba `saving`. Cerrar
+  // el sheet mientras `save()` seguía en vuelo (p. ej. tras tocar "Guardar"
+  // y, sin esperar, deslizar el sheet hacia abajo) no cancelaba nada: el
+  // alta/edición del alimento se aplicaba igualmente en segundo plano tras
+  // desaparecer la UI, contradiciendo la intención de cerrar/cancelar del
+  // usuario. El botón "Guardar" ya se deshabilita con `loading={saving}`;
+  // esto hace que el resto de formas de cerrar respeten el mismo estado.
+  const handleClose = () => {
+    if (saving) return;
+    onClose();
+  };
+
   return (
-    <BottomSheet visible onClose={onClose} maxHeightFraction={0.88}>
+    <BottomSheet visible onClose={handleClose} maxHeightFraction={0.88}>
       <View style={{ gap: spacing.md, paddingTop: spacing.sm }}>
         <Text style={{ fontSize: 22, fontWeight: '800', color: t.text }}>Mis alimentos</Text>
 
@@ -1113,8 +1359,17 @@ function CustomFoodModal({ onClose }: { onClose: () => void }) {
                 <Input label="G. sat." value={satFat} onChangeText={setSatFat} keyboardType="numeric" />
               </View>
             </View>
-            <Button title={editingId ? 'Guardar cambios' : 'Crear alimento'} onPress={save} />
-            <Button title="Cancelar" variant="secondary" onPress={() => { setEditingId(null); setCreating(false); resetForm(); }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ color: t.text, fontWeight: '600', fontSize: 14 }}>¿Es apto para veganos?</Text>
+              <Switch value={isVegan} onValueChange={setIsVegan} trackColor={{ true: t.primary }} />
+            </View>
+            <Button title={editingId ? 'Guardar cambios' : 'Crear alimento'} onPress={save} loading={saving} />
+            <Button
+              title="Cancelar"
+              variant="secondary"
+              onPress={() => { setEditingId(null); setCreating(false); resetForm(); }}
+              disabled={saving}
+            />
           </View>
         )}
 

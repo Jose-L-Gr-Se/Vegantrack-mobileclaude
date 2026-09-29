@@ -1,6 +1,6 @@
 /** Escáner de códigos de barras con la cámara nativa (expo-camera). */
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { AppState, Linking, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,7 +19,7 @@ export function ScannerScreen() {
   // Recibe el mealType del + de la comida para no perder el contexto al volver.
   const route = useRoute<RouteProp<RootStackParamList, 'Scanner'>>();
   const mealType = route.params?.mealType;
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, requestPermission, getPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const scannedRef = useRef(false);
 
@@ -29,6 +29,25 @@ export function ScannerScreen() {
     }
   }, [permission, requestPermission]);
 
+  // Auditoría de permisos: si Android ya denegó la cámara de forma permanente
+  // (`canAskAgain === false` — "No preguntar de nuevo" marcado, o segunda
+  // denegación en Android 11+), volver a llamar a `requestPermission()` no
+  // sirve de nada: el sistema resuelve de inmediato con el mismo
+  // `granted: false`, sin mostrar ningún diálogo — de ahí que el efecto de
+  // arriba nunca reintente en ese caso. El único camino real es Ajustes del
+  // sistema. Además, `useCameraPermissions()` sólo comprueba el permiso al
+  // MONTAR el componente: si el usuario sale a Ajustes y lo concede allí, al
+  // volver la MISMA pantalla sigue montada con el estado antiguo — este
+  // listener revisa el permiso (sin pedirlo) cada vez que la app vuelve a
+  // primer plano, para que "volver de Ajustes" se refleje sin tener que salir
+  // y reentrar a esta pantalla.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') void getPermission();
+    });
+    return () => subscription.remove();
+  }, [getPermission]);
+
   const onBarcode = ({ data }: { data: string }) => {
     if (scannedRef.current || !data) return;
     scannedRef.current = true;
@@ -37,6 +56,10 @@ export function ScannerScreen() {
   };
 
   if (!permission?.granted) {
+    // `canAskAgain === false` sólo se sabe una vez resuelto el primer chequeo
+    // (`permission !== null`) — mientras se resuelve, se trata igual que
+    // "todavía se puede pedir" (mismo botón de siempre).
+    const permanentlyDenied = permission !== null && !permission.canAskAgain;
     return (
       <View
         style={{
@@ -51,9 +74,15 @@ export function ScannerScreen() {
           Escanear código de barras
         </Text>
         <Text style={{ color: t.textSecondary, textAlign: 'center', fontSize: 15 }}>
-          VegeTrack necesita acceso a la cámara para escanear códigos de barras.
+          {permanentlyDenied
+            ? 'Has denegado el acceso a la cámara y Android ya no permite volver a pedirlo desde aquí. Actívalo desde los Ajustes del sistema para poder escanear códigos de barras.'
+            : 'VegeTrack necesita acceso a la cámara para escanear códigos de barras.'}
         </Text>
-        <Button title="Conceder permiso" onPress={() => void requestPermission()} />
+        {permanentlyDenied ? (
+          <Button title="Abrir Ajustes" onPress={() => void Linking.openSettings()} />
+        ) : (
+          <Button title="Conceder permiso" onPress={() => void requestPermission()} />
+        )}
         <Button title="Volver" variant="secondary" onPress={() => navigation.goBack()} />
       </View>
     );

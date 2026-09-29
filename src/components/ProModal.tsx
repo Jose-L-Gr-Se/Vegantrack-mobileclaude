@@ -2,6 +2,13 @@
  * Modal de planes Pro con Google Play Billing vía RevenueCat.
  * Los precios se leen del catálogo de Play Store; si no hay red se muestran
  * los valores de fallback hardcodeados.
+ *
+ * El estado Pro NO se escribe desde aquí. La única ruta legítima para activar
+ * Pro en `profiles.subscription_tier` es el webhook de RevenueCat, que escribe
+ * con `service_role` (ver docs/SEGURIDAD-SUSCRIPCION.md). Tras una compra, el
+ * `customerInfo` del SDK ya refleja el entitlement, así que `usePro()` da Pro
+ * al instante sin tocar la base de datos; sólo refrescamos el perfil para
+ * recoger lo que haya escrito el webhook.
  */
 import React, { useEffect, useState } from 'react';
 import { Alert, ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
@@ -12,6 +19,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { usePurchasesStore, ENTITLEMENT_PRO } from '@/stores/purchasesStore';
+import { track } from '@/lib/analytics';
 
 // ── Definición de planes ─────────────────────────────────────────────────────
 
@@ -51,12 +59,10 @@ const PLANS: Plan[] = [
     cadence: 'al mes',
     desc: 'Sin límites y con estadísticas profundas.',
     features: [
-      'Análisis de platos con IA sin límite',
+      'Hasta 100 análisis de plato con IA al día',
       'Historial ilimitado',
       'Tendencias de micros (30 / 90 días)',
       'Recetas y suplementos ilimitados',
-      'Exportar el diario a CSV',
-      'Soporte prioritario',
     ],
     badge: 'Popular',
     featured: true,
@@ -71,7 +77,6 @@ const PLANS: Plan[] = [
     features: [
       'Todo lo de Pro mensual',
       '20% de descuento (más de 2 meses gratis)',
-      'Acceso anticipado a novedades',
     ],
     badge: 'Ahorra 20%',
     packageType: PACKAGE_TYPE.ANNUAL,
@@ -151,7 +156,7 @@ function PlanCard({
 export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => void }) {
   const t = useTheme();
   const { offerings, offeringsLoading, loadOfferings, customerInfo } = usePurchasesStore();
-  const { updateProfile } = useAuthStore();
+  const fetchProfile = useAuthStore((s) => s.fetchProfile);
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
@@ -189,19 +194,40 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
       return;
     }
 
+    // Instrumentación del funnel de monetización: el momento en que se le
+    // pasa el control a la hoja nativa de Google Play. `plan.id` sólo puede
+    // ser 'monthly'|'annual' aquí (el plan 'free' no tiene packageType y ya
+    // se ha descartado arriba) — nunca datos de pago, nunca email.
+    track('checkout_opened', { plan: plan.id });
+
     setPurchasing(true);
     setPurchaseError(null);
     try {
       const { customerInfo: info } = await Purchases.purchasePackage(pkg);
-      const nowPro = info.entitlements.active[ENTITLEMENT_PRO] !== undefined;
+      const entitlement = info.entitlements.active[ENTITLEMENT_PRO];
+      const nowPro = entitlement !== undefined;
       if (nowPro) {
-        const expiresAt = info.entitlements.active[ENTITLEMENT_PRO]?.expirationDate ?? null;
-        await updateProfile({ subscription_tier: 'pro', subscription_expires_at: expiresAt });
+        // `periodType === 'TRIAL'` distingue "empezó una prueba gratuita"
+        // (todavía no ha pagado) de "compra/renovación real" — son pasos
+        // distintos del funnel, no el mismo evento con otro nombre.
+        track(entitlement.periodType === 'TRIAL' ? 'trial_started' : 'purchase_completed', {
+          plan: plan.id,
+        });
+        // `info` ya contiene el entitlement: usePro() devuelve Pro de inmediato.
+        // El webhook de RevenueCat es quien escribe subscription_tier; lo
+        // recogemos en cuanto llegue, sin bloquear el cierre del modal.
+        void fetchProfile();
         onClose();
       }
     } catch (e: any) {
       if (e.code !== PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR) {
+        // Sólo el código de error de RevenueCat (un enum estable, no texto
+        // libre) — nunca `e.message`/`e.userMessage`, que pueden variar y no
+        // aportan nada a una métrica agregada.
+        track('purchase_failed', { plan: plan.id, code: e.code });
         setPurchaseError(e.userMessage ?? e.message ?? 'Error al procesar la compra.');
+      } else {
+        track('purchase_cancelled', { plan: plan.id });
       }
     } finally {
       setPurchasing(false);
@@ -215,8 +241,9 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
       const info = await Purchases.restorePurchases();
       const nowPro = info.entitlements.active[ENTITLEMENT_PRO] !== undefined;
       if (nowPro) {
-        const expiresAt = info.entitlements.active[ENTITLEMENT_PRO]?.expirationDate ?? null;
-        await updateProfile({ subscription_tier: 'pro', subscription_expires_at: expiresAt });
+        track('purchase_restored');
+        // Igual que en la compra: el entitlement lo manda RevenueCat, no el cliente.
+        void fetchProfile();
         Alert.alert('Compras restauradas', 'Tu suscripción Pro ha sido restaurada correctamente.');
         onClose();
       } else {
@@ -247,7 +274,7 @@ export function ProModal({ isPro, onClose }: { isPro: boolean; onClose: () => vo
           <Text style={{ fontSize: 30 }}>👑</Text>
           <Text style={{ fontSize: 28, fontWeight: '700', color: t.text }}>Hazte Pro</Text>
           <Text style={{ color: t.textSecondary, fontSize: 14, textAlign: 'center' }}>
-            Análisis de platos con IA sin límite, historial completo y tendencias de micros. Cancela cuando quieras.
+            Hasta 100 análisis de plato con IA al día, historial completo y tendencias de micros. Cancela cuando quieras.
           </Text>
         </View>
 
