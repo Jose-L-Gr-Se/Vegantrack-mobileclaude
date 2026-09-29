@@ -212,6 +212,45 @@ function withFoodLogLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Recalcula la racha en el servidor y refresca el perfil. Única puerta a
+ * `update_streak`: la usan `addEntry`, `deleteEntry` y `flushPending`.
+ *
+ * `update_streak(p_user_id, p_date)` exige ambos parámetros en Postgres (sin
+ * valor por defecto para `p_date`). Desde la migración de racha cronológica
+ * la racha se DERIVA de `food_log` (días naturales consecutivos con >=1
+ * entrada, terminando en el último día válido): depende sólo del conjunto de
+ * fechas, así que una fecha pasada, un borrado o un orden de llegada
+ * cualquiera dan el mismo resultado y `p_date` sólo se conserva por
+ * compatibilidad de firma (la PWA llama igual). Por eso hay que llamarla
+ * también tras BORRAR y tras sincronizar pendientes, no sólo al añadir.
+ *
+ * `authStore.fetchProfile()` sólo se llamaba en transiciones de auth: sin
+ * este refresco el 🔥 Racha y la fila "Racha" del VeganScore leían el perfil
+ * cacheado ANTES de la operación (auditoría del loop de retención).
+ *
+ * Best-effort: fire-and-forget y a prueba de fallos (RPC rechazada, `{error}`,
+ * o una excepción síncrona) — un fallo aquí nunca bloquea ni deshace el
+ * guardado/borrado/sync que ya se confirmó.
+ */
+function refreshStreak(userId: string, date: string): void {
+  try {
+    void supabase
+      .rpc('update_streak', { p_user_id: userId, p_date: date })
+      .then(
+        () => {
+          void useAuthStore.getState().fetchProfile();
+        },
+        () => undefined
+      )
+      // Ni siquiera un fallo del refresco del perfil puede escapar como
+      // promesa rechazada sin capturar.
+      .then(undefined, () => undefined);
+  } catch {
+    // Best-effort.
+  }
+}
+
+/**
  * Comida + suplementos de un rango de fechas, agrupados por día — la
  * consulta e infraestructura de agregación que `getMicroTrends` ya traía
  * (comida completa de `food_log`, mapa de `supplements` por id, tomas de
@@ -475,36 +514,9 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     });
 
     if (ok) {
-      // Racha en segundo plano (la PWA usa la RPC update_streak).
-      // Auditoría de retención — P0: `update_streak(p_user_id, p_date)` exige
-      // ambos parámetros en Postgres (sin valor por defecto para `p_date`);
-      // antes sólo se pasaba `p_user_id`, así que PostgREST no encontraba
-      // ninguna función con esa firma y la llamada fallaba SIEMPRE — de forma
-      // silenciosa, porque el error ya se descartaba a propósito (fire-and-
-      // forget: un fallo aquí nunca debe bloquear ni deshacer el guardado de
-      // la comida, que ya se ha confirmado arriba). `entry.date` es la fecha
-      // de la propia entrada (no `new Date()`): mismo criterio que usa la
-      // PWA, para que registrar (o corregir) una entrada de un día pasado
-      // actualice la racha de ESE día, no la de hoy.
-      //
-      // Auditoría del loop de retención (primeros 7 días): `update_streak`
-      // deja `streak_count`/`last_log_date` al día en `profiles`, pero nada
-      // volvía a leer ese perfil — `authStore.fetchProfile()` sólo se llama
-      // en transiciones de auth (login, arranque de la app), nunca aquí. El
-      // único refuerzo positivo real que ya existe en el producto (🔥 Racha:
-      // N días en el Diario, y el desglose de VeganScore en Resumen) leía
-      // siempre el perfil cacheado ANTES de esta comida, así que un usuario
-      // que registraba su primera comida del día nunca veía su racha
-      // reflejada hasta cerrar y reabrir la app — justo el momento en que
-      // más cuenta como "razón para volver mañana". Mismo criterio
-      // best-effort que el resto de esta cadena: un fallo aquí nunca debe
-      // afectar al guardado ya confirmado.
-      void supabase.rpc('update_streak', { p_user_id: entry.user_id, p_date: entry.date }).then(
-        () => {
-          void useAuthStore.getState().fetchProfile();
-        },
-        () => undefined
-      );
+      // Racha en segundo plano (ver `refreshStreak`). `entry.date` es la fecha
+      // de la propia entrada, no `new Date()`: mismo criterio que la PWA.
+      refreshStreak(entry.user_id, entry.date);
       return { error: null, isFirstEntry };
     }
     if (error && !isTransientSyncError(error)) {
@@ -519,6 +531,9 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   },
 
   deleteEntry: async (id) => {
+    // Antes de quitarla de `entries`: hace falta su usuario y fecha para
+    // recalcular la racha tras el borrado remoto.
+    const removed = get().entries.find((e) => e.id === id);
     set({ entries: get().entries.filter((e) => e.id !== id) });
     await mirrorMarkDeleted('food_log', id);
 
@@ -535,7 +550,14 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       return { error };
     });
 
-    if (!error) return { error: null };
+    if (!error) {
+      // Borrado remoto confirmado: si era la última comida de un día, la racha
+      // cambia. (Sin red no se llama: la tombstone pendiente la recalculará
+      // `flushPending` cuando se aplique.)
+      const userId = removed?.user_id ?? useAuthStore.getState().user?.id;
+      if (userId) refreshStreak(userId, removed?.date ?? todayISO());
+      return { error: null };
+    }
     if (!isTransientSyncError(error)) {
       // Error real (Bug C): la tombstone queda pendiente en local —
       // flushPending la reintentará — pero el llamador debe saberlo.
@@ -738,13 +760,17 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
     if (flushInFlight) return;
     flushInFlight = true;
     try {
-      await withFoodLogLock(async () => {
+      const applied = await withFoodLogLock(async () => {
+        // Fechas de las operaciones que SÍ se aplicaron en remoto: las únicas
+        // que pueden cambiar la racha (ni un fallo ni un no-op la tocan).
+        const appliedDates: string[] = [];
         const pending = await mirrorPending<FoodLogEntry>('food_log', userId);
         for (const row of pending) {
           if (row.deleted) {
             const { error } = await supabase.from('food_log').delete().eq('id', row.id);
             if (!error) {
               await mirrorRemove('food_log', row.id);
+              appliedDates.push(row.payload?.date ?? todayISO());
             } else if (!isTransientSyncError(error)) {
               // Sin red no se reporta (es el caso esperado, no un bug); un
               // error con código de servidor sí lo es — nunca cambia si se
@@ -756,12 +782,20 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
             const { ok, error } = await upsertRemote(insertable as NewFoodLogEntry);
             if (ok) {
               await mirrorMarkSynced('food_log', row.id);
+              appliedDates.push(row.payload?.date ?? todayISO());
             } else if (error && !isTransientSyncError(error)) {
               reportError(error, { tag: 'sync_flush_food_log', extra: { op: 'upsert', code: error.code || 'unknown' } });
             }
           }
         }
+        return appliedDates;
       });
+      // Una sola recalculación por pasada, fuera del lock de food_log: la
+      // racha se deriva de todo el conjunto de fechas, no de cada operación.
+      // Sin esto, un día registrado sin red nunca contaba para la racha.
+      if (applied.length > 0) {
+        refreshStreak(userId, applied.reduce((max, d) => (d > max ? d : max)));
+      }
     } catch (err) {
       // Red de seguridad: una excepción inesperada (SQLite/JSON corrupto/
       // cualquier fallo local — no un {error} de Supabase, que ya se

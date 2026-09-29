@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:sql": "bash supabase/tests/update_streak/run.sh",
     "prebuild:android": "expo prebuild --platform android --no-install",
     "build:apk": "node ./scripts/build-apk.js",
     "build:aab": "node ./scripts/build-apk.js bundleRelease"

@@ -19,6 +19,7 @@ import { microRecommendationText } from '@/utils/microRecommendations';
 import { buildNutritionInsight, describeInsightPriority } from '@/utils/nutritionInsight';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
 import { todayISO } from '@/utils/dates';
+import { effectiveStreak } from '@/utils/streak';
 import type { RootStackParamList } from '@/navigation/types';
 
 /** Días que pide `getMicroTrends` para la ventana del sistema de patrones
@@ -114,7 +115,7 @@ export function DashboardScreen() {
     summary,
     calorieTarget: profile?.calorie_target ?? 0,
     proteinTarget: profile?.protein_target_g ?? 0,
-    streakCount: profile?.streak_count ?? 0,
+    streakCount: effectiveStreak(profile?.streak_count, profile?.last_log_date, todayISO()),
     suppContributions: supplementStore.getTodayContributions(),
     sex: profile?.sex ?? null,
   });

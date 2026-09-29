@@ -26,6 +26,7 @@ import { useMealPhoto } from '@/hooks/useMealPhoto';
 import { track } from '@/lib/analytics';
 import { FREE_HISTORY_DAYS, FREE_SUPPLEMENT_LIMIT, usePro } from '@/hooks/usePro';
 import { addDays, daysBetween, formatDateHuman, todayISO } from '@/utils/dates';
+import { effectiveStreak } from '@/utils/streak';
 import type { FoodLogEntry, MealType, Supplement } from '@/types';
 import type { MainTabParamList } from '@/navigation/types';
 
@@ -247,6 +248,7 @@ export function DiaryScreen() {
   };
 
   const calTarget = profile?.calorie_target ?? 0;
+  const streakNow = effectiveStreak(profile?.streak_count, profile?.last_log_date, todayISO());
   const calProgress = calTarget > 0 ? Math.min(1, summary.calories / calTarget) : 0;
   const remaining = calTarget > 0 ? Math.max(0, calTarget - Math.round(summary.calories)) : null;
 
@@ -297,9 +299,10 @@ export function DiaryScreen() {
                 </View>
               ) : null}
             </View>
-            {profile?.streak_count ? (
+            {/* Racha efectiva (viva hoy/ayer): una racha rota no se sigue mostrando. */}
+            {streakNow > 0 ? (
               <Text style={{ color: t.textSecondary, fontWeight: '700', fontSize: 12 }}>
-                🔥 Racha: {profile.streak_count} días
+                🔥 Racha: {streakNow} días
               </Text>
             ) : null}
           </View>
