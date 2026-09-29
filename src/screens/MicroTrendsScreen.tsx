@@ -24,6 +24,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type MicroKey, type MicroTrendPoint } from '@/stores/diaryStore';
 import { usePro } from '@/hooks/usePro';
 import { formatDateHuman } from '@/utils/dates';
+import { attributeMicroIntake, describeMicroAttribution } from '@/utils/microAttribution';
 import { track } from '@/lib/analytics';
 import type { RootStackParamList } from '@/navigation/types';
 
@@ -137,6 +138,11 @@ export function MicroTrendsScreen() {
 
   const selected = MICROS.find((m) => m.key === micro)!;
 
+  // Origen del aporte del micro seleccionado (comida vs. suplemento) sobre los
+  // mismos días con datos que la media de arriba. Sólo describe de dónde
+  // viene lo ya conocido: no cambia `avgPct` ni ningún total.
+  const attributionCopy = describeMicroAttribution(attributeMicroIntake(seriesPoints), selected.unit);
+
   return (
     <View style={{ flex: 1, backgroundColor: t.background }}>
       {header}
@@ -226,6 +232,16 @@ export function MicroTrendsScreen() {
                   )}
                 </View>
               </View>
+
+              {attributionCopy ? (
+                <View style={{ gap: 2 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', color: t.textMuted }}>
+                    Origen del aporte
+                  </Text>
+                  <Text style={{ color: t.text, fontSize: 14, fontWeight: '600' }}>{attributionCopy.headline}</Text>
+                  <Text style={{ color: t.textMuted, fontSize: 11 }}>{attributionCopy.detail}</Text>
+                </View>
+              ) : null}
 
               {hasData ? (
                 <>

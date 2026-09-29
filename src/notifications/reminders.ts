@@ -39,7 +39,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { kvGet, kvSet, mirrorList } from '@/db/database';
-import { daysBetween, todayISO } from '@/utils/dates';
+import { todayISO } from '@/utils/dates';
+import { effectiveStreak } from '@/utils/streak';
 import type { FoodLogEntry } from '@/types';
 
 const REMINDER_ID = 'daily-log-reminder';
@@ -82,13 +83,13 @@ export interface ReminderStreakInfo {
 /**
  * ¿Sigue "viva" la racha a día de hoy, a efectos de este texto? Válida si
  * hay racha (>0) y el último registro fue hoy o ayer — cualquier hueco mayor
- * significa que ya se rompió (`update_streak` la habría reiniciado a 1 en
- * cuanto se registre de nuevo, pero hasta entonces no hay nada que destacar).
+ * significa que ya se rompió (hasta que se registre de nuevo no hay nada que
+ * destacar). La regla vive en `effectiveStreak` (utils/streak.ts).
  * Nunca inventa una racha que no sea la real de `profiles`.
  */
 function isStreakValidToday(streak: ReminderStreakInfo | null | undefined): boolean {
-  if (!streak || streak.streakCount <= 0 || !streak.lastLogDate) return false;
-  return daysBetween(streak.lastLogDate, todayISO()) <= 1;
+  if (!streak) return false;
+  return effectiveStreak(streak.streakCount, streak.lastLogDate, todayISO()) > 0;
 }
 
 /**

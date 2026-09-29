@@ -30,6 +30,21 @@
  * Un día inválido (sin registros relevantes, o con confianza baja) no
  * cuenta ni como "bueno" ni como "malo": se excluye del recuento entero, en
  * el numerador y en el denominador.
+ *
+ * ── LIMITACIÓN CONOCIDA Y DELIBERADA: sólo micronutrientes ─────────────────
+ * Proteína y fibra NO entran en este motor, y no es un pendiente olvidado:
+ *   1. Las macros no tienen `*_known` ni cobertura: `normalizeProduct`
+ *      colapsa "ausente" a 0 (ver `productNutritionValidation.ts`), así que
+ *      un día "bajo en fibra" puede ser sólo un producto sin dato de fibra.
+ *      Nada equivale al `confidence>=medium` que hace fiable el "día válido"
+ *      de los micros.
+ *   2. El modelo no distingue ingesta baja de registro parcial: lo único que
+ *      existe como "día con datos" es tener >=1 fila en `food_log`, que un
+ *      solo snack ya cumple (`hasEntries` de los micros tiene el mismo alcance:
+ *      no dice si se registró todo el día). Un patrón de proteína/fibra sobre
+ *      esa definición alertaría por registrar poco.
+ * Extenderlo exige antes una definición explícita de "día válido para macros"
+ * (decisión de producto) y, para fibra, flags de dato conocido en el modelo.
  */
 import {
   MIN_SCORE_CONFIDENCE,
@@ -114,6 +129,25 @@ function patternEvidence(key: MicroKey, previousDays: HistoricalMicroDay[]): Pat
     lowDays,
     validDays,
   };
+}
+
+/**
+ * Texto de una prioridad. Describe siempre LO REGISTRADO — nunca la ingesta
+ * real ni un estado de salud: un día de registro parcial y uno de registro
+ * completo son indistinguibles para este motor (`hasEntries`/`confidence`
+ * miden la calidad del dato registrado, no si se registró todo el día). Sin
+ * "déficit"/"carencia"/"deficiencia": sólo una observación del registro.
+ *
+ * El denominador de un patrón es SIEMPRE `validDays` (los días con datos
+ * suficientes), nunca el tamaño de la ventana: "3 de los últimos 4 días con
+ * datos", jamás "3 de 7" cuando sólo 4 días tenían datos.
+ */
+export function describeInsightPriority(p: NutritionInsightPriority): string {
+  const pctText = `${Math.round(p.pct * 100)} % del objetivo`;
+  if (p.urgency === 'pattern' && p.lowDays !== undefined && p.validDays !== undefined) {
+    return `lo registrado quedó bajo en ${p.lowDays} de los últimos ${p.validDays} días con datos · ${pctText} hoy`;
+  }
+  return `lo registrado hoy es bajo · ${pctText}`;
 }
 
 /**
