@@ -9,6 +9,7 @@
  */
 import { useDiaryStore } from '@/stores/diaryStore';
 import { resolveMicroDisplay } from '@/utils/nutrition';
+import { attributeMicroIntake } from '@/utils/microAttribution';
 import { addDays, todayISO } from '@/utils/dates';
 import type { FoodLogEntry } from '@/types';
 
@@ -189,5 +190,135 @@ describe('getMicroTrends (Fase 2 del P0 de unidades de suplementos) · aporte de
     const points = await useDiaryStore.getState().getMicroTrends('u1', 1, 'male');
     const point = points.find((p) => p.date === day)!;
     expect(point.micros.vitamin_b12_mcg.value).toBeCloseTo(25, 6); // nunca 50
+  });
+});
+
+describe('getMicroTrends · atribución comida vs. suplemento (campos aditivos — no cambia ningún total)', () => {
+  const end = todayISO();
+  const yesterday = addDays(end, -1);
+
+  function mockData(opts: {
+    food?: FoodLogEntry[];
+    supplements?: { id: string; nutrient_key: string; dose_amount: number; dose_unit: string }[];
+    logs?: { supplement_id: string; date: string }[];
+  }) {
+    mockFrom.mockReset();
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'food_log') return makeBuilder({ data: opts.food ?? [] });
+      if (table === 'supplements') return makeBuilder({ data: opts.supplements ?? [] });
+      if (table === 'supplement_logs') return makeBuilder({ data: opts.logs ?? [] });
+      throw new Error(`tabla inesperada en el mock: ${table}`);
+    });
+  }
+
+  const ironSupplement = { id: 'supp-iron', nutrient_key: 'iron_mg', dose_amount: 14, dose_unit: 'mg' };
+
+  it('mezcla: comida y suplemento quedan SEPARADOS, y value sigue siendo exactamente su suma', async () => {
+    mockData({
+      food: [makeEntry({ id: 'a', date: end, serving_size_g: 100, iron_mg: 6, iron_known: true })],
+      supplements: [ironSupplement],
+      logs: [{ supplement_id: ironSupplement.id, date: end }],
+    });
+    const point = (await useDiaryStore.getState().getMicroTrends('u1', 1, 'male')).find((p) => p.date === end)!;
+    const iron = point.micros.iron_mg;
+
+    expect(iron.knownFood).toBe(6);
+    expect(iron.supplement).toBeCloseTo(14, 6);
+    expect(iron.coverageByGrams).toBe(1);
+    expect(iron.supplementUnresolved).toBe(false);
+    expect(iron.value).toBe(iron.knownFood + iron.supplement); // invariante: nada cambia de total
+  });
+
+  it('100 % alimentos: sin suplementos, supplement=0 y nada marcado como desconocido', async () => {
+    mockData({ food: [makeEntry({ id: 'a', date: end, serving_size_g: 100, iron_mg: 6, iron_known: true })] });
+    const iron = (await useDiaryStore.getState().getMicroTrends('u1', 1, 'male'))[0].micros.iron_mg;
+
+    expect(iron.knownFood).toBe(6);
+    expect(iron.supplement).toBe(0);
+    expect(iron.supplementUnresolved).toBe(false);
+    expect(attributeMicroIntake([iron]).shares).toEqual({ food: 1, supplement: 0 });
+  });
+
+  it('100 % suplemento: sin comida registrada, knownFood=0 y hasEntries=false', async () => {
+    const b12 = { id: 'supp-b12', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'mcg' };
+    mockData({ supplements: [b12], logs: [{ supplement_id: b12.id, date: end }] });
+    const micro = (await useDiaryStore.getState().getMicroTrends('u1', 1, 'male'))[0].micros.vitamin_b12_mcg;
+
+    expect(micro.knownFood).toBe(0);
+    expect(micro.supplement).toBeCloseTo(25, 6);
+    expect(micro.hasEntries).toBe(false);
+    expect(micro.value).toBeCloseTo(25, 6);
+    expect(attributeMicroIntake([micro]).shares).toEqual({ food: 0, supplement: 1 });
+  });
+
+  it('comida con cobertura parcial: knownFood conserva lo conocido y la atribución NO afirma un reparto', async () => {
+    // Mismo escenario que el test de "cobertura baja" de arriba: 20 mg conocidos de 1000 g (0,1).
+    mockData({
+      food: [
+        makeEntry({ id: 'a', date: end, serving_size_g: 100, iron_mg: 20, iron_known: true }),
+        makeEntry({ id: 'b', date: end, serving_size_g: 900 }),
+      ],
+      supplements: [ironSupplement],
+      logs: [{ supplement_id: ironSupplement.id, date: end }],
+    });
+    const iron = (await useDiaryStore.getState().getMicroTrends('u1', 1, 'male'))[0].micros.iron_mg;
+
+    expect(iron.knownFood).toBe(20);
+    expect(iron.coverageByGrams).toBeCloseTo(0.1, 10);
+    expect(attributeMicroIntake([iron]).shares).toBeNull();
+  });
+
+  it('suplemento con unidad no soportada (cápsula): total sin cambios (0) pero marcado como aporte desconocido', async () => {
+    const capsule = { id: 'supp-1', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'cápsula' };
+    mockData({ supplements: [capsule], logs: [{ supplement_id: capsule.id, date: end }] });
+    const point = (await useDiaryStore.getState().getMicroTrends('u1', 1, 'male'))[0];
+
+    expect(point.micros.vitamin_b12_mcg.value).toBe(0);
+    expect(point.micros.vitamin_b12_mcg.supplement).toBe(0);
+    expect(point.micros.vitamin_b12_mcg.supplementUnresolved).toBe(true);
+    // Sólo el nutriente de esa toma: los demás no quedan marcados.
+    expect(point.micros.iron_mg.supplementUnresolved).toBe(false);
+  });
+
+  it('dosis needs_review (calcio 150 g): tampoco se suma, y queda marcada como desconocida', async () => {
+    const implausible = { id: 'supp-1', nutrient_key: 'calcium_mg', dose_amount: 150, dose_unit: 'g' };
+    mockData({ supplements: [implausible], logs: [{ supplement_id: implausible.id, date: end }] });
+    const calcium = (await useDiaryStore.getState().getMicroTrends('u1', 1, 'male'))[0].micros.calcium_mg;
+
+    expect(calcium.value).toBe(0);
+    expect(calcium.supplementUnresolved).toBe(true);
+  });
+
+  it('la marca de "desconocido" es POR DÍA: una toma no interpretable de ayer no contamina hoy', async () => {
+    const capsule = { id: 'supp-1', nutrient_key: 'vitamin_b12_mcg', dose_amount: 25, dose_unit: 'cápsula' };
+    mockData({ supplements: [capsule], logs: [{ supplement_id: capsule.id, date: yesterday }] });
+    const points = await useDiaryStore.getState().getMicroTrends('u1', 2, 'male');
+
+    expect(points.find((p) => p.date === yesterday)!.micros.vitamin_b12_mcg.supplementUnresolved).toBe(true);
+    expect(points.find((p) => p.date === end)!.micros.vitamin_b12_mcg.supplementUnresolved).toBe(false);
+  });
+
+  it('el total histórico es EXACTAMENTE el de siempre: value/pct/hasEntries/confidence con las cifras que ya producía', async () => {
+    // Dos días con cifras fijas (hierro, RDA hombre = 8). Estos números son los
+    // que producía getMicroTrends ANTES de añadir la atribución (value =
+    // comida + suplemento; pct = value / 8): la atribución sólo añade campos.
+    mockData({
+      food: [
+        makeEntry({ id: 'y', date: yesterday, serving_size_g: 100, iron_mg: 5, iron_known: true }),
+        makeEntry({ id: 't', date: end, serving_size_g: 100, iron_mg: 6, iron_known: true }),
+      ],
+      supplements: [ironSupplement],
+      logs: [{ supplement_id: ironSupplement.id, date: end }],
+    });
+    const points = await useDiaryStore.getState().getMicroTrends('u1', 2, 'male');
+    const y = points.find((p) => p.date === yesterday)!.micros.iron_mg;
+    const t = points.find((p) => p.date === end)!.micros.iron_mg;
+
+    expect({ value: y.value, pct: y.pct, hasEntries: y.hasEntries, confidence: y.confidence }).toEqual({
+      value: 5, pct: 0.625, hasEntries: true, confidence: 'high',
+    });
+    expect({ value: t.value, pct: t.pct, hasEntries: t.hasEntries, confidence: t.confidence }).toEqual({
+      value: 20, pct: 2.5, hasEntries: true, confidence: 'high',
+    });
   });
 });

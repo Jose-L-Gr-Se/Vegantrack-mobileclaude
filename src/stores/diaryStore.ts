@@ -53,7 +53,35 @@ export type MicroKey = keyof NutrientSummary['micros'];
  */
 export interface MicroTrendPoint {
   date: string;
-  micros: Record<MicroKey, { value: number; pct: number; hasEntries: boolean; confidence: MicroConfidence }>;
+  micros: Record<
+    MicroKey,
+    {
+      value: number;
+      pct: number;
+      hasEntries: boolean;
+      confidence: MicroConfidence;
+      /**
+       * Atribución comida vs. suplemento — campos ADITIVOS: `value`/`pct` no
+       * cambian de significado ni de valor (`value === knownFood +
+       * supplement`, siempre). Son las mismas cifras que `resolveMicroDisplay`
+       * ya calculaba en este punto y que antes se descartaban; se guardan
+       * SEPARADAS, nunca mezcladas en una única cifra.
+       *
+       * `knownFood`: suma conocida de comida (cota inferior si la cobertura
+       * es parcial). `supplement`: sólo dosis normalizadas con éxito.
+       * `coverageByGrams`: cobertura de la comida (0..1), para saber si
+       * `knownFood` es todo lo que hubo o sólo lo conocido.
+       * `supplementUnresolved`: ese día se tomó algún suplemento de este
+       * nutriente cuya dosis NO se pudo normalizar (`needs_review`/
+       * `unsupported`) — su aporte real es desconocido y NO está en
+       * `supplement`, así que `supplement: 0` no significa "no tomó nada".
+       */
+      knownFood: number;
+      supplement: number;
+      coverageByGrams: number;
+      supplementUnresolved: boolean;
+    }
+  >;
 }
 
 /**
@@ -198,7 +226,14 @@ async function fetchHistoricalFoodAndSupplements(
   userId: string,
   start: string,
   end: string
-): Promise<{ foodByDate: Map<string, FoodLogEntry[]>; suppByDate: Map<string, Record<string, number>> }> {
+): Promise<{
+  foodByDate: Map<string, FoodLogEntry[]>;
+  suppByDate: Map<string, Record<string, number>>;
+  /** Por fecha, los nutrientes con al menos una toma cuya dosis NO se pudo
+   *  normalizar (`needs_review`/`unsupported`): su aporte es desconocido y
+   *  NO está en `suppByDate`. Sólo informativo — no altera ninguna suma. */
+  suppUnresolvedByDate: Map<string, Set<string>>;
+}> {
   // Comida del periodo (filas completas: necesitamos macros + micros + flags known + source)
   const { data: foodRows } = await supabase
     .from('food_log')
@@ -250,6 +285,7 @@ async function fetchHistoricalFoodAndSupplements(
   // VeganScore histórico, aunque el Dashboard de HOY (que sí pasa por el
   // mapa de `takenToday`) nunca lo duplicaría.
   const suppByDate = new Map<string, Record<string, number>>();
+  const suppUnresolvedByDate = new Map<string, Set<string>>();
   const countedSupplementByDate = new Map<string, Set<string>>();
   for (const log of (logRows ?? []) as { supplement_id: string; date: string }[]) {
     const countedToday = countedSupplementByDate.get(log.date) ?? new Set<string>();
@@ -260,13 +296,22 @@ async function fetchHistoricalFoodAndSupplements(
     const m = suppMap.get(log.supplement_id);
     if (!m || !m.key) continue;
     const normalized = normalizeSupplementDose({ amount: m.amount, unit: m.unit, nutrientKey: m.key });
-    if (normalized.status !== 'success') continue;
+    if (normalized.status !== 'success') {
+      // Sigue sin sumarse (igual que siempre), pero se deja constancia de que
+      // ese día hubo una toma de este nutriente con aporte desconocido — la
+      // atribución comida/suplemento no debe presentar `supplement: 0` como
+      // un 0 confirmado.
+      const unresolved = suppUnresolvedByDate.get(log.date) ?? new Set<string>();
+      unresolved.add(m.key);
+      suppUnresolvedByDate.set(log.date, unresolved);
+      continue;
+    }
     const day = suppByDate.get(log.date) ?? {};
     day[m.key] = (day[m.key] ?? 0) + normalized.canonicalAmount;
     suppByDate.set(log.date, day);
   }
 
-  return { foodByDate, suppByDate };
+  return { foodByDate, suppByDate, suppUnresolvedByDate };
 }
 
 /**
@@ -601,7 +646,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
   getMicroTrends: async (userId, days, sex) => {
     const end = todayISO();
     const start = addDays(end, -(days - 1));
-    const { foodByDate, suppByDate } = await fetchHistoricalFoodAndSupplements(userId, start, end);
+    const { foodByDate, suppByDate, suppUnresolvedByDate } = await fetchHistoricalFoodAndSupplements(userId, start, end);
 
     const overrides = get().overrides ?? [];
     const microKeys = Object.keys(MICRO_RDA) as MicroKey[];
@@ -611,6 +656,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       const date = addDays(start, i);
       const summary = summarizeEntries(foodByDate.get(date) ?? [], overrides);
       const suppContrib = suppByDate.get(date) ?? {};
+      const suppUnresolved = suppUnresolvedByDate.get(date);
 
       const micros = {} as MicroTrendPoint['micros'];
       for (const key of microKeys) {
@@ -625,6 +671,12 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
           pct: display.pct,
           hasEntries: display.hasEntries,
           confidence: display.confidence,
+          // Atribución comida vs. suplemento (aditiva): las mismas cifras de
+          // `display`, ya calculadas arriba, sólo que ahora no se descartan.
+          knownFood: display.knownFood,
+          supplement: display.supplement,
+          coverageByGrams: display.coverageByGrams,
+          supplementUnresolved: suppUnresolved?.has(key) ?? false,
         };
       }
       points.push({ date, micros });

@@ -76,12 +76,12 @@ const POINTS = [
   {
     date: '2026-09-07',
     micros: {
-      vitamin_b12_mcg: { value: 2, pct: 0.8, hasEntries: true, confidence: 'high' },
-      iron_mg: { value: 10, pct: 0.6, hasEntries: true, confidence: 'high' },
-      zinc_mg: { value: 5, pct: 0.5, hasEntries: true, confidence: 'high' },
-      calcium_mg: { value: 500, pct: 0.5, hasEntries: true, confidence: 'high' },
-      vitamin_d_mcg: { value: 5, pct: 0.5, hasEntries: true, confidence: 'high' },
-      omega3_g: { value: 1, pct: 0.5, hasEntries: true, confidence: 'high' },
+      vitamin_b12_mcg: { value: 2, pct: 0.8, hasEntries: true, confidence: 'high', knownFood: 2, supplement: 0, coverageByGrams: 1, supplementUnresolved: false },
+      iron_mg: { value: 10, pct: 0.6, hasEntries: true, confidence: 'high', knownFood: 10, supplement: 0, coverageByGrams: 1, supplementUnresolved: false },
+      zinc_mg: { value: 5, pct: 0.5, hasEntries: true, confidence: 'high', knownFood: 5, supplement: 0, coverageByGrams: 1, supplementUnresolved: false },
+      calcium_mg: { value: 500, pct: 0.5, hasEntries: true, confidence: 'high', knownFood: 500, supplement: 0, coverageByGrams: 1, supplementUnresolved: false },
+      vitamin_d_mcg: { value: 5, pct: 0.5, hasEntries: true, confidence: 'high', knownFood: 5, supplement: 0, coverageByGrams: 1, supplementUnresolved: false },
+      omega3_g: { value: 1, pct: 0.5, hasEntries: true, confidence: 'high', knownFood: 1, supplement: 0, coverageByGrams: 1, supplementUnresolved: false },
     },
   },
 ];
