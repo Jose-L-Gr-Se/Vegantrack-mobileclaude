@@ -25,6 +25,8 @@ import {
 } from '@/lib/openfoodfacts';
 import { freshItemToProduct, searchFreshProduce } from '@/lib/freshProduce';
 import { normalizeProduct } from '@/lib/openfoodfacts';
+import { MICRO_RDA } from '@/utils/nutrition';
+import { MICRO_FOOD_SOURCES } from '@/utils/microRecommendations';
 import type { FoodPer100g, MealType, OpenFoodFactsProduct, RecentFood, VeganConfidence } from '@/types';
 import type { MainTabParamList, RootStackParamList } from '@/navigation/types';
 
@@ -117,11 +119,13 @@ export function SearchScreen() {
 
   // Al SALIR de Buscar limpiamos el lock y el param, de modo que volver a
   // entrar tocando la pestaña (sin intención de comida) vuelva a preguntar.
+  // `nutrient` (Nutrition Insight accionable) se limpia igual: el aviso de
+  // contexto sólo debe verse en la visita que llegó desde esa prioridad.
   useFocusEffect(
     useCallback(() => {
       return () => {
         setLockedMeal(null);
-        navigation.setParams({ mealType: undefined } as never);
+        navigation.setParams({ mealType: undefined, nutrient: undefined } as never);
       };
     }, [navigation])
   );
@@ -214,6 +218,19 @@ export function SearchScreen() {
         contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md, gap: spacing.lg, paddingBottom: spacing.xxl }}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Contexto del Nutrition Insight accionable (Dashboard → "Ver
+            alimentos"): mismas fuentes que ya se ven bajo la barra de ese
+            micro, nunca resultados filtrados ni una búsqueda automática —
+            el usuario sigue escribiendo y decidiendo qué añadir. */}
+        {route.params?.nutrient ? (
+          <Card style={{ gap: 4 }}>
+            <Text style={{ color: t.text, fontWeight: '700', fontSize: 13 }}>
+              Buscando ideas para {MICRO_RDA[route.params.nutrient].label.toLowerCase()}
+            </Text>
+            <Text style={{ color: t.textSecondary, fontSize: 12 }}>{MICRO_FOOD_SOURCES[route.params.nutrient]}</Text>
+          </Card>
+        ) : null}
+
         <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'flex-end' }}>
           <View style={{ flex: 1 }}>
             <Input

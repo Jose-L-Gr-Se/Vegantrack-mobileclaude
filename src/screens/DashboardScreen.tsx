@@ -6,7 +6,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline } from 'react-native-svg';
-import { Card, MacroBar, ProgressRing, SectionHeader } from '@/components/ui';
+import { Card, MacroBar, Pill, ProgressRing, SectionHeader } from '@/components/ui';
 import { VeganNutritionScoreTrend, type VeganNutritionTrendPoint } from '@/components/VeganNutritionScoreTrend';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
@@ -50,6 +50,13 @@ export function DashboardScreen() {
   // para Free, 7/30/90 para Pro) — este punto de entrada ya no bloquea.
   const openMicroTrends = (initialMicro?: MicroKey) => {
     navigation.navigate('MicroTrends', initialMicro ? { initialMicro } : undefined);
+  };
+
+  // Nutrition Insight accionable: lleva a la pestaña de Buscar ya existente,
+  // contextualizada con el micro de la prioridad — nunca una búsqueda nueva
+  // ni una lista de alimentos filtrada, el usuario decide qué buscar y añadir.
+  const openFoodSearch = (nutrient: MicroKey) => {
+    navigation.navigate('Main', { screen: 'Search', params: { nutrient } });
   };
 
   useFocusEffect(
@@ -312,6 +319,14 @@ export function DashboardScreen() {
                   </Text>
                 </Text>
                 <Text style={{ color: t.textSecondary, fontSize: 12 }}>{p.reason}</Text>
+                {/* Acción concreta (Nutrition Insight accionable): lleva a la
+                    búsqueda de alimentos ya existente, nunca una recomendación
+                    de cantidad — el usuario decide qué y cuánto registrar.
+                    Mismo patrón Pressable+Pill que "Alternativas 🌱" en
+                    SearchScreen, para no introducir un nuevo tipo de botón. */}
+                <Pressable onPress={() => openFoodSearch(p.key)} hitSlop={6} style={{ marginTop: 2 }}>
+                  <Pill text="Ver alimentos" color={t.primary} />
+                </Pressable>
               </View>
               <Ionicons name={'chevron-forward' as never} size={16} color={t.textMuted} style={{ marginTop: 2 }} />
             </Pressable>

@@ -17,8 +17,14 @@ export type MainTabParamList = {
    * desde la pantalla de activación post-onboarding, para que al añadir el
    * primer alimento se navegue al resumen (Dashboard) en vez de volver al
    * Diario, que es el destino normal tras un alta ya activada.
+   *
+   * `nutrient` (Nutrition Insight accionable, Dashboard): al llegar desde el
+   * botón "Ver alimentos" de una prioridad de "Qué vigilar hoy", muestra un
+   * aviso contextual con las mismas fuentes alimentarias que ya se ven bajo
+   * la barra de ese micro — nunca ejecuta una búsqueda automática ni filtra
+   * resultados por nutriente, el usuario sigue buscando y decidiendo él mismo.
    */
-  Search: { mealType?: MealType; barcode?: string; fromActivation?: boolean } | undefined;
+  Search: { mealType?: MealType; barcode?: string; fromActivation?: boolean; nutrient?: MicroKey } | undefined;
   Dashboard: undefined;
   Progress: undefined;
   /**
