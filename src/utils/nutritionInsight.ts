@@ -10,12 +10,26 @@
  *   - `MICRO_FOOD_SOURCES` (el mismo texto de sugerencia ya mostrado bajo
  *     cada barra de "Micronutrientes (RDA)").
  *   - el histórico ya calculado por `diaryStore.getMicroTrends()`, para
- *     distinguir "bajo hoy" de "bajo varios días seguidos" SIN inventar
- *     ningún dato: un día sin registros o con confianza insuficiente nunca
- *     cuenta como parte de un patrón (ver `isPattern` más abajo).
+ *     distinguir "bajo hoy" de "patrón de varios días" SIN inventar ningún
+ *     dato (ver `patternEvidence` más abajo).
  *
  * Módulo puro, sin React ni stores — igual que `microRecommendations.ts`/
  * `veganScore.ts` — para poder testearlo sin montar ningún componente.
+ *
+ * ── Regla de "patrón" (auditoría del sistema de patrones nutricionales) ────
+ * Sustituye a la regla original del bloque 1 (3 días consecutivos, los 3
+ * estrictos) por una ventana de `PATTERN_WINDOW_DAYS` días (hoy + hasta
+ * `PATTERN_WINDOW_DAYS - 1` días anteriores) con evidencia por RATIO, no por
+ * racha: evita llamar "patrón" a algo que ocurrió sólo un par de veces por
+ * casualidad, y nunca oculta cuántos días de la ventana tenían datos de
+ * verdad. Un día "válido" es únicamente `hasEntries && confidence>=medium`
+ * — el mismo criterio que ya exige `shouldShowMicroRecommendation` para hoy,
+ * nunca un concepto nuevo de "día completo" que el modelo de datos no
+ * soporta (`hasEntries`/`confidence` no dicen si se registró todo lo
+ * comido ese día, sólo si lo registrado es suficiente para este nutriente).
+ * Un día inválido (sin registros relevantes, o con confianza baja) no
+ * cuenta ni como "bueno" ni como "malo": se excluye del recuento entero, en
+ * el numerador y en el denominador.
  */
 import {
   MIN_SCORE_CONFIDENCE,
@@ -26,14 +40,19 @@ import {
 } from '@/utils/nutrition';
 import { MICRO_FOOD_SOURCES, shouldShowMicroRecommendation, type MicroKey } from '@/utils/microRecommendations';
 
-/** Cuántos días antes de hoy, con el mismo micro también bajo y con dato
- *  fiable, hacen falta para hablar de "patrón" en vez de "hoy" — 2 días
- *  antes + hoy = 3 días seguidos. Deliberadamente corto: no reclama una
- *  tendencia semanal que el dato disponible no respalda todavía. */
-const PATTERN_LOOKBACK_DAYS = 2;
-
 /** Máximo de prioridades que devuelve el insight — nunca una lista larga. */
 const MAX_PRIORITIES = 3;
+
+/** Mínimo de días con datos suficientes (de los hasta 7 de la ventana) para
+ *  poder afirmar un patrón. Por debajo de esto la ventana es demasiado
+ *  dispersa para decir nada — se queda en "hoy", igual que con un usuario
+ *  nuevo sin histórico todavía. */
+const MIN_VALID_DAYS = 4;
+
+/** Proporción mínima de días válidos que deben estar bajos para hablar de
+ *  patrón (no una racha fija): con el mínimo de 4 días válidos exige 3 de 4;
+ *  con los 7 completos, 5 de 7 — nunca "dos veces por casualidad". */
+const PATTERN_LOW_RATIO = 0.7;
 
 export type InsightUrgency = 'today' | 'pattern';
 
@@ -45,6 +64,15 @@ export interface NutritionInsightPriority {
   urgency: InsightUrgency;
   /** Sugerencia de alimentos, idéntica a la que ya se ve bajo la barra del micro en el Dashboard. */
   reason: string;
+  /**
+   * Sólo presentes cuando `urgency === 'pattern'`: cuántos de los días con
+   * datos suficientes de la ventana (incluye hoy) tuvieron este micro bajo,
+   * y cuántos días de la ventana tenían datos suficientes en total. NUNCA
+   * el tamaño de la ventana en sí (que puede incluir días sin registrar) —
+   * el copy debe usar siempre este denominador real, nunca asumir 7.
+   */
+  lowDays?: number;
+  validDays?: number;
 }
 
 /** Forma mínima de un día histórico que necesita este módulo — deliberadamente
@@ -54,20 +82,38 @@ export interface HistoricalMicroDay {
   micros: Record<MicroKey, { pct: number; hasEntries: boolean; confidence: MicroConfidence }>;
 }
 
+interface PatternEvidence {
+  isPattern: boolean;
+  lowDays: number;
+  validDays: number;
+}
+
 /**
- * ¿El micro `key` también estuvo bajo, con dato fiable, en TODOS los días de
- * `previousDays`? Sólo entonces se llama "patrón" — si `previousDays` está
- * vacío (usuario nuevo, sin histórico todavía) o cualquiera de esos días no
- * tiene datos suficientes (`hasEntries=false` o confianza por debajo del
- * mínimo), nunca se afirma un patrón: se queda en "hoy", que es lo único que
- * el dato disponible respalda.
+ * Evidencia de patrón para `key` sobre hoy + `previousDays` (hasta 6, para
+ * una ventana total de 7). Hoy cuenta siempre como un día válido y bajo: a
+ * esta función sólo se llega después de que `shouldShowMicroRecommendation`
+ * ya haya confirmado eso mismo para hoy, así que no hace falta repetirlo.
+ *
+ * Un día previo sin registros relevantes (`hasEntries=false`) o con
+ * confianza por debajo del mínimo se descarta del recuento entero — nunca
+ * cuenta como "bajo" aunque su `pct` lo fuera, y nunca cuenta como "bueno"
+ * aunque no lo fuera. Sin esto, un día sin datos podría inflar o desinflar
+ * el patrón sin haber aportado ninguna información real.
  */
-function isPattern(key: MicroKey, previousDays: HistoricalMicroDay[]): boolean {
-  if (previousDays.length < PATTERN_LOOKBACK_DAYS) return false;
-  return previousDays.every((day) => {
+function patternEvidence(key: MicroKey, previousDays: HistoricalMicroDay[]): PatternEvidence {
+  let validDays = 1; // hoy
+  let lowDays = 1; // hoy, ya confirmado bajo por el llamador
+  for (const day of previousDays) {
     const m = day.micros[key];
-    return m.hasEntries && meetsMinConfidence(m.confidence, MIN_SCORE_CONFIDENCE) && m.pct < 0.9;
-  });
+    if (!m.hasEntries || !meetsMinConfidence(m.confidence, MIN_SCORE_CONFIDENCE)) continue;
+    validDays++;
+    if (m.pct < 0.9) lowDays++;
+  }
+  return {
+    isPattern: validDays >= MIN_VALID_DAYS && lowDays / validDays >= PATTERN_LOW_RATIO,
+    lowDays,
+    validDays,
+  };
 }
 
 /**
@@ -93,12 +139,15 @@ export function buildNutritionInsight(
   for (const key of Object.keys(MICRO_RDA) as MicroKey[]) {
     const display = today[key];
     if (!shouldShowMicroRecommendation(display)) continue;
+
+    const evidence = patternEvidence(key, previousDays);
     priorities.push({
       key,
       label: MICRO_RDA[key].label,
       pct: display.pct,
-      urgency: isPattern(key, previousDays) ? 'pattern' : 'today',
+      urgency: evidence.isPattern ? 'pattern' : 'today',
       reason: MICRO_FOOD_SOURCES[key],
+      ...(evidence.isPattern ? { lowDays: evidence.lowDays, validDays: evidence.validDays } : {}),
     });
   }
 

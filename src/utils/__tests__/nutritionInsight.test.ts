@@ -103,54 +103,111 @@ describe('buildNutritionInsight — selección y orden de prioridades', () => {
   });
 });
 
-describe('buildNutritionInsight — "hoy" vs "patrón", sin inventar histórico', () => {
-  it('bajo hoy y en los 2 días anteriores (con dato fiable) → "pattern"', () => {
-    const today = todayAllSufficient({ iron_mg: display({ pct: 0.3, confidence: 'high' }) });
-    const previousDays = [
-      historyDay({ iron_mg: { pct: 0.2, hasEntries: true, confidence: 'high' } }),
-      historyDay({ iron_mg: { pct: 0.4, hasEntries: true, confidence: 'medium' } }),
-    ];
-    const result = buildNutritionInsight(today, previousDays);
-    expect(result[0].urgency).toBe('pattern');
+/** `iron_mg` bajo y con dato fiable — para construir días previos "válidos y bajos". */
+function lowValidDay() {
+  return historyDay({ iron_mg: { pct: 0.2, hasEntries: true, confidence: 'high' } });
+}
+
+/** `iron_mg` con el objetivo cubierto y dato fiable — día "válido y no bajo". */
+function goodValidDay() {
+  return historyDay({ iron_mg: { pct: 1, hasEntries: true, confidence: 'high' } });
+}
+
+/** `iron_mg` sin ningún registro relevante ese día — día "inválido" por falta de dato. */
+function noDataDay() {
+  return historyDay({ iron_mg: { pct: 0, hasEntries: false, confidence: 'none' } });
+}
+
+/** `iron_mg` con registros pero confianza por debajo del mínimo — también "inválido". */
+function lowConfidenceDay() {
+  return historyDay({ iron_mg: { pct: 0.05, hasEntries: true, confidence: 'low' } });
+}
+
+const TODAY_IRON_LOW = todayAllSufficient({ iron_mg: display({ pct: 0.3, confidence: 'high' }) });
+
+describe('buildNutritionInsight — "hoy" vs "patrón" (ventana de 7 días, evidencia por ratio)', () => {
+  it('1. 5 de 7 días válidos bajos (incluido hoy) → "pattern"', () => {
+    // Hoy (1 válido+bajo) + 6 previos: 4 bajos + 2 cubiertos → 5/7 válidos bajos (≥70%).
+    const previousDays = [lowValidDay(), lowValidDay(), lowValidDay(), lowValidDay(), goodValidDay(), goodValidDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0]).toMatchObject({ key: 'iron_mg', urgency: 'pattern', lowDays: 5, validDays: 7 });
   });
 
-  it('bajo hoy pero bien en algún día anterior → "today", no "pattern"', () => {
-    const today = todayAllSufficient({ iron_mg: display({ pct: 0.3, confidence: 'high' }) });
-    const previousDays = [
-      historyDay({ iron_mg: { pct: 0.2, hasEntries: true, confidence: 'high' } }),
-      historyDay({ iron_mg: { pct: 0.95, hasEntries: true, confidence: 'high' } }), // ese día SÍ llegó al objetivo
-    ];
-    expect(buildNutritionInsight(today, previousDays)[0].urgency).toBe('today');
+  it('2. 3 de 4 días válidos bajos (incluido hoy) → "pattern"', () => {
+    // Hoy (1 válido+bajo) + 3 previos: 2 bajos + 1 cubierto → 3/4 válidos bajos (≥70%).
+    const previousDays = [lowValidDay(), lowValidDay(), goodValidDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0]).toMatchObject({ key: 'iron_mg', urgency: 'pattern', lowDays: 3, validDays: 4 });
+  });
+
+  it('3. 2 de 4 días válidos bajos (incluido hoy) → NO "pattern" (no llega al 70%)', () => {
+    // Hoy (1 válido+bajo) + 3 previos: 1 bajo + 2 cubiertos → 2/4 = 50% < 70%.
+    const previousDays = [lowValidDay(), goodValidDay(), goodValidDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0].urgency).toBe('today');
+    expect(result[0].lowDays).toBeUndefined();
+    expect(result[0].validDays).toBeUndefined();
+  });
+
+  it('4. 3 de 7 días válidos bajos (incluido hoy) → NO "pattern" (no llega al 70%)', () => {
+    // Hoy (1 válido+bajo) + 6 previos: 2 bajos + 4 cubiertos → 3/7 ≈ 43% < 70%.
+    const previousDays = [lowValidDay(), lowValidDay(), goodValidDay(), goodValidDay(), goodValidDay(), goodValidDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0].urgency).toBe('today');
+  });
+
+  it('5. menos de 4 días válidos en la ventana → NO "pattern", aunque todos los válidos estén bajos', () => {
+    // Hoy (1 válido+bajo) + 2 previos válidos y bajos + 4 sin dato → sólo 3 válidos en total (< MIN_VALID_DAYS=4).
+    const previousDays = [lowValidDay(), lowValidDay(), noDataDay(), noDataDay(), noDataDay(), noDataDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0].urgency).toBe('today');
+  });
+
+  it('6. un día sin datos en mitad de la ventana no cuenta ni a favor ni en contra', () => {
+    // 5 previos válidos y bajos con un día sin datos INTERCALADO en medio — el
+    // día vacío desaparece del recuento entero: quedan 6 válidos (no 7) y 6
+    // bajos (no un 5/7 ni un 5/6 con el vacío contando como "no bajo").
+    const previousDays = [lowValidDay(), lowValidDay(), noDataDay(), lowValidDay(), lowValidDay(), lowValidDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0]).toMatchObject({ urgency: 'pattern', lowDays: 6, validDays: 6 });
+  });
+
+  it('7. un día con confianza baja no cuenta ni a favor ni en contra, aunque su pct sea muy bajo', () => {
+    // 3 previos válidos y bajos + 1 con confianza 'low' (pct=0.05, el más bajo
+    // de todos) — si contara, serían 5 válidos y 5 bajos; al excluirse, se
+    // quedan en 4 válidos y 4 bajos.
+    const previousDays = [lowValidDay(), lowValidDay(), lowValidDay(), lowConfidenceDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0]).toMatchObject({ urgency: 'pattern', lowDays: 4, validDays: 4 });
+  });
+
+  it('8. hoy no bajo → el micro no aparece, aunque el histórico por sí solo sería un patrón', () => {
+    const todayIronOk = todayAllSufficient({ iron_mg: display({ pct: 1, confidence: 'high' }) });
+    const previousDays = [lowValidDay(), lowValidDay(), lowValidDay(), lowValidDay(), lowValidDay(), lowValidDay()];
+    const result = buildNutritionInsight(todayIronOk, previousDays);
+    expect(result.find((p) => p.key === 'iron_mg')).toBeUndefined();
+  });
+
+  it('9. patrón con hoy bajo aparece exponiendo lowDays/validDays con el denominador real', () => {
+    const previousDays = [lowValidDay(), lowValidDay(), lowValidDay(), lowValidDay(), lowValidDay(), lowValidDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0]).toMatchObject({ key: 'iron_mg', urgency: 'pattern', lowDays: 7, validDays: 7 });
   });
 
   it('sin histórico (usuario nuevo, previousDays=[]) siempre es "today" — nunca inventa un patrón', () => {
-    const today = todayAllSufficient({ iron_mg: display({ pct: 0.3, confidence: 'high' }) });
-    expect(buildNutritionInsight(today, [])[0].urgency).toBe('today');
-    expect(buildNutritionInsight(today)[0].urgency).toBe('today'); // parámetro por defecto
+    expect(buildNutritionInsight(TODAY_IRON_LOW, [])[0].urgency).toBe('today');
+    expect(buildNutritionInsight(TODAY_IRON_LOW)[0].urgency).toBe('today'); // parámetro por defecto
   });
 
-  it('un día anterior sin registros para ese micro (hasEntries=false) nunca cuenta como "bajo" — no hay pattern', () => {
-    const today = todayAllSufficient({ iron_mg: display({ pct: 0.3, confidence: 'high' }) });
-    const previousDays = [
-      historyDay({ iron_mg: { pct: 0, hasEntries: false, confidence: 'none' } }),
-      historyDay({ iron_mg: { pct: 0.2, hasEntries: true, confidence: 'high' } }),
-    ];
-    expect(buildNutritionInsight(today, previousDays)[0].urgency).toBe('today');
-  });
-
-  it('un día anterior con confianza baja (low) tampoco cuenta como parte del patrón, aunque el pct sea bajo', () => {
-    const today = todayAllSufficient({ iron_mg: display({ pct: 0.3, confidence: 'high' }) });
-    const previousDays = [
-      historyDay({ iron_mg: { pct: 0.1, hasEntries: true, confidence: 'low' } }),
-      historyDay({ iron_mg: { pct: 0.2, hasEntries: true, confidence: 'high' } }),
-    ];
-    expect(buildNutritionInsight(today, previousDays)[0].urgency).toBe('today');
-  });
-
-  it('con sólo 1 día de histórico (todavía no llegan los 2 exigidos) nunca es "pattern"', () => {
-    const today = todayAllSufficient({ iron_mg: display({ pct: 0.3, confidence: 'high' }) });
-    const previousDays = [historyDay({ iron_mg: { pct: 0.1, hasEntries: true, confidence: 'high' } })];
-    expect(buildNutritionInsight(today, previousDays)[0].urgency).toBe('today');
+  it('la regla anterior (3 días consecutivos, los 3 estrictos) YA NO basta por sí sola', () => {
+    // Exactamente el disparador de la regla del bloque 1: hoy + 2 días
+    // anteriores, los 3 válidos y bajos. Antes esto era "pattern"
+    // (PATTERN_LOOKBACK_DAYS=2, los 2 cumplían `.every()`); ahora sólo suma
+    // 3 días válidos en total, por debajo de MIN_VALID_DAYS=4 — se queda en
+    // "today", sin importar que los 3 estuvieran bajos.
+    const previousDays = [lowValidDay(), lowValidDay()];
+    const result = buildNutritionInsight(TODAY_IRON_LOW, previousDays);
+    expect(result[0].urgency).toBe('today');
   });
 
   it('la urgencia se decide por micro, de forma independiente — uno puede ser "pattern" y otro "today" a la vez', () => {
@@ -167,10 +224,14 @@ describe('buildNutritionInsight — "hoy" vs "patrón", sin inventar histórico'
         iron_mg: { pct: 0.2, hasEntries: true, confidence: 'high' },
         zinc_mg: { pct: 1, hasEntries: true, confidence: 'high' },
       }),
+      historyDay({
+        iron_mg: { pct: 0.2, hasEntries: true, confidence: 'high' },
+        zinc_mg: { pct: 1, hasEntries: true, confidence: 'high' },
+      }),
     ];
     const result = buildNutritionInsight(today, previousDays);
     const byKey = Object.fromEntries(result.map((p) => [p.key, p.urgency]));
-    expect(byKey.iron_mg).toBe('pattern');
-    expect(byKey.zinc_mg).toBe('today');
+    expect(byKey.iron_mg).toBe('pattern'); // 4/4 válidos bajos
+    expect(byKey.zinc_mg).toBe('today'); // 0/4 válidos bajos
   });
 });

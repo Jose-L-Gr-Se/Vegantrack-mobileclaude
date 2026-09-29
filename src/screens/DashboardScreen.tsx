@@ -21,10 +21,12 @@ import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
 import { todayISO } from '@/utils/dates';
 import type { RootStackParamList } from '@/navigation/types';
 
-/** Días previos a hoy que pide `getMicroTrends` para poder distinguir "bajo
- *  hoy" de "bajo varios días seguidos" en el Nutrition Insight — 2 días
- *  antes + hoy (calculado en vivo, no desde el histórico) = 3 en total. */
-const INSIGHT_HISTORY_DAYS = 3;
+/** Días que pide `getMicroTrends` para la ventana del sistema de patrones
+ *  nutricionales (auditoría del sistema de patrones): 7 días terminados hoy
+ *  — hoy se calcula en vivo más abajo, no desde el histórico, así que sólo
+ *  se guardan los 6 días ANTERIORES (`.slice(0, -1)` descarta el punto de
+ *  hoy que también devuelve `getMicroTrends`). */
+const INSIGHT_HISTORY_DAYS = 7;
 
 export function DashboardScreen() {
   const t = useTheme();
@@ -314,8 +316,13 @@ export function DashboardScreen() {
                 <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }}>
                   {p.label}{' '}
                   <Text style={{ color: t.textMuted, fontWeight: '600', fontSize: 12 }}>
-                    · {p.urgency === 'pattern' ? 'bajo varios días seguidos' : 'bajo hoy'} · {Math.round(p.pct * 100)}%
-                    {' '}del objetivo
+                    {/* Denominador SIEMPRE real (auditoría del sistema de
+                        patrones): `validDays` son los días con datos
+                        suficientes de la ventana, nunca el tamaño de la
+                        ventana en sí — un patrón con 4 días válidos dice
+                        "de los últimos 4 días con datos", nunca "7". */}
+                    · {p.urgency === 'pattern' ? `bajo en ${p.lowDays} de los últimos ${p.validDays} días con datos` : 'bajo hoy'}
+                    {' '}· {Math.round(p.pct * 100)}% del objetivo
                   </Text>
                 </Text>
                 <Text style={{ color: t.textSecondary, fontSize: 12 }}>{p.reason}</Text>
