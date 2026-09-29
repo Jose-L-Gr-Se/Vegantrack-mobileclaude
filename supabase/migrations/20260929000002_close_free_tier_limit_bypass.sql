@@ -1,0 +1,71 @@
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Auditoría de enforcement Free/Pro — cierra un bypass real de los límites
+-- Free vía políticas RLS redundantes y más permisivas.
+-- ═════════════════════════════════════════════════════════════════════════════
+--
+-- OBJETIVO DE LA AUDITORÍA
+--   "¿Puede una cuenta Free, sin modificar el cliente móvil, superar los
+--   límites Free (14 días de historial en food_log, 3 recetas, 3
+--   suplementos) realizando directamente operaciones legítimas contra la
+--   API de Supabase?" — Sí, confirmado en vivo antes de este fix.
+--
+-- HALLAZGO
+--   En las tres tablas convivían dos conjuntos de políticas PERMISSIVE para
+--   el mismo comando — y PostgreSQL combina políticas PERMISSIVE del mismo
+--   comando con OR, así que basta con que UNA autorice para que la fila se
+--   permita, sea cual sea la otra:
+--
+--   food_log (SELECT):
+--     - food_log_select        → (user_id = auth.uid()) AND (is_pro_user() OR date >= hoy-14d)   [la intencionada]
+--     - "Users can read own food_log" → (auth.uid() = user_id)                                    [sin límite de fecha]
+--
+--   recipes (INSERT, vía política ALL):
+--     - recipes_insert         → (user_id = auth.uid()) AND (is_pro_user() OR count(*) < 3)       [la intencionada]
+--     - "Users manage own recipes" (ALL) → (auth.uid() = user_id)                                  [sin límite]
+--
+--   supplements (INSERT, vía política ALL):
+--     - supplements_insert     → (user_id = auth.uid()) AND (is_pro_user() OR count(*) < 3)       [la intencionada]
+--     - "Users manage own supplements" (ALL) → (auth.uid() = user_id)                              [sin límite]
+--
+-- BYPASS REPRODUCIDO EN VIVO (antes de este fix, rol `authenticated`, JWT
+-- simulado de una cuenta Free real, RLS real — no el bypass de superusuario
+-- del editor SQL; las filas de prueba se crearon y se borraron en el mismo
+-- momento de la auditoría, sin dejar rastro):
+--   - Una cuenta Free con food_log de hace ~100 días vio su historial
+--     COMPLETO (7/7 filas, incluida la de hace 100 días) — debía ver 0.
+--   - Una cuenta Free de prueba, ya en el límite de 3 recetas, insertó una
+--     4ª receta sin ningún error — debía ser rechazada.
+--   - La misma cuenta, ya en el límite de 3 suplementos, insertó un 4º
+--     suplemento sin ningún error — debía ser rechazada.
+--
+-- RIESGO REAL: cualquier cuenta Free, sin tocar el cliente móvil, puede
+-- superar los tres límites llamando directamente a la API REST de Supabase
+-- con su propio JWT.
+--
+-- FIX MÍNIMO: eliminar las tres políticas redundantes. Las políticas
+-- específicas por comando (*_select/*_insert/*_update/*_delete) ya cubren
+-- el mismo CRUD completo para cada tabla — no se pierde ningún acceso
+-- legítimo, sólo la vía que ignoraba el límite. No se toca
+-- `subscription_tier`, `is_pro_user()`, su trigger de protección, ni
+-- ninguna política de aislamiento entre usuarios (todas las que quedan ya
+-- usaban `auth.uid() = user_id` correctamente).
+--
+-- VERIFICADO EN VIVO DESPUÉS DEL FIX (misma metodología):
+--   - food_log: la cuenta Free vuelve a ver exactamente 0 filas de su
+--     histórico de hace 100 días (correcto: todas sus filas están fuera de
+--     la ventana de 14 días). Una cuenta Pro real sigue viendo su
+--     histórico completo (329/329 filas, la más antigua de hace ~6 meses).
+--   - recipes/supplements: la cuenta Free de prueba pudo crear
+--     exactamente 3 (el límite) y la 4ª fue rechazada con
+--     "42501: new row violates row-level security policy". Una cuenta Pro
+--     real (ya con 4 recetas / 22 suplementos, ambos > 3) pudo seguir
+--     insertando una fila más de cada, confirmando que Pro no se ve
+--     afectado.
+--   - Aislamiento entre cuentas intacto: la cuenta Free de prueba no pudo
+--     leer el food_log de otra cuenta (0 filas) ni insertar una receta a
+--     nombre de otra cuenta (rechazado por RLS).
+-- ═════════════════════════════════════════════════════════════════════════════
+
+drop policy if exists "Users can read own food_log" on public.food_log;
+drop policy if exists "Users manage own recipes" on public.recipes;
+drop policy if exists "Users manage own supplements" on public.supplements;
