@@ -23,6 +23,7 @@
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { supabase } from '@/lib/supabase';
+import { mirrorPending } from '@/db/database';
 import { addDays, todayISO } from '@/utils/dates';
 import { FREE_HISTORY_DAYS } from '@/hooks/usePro';
 import type { FoodLogEntry } from '@/types';
@@ -121,6 +122,36 @@ export async function exportDiaryCsv(userId: string, isPro: boolean): Promise<{ 
   // detalle técnico no aporta nada aquí y antes se filtraba tal cual.
   if (error) return { error: 'No se pudo cargar tu diario. Comprueba tu conexión e inténtalo de nuevo.' };
 
-  const csv = buildDiaryCsv((data ?? []) as FoodLogEntry[], isPro);
+  // Auditoría de exportación CSV: el remoto es la fuente de verdad para el
+  // histórico, pero una edición/alta/borrado reciente puede seguir
+  // pendiente de sincronizar (sin red en ese momento, o un intento remoto
+  // todavía en vuelo) — el mismo hueco que fetchEntries()/mirrorReplaceDay
+  // ya cierra para el día visible del Diario, sin cerrar aquí porque este
+  // export nunca pasaba por ese camino. Sin esto, exportar justo tras editar
+  // servía el valor ANTIGUO (el remoto, aún no actualizado) y exportar justo
+  // tras borrar seguía incluyendo una fila que el usuario ya había quitado
+  // de su Diario. `mirrorPending` sólo devuelve lo realmente pendiente
+  // (synced=0, de cualquier fecha) — nunca sustituye el resto del histórico
+  // ya confirmado, que sigue viniendo del remoto como siempre.
+  const rowsById = new Map<string, FoodLogEntry>(
+    (data ?? []).map((e) => [(e as FoodLogEntry).id, e as FoodLogEntry])
+  );
+  const pending = await mirrorPending<FoodLogEntry>('food_log', userId);
+  for (const p of pending) {
+    if (p.deleted) rowsById.delete(p.id);
+    else rowsById.set(p.id, p.payload);
+  }
+
+  let rows = [...rowsById.values()];
+  if (!isPro) {
+    // Un alta/edición pendiente puede ser de cualquier fecha — se le aplica
+    // la MISMA ventana Free que ya filtró la consulta remota, para que un
+    // cambio sin sincronizar nunca cuele una fecha fuera de lo permitido.
+    const cutoff = addDays(todayISO(), -FREE_HISTORY_DAYS);
+    rows = rows.filter((r) => r.date >= cutoff);
+  }
+  rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  const csv = buildDiaryCsv(rows, isPro);
   return writeAndShareCsv(exportFileName(), csv);
 }

@@ -13,6 +13,13 @@ import type { FoodLogEntry } from '@/types';
 
 jest.mock('expo-sqlite', () => ({}));
 jest.mock('@/hooks/usePro', () => ({ FREE_HISTORY_DAYS: 14 }));
+// Auditoría de exportación CSV: `exportDiaryCsv` ahora reconcilia con
+// cambios locales pendientes de sincronizar (`mirrorPending`, ver
+// `exportCsv.pendingSync.test.ts`, que sí ejercita esa reconciliación con
+// SQLite real). Este fichero no es sobre eso — sólo sobre la escritura y
+// compartición del archivo — así que se mockea sin nada pendiente, para no
+// arrastrar el adaptador de SQLite real a un test que no lo necesita.
+jest.mock('@/db/database', () => ({ mirrorPending: jest.fn().mockResolvedValue([]) }));
 
 const mockFileCreate = jest.fn();
 const mockFileWrite = jest.fn();
