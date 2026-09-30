@@ -37,6 +37,7 @@ jest.mock('@/stores/diaryStore', () => ({ useDiaryStore: jest.fn() }));
 jest.mock('@/stores/supplementStore', () => ({ useSupplementStore: jest.fn() }));
 jest.mock('@/hooks/usePro', () => ({ usePro: jest.fn() }));
 jest.mock('@/lib/analytics', () => ({ track: jest.fn() }));
+jest.mock('@/lib/foodLoggingHistory', () => ({ hasLoggedFood: () => Promise.resolve(false) }));
 jest.mock('@/components/ProModal', () => ({ ProModal: () => null }));
 
 let streakProfile: { streak_count: number; last_log_date: string | null } = { streak_count: 0, last_log_date: null };
@@ -116,6 +117,8 @@ function mockStores(microsOverride: ReturnType<typeof micros>) {
   });
   (useDiaryStore as unknown as jest.Mock).mockReturnValue({
     selectedDate: '2026-09-19',
+    // Una entrada con fecha de hoy: el Resumen está "en curso".
+    entries: [{ date: todayISO() }],
     setDate: jest.fn(),
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),

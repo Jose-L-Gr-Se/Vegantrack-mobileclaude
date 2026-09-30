@@ -34,7 +34,12 @@ export type AnalyticsEvent =
   | 'purchase_cancelled'
   | 'purchase_failed'
   | 'purchase_restored'
-  | 'subscription_expired';
+  | 'subscription_expired'
+  // Resumen como "día en curso" (`DashboardScreen`): alcance del Resumen y
+  // uso de su único siguiente paso. Props sólo `state` (+ `meal_type` en el
+  // toque) — nunca alimentos, kcal ni ningún dato nutricional o personal.
+  | 'dashboard_viewed'
+  | 'next_step_tapped';
 
 /**
  * Best-effort por defecto: nunca lanza al llamador, y quien no le interesa

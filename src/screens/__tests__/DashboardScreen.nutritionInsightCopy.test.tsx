@@ -16,6 +16,7 @@ import { useDiaryStore } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
 import { usePro } from '@/hooks/usePro';
 import { MICRO_RDA, ironRdaForSex } from '@/utils/nutrition';
+import { todayISO } from '@/utils/dates';
 import type { MicroAggregate } from '@/types';
 
 jest.mock('expo-sqlite', () => ({}));
@@ -38,6 +39,7 @@ jest.mock('@/stores/diaryStore', () => ({ useDiaryStore: jest.fn() }));
 jest.mock('@/stores/supplementStore', () => ({ useSupplementStore: jest.fn() }));
 jest.mock('@/hooks/usePro', () => ({ usePro: jest.fn() }));
 jest.mock('@/lib/analytics', () => ({ track: jest.fn() }));
+jest.mock('@/lib/foodLoggingHistory', () => ({ hasLoggedFood: () => Promise.resolve(false) }));
 jest.mock('@/components/ProModal', () => ({ ProModal: () => null }));
 
 const SEX = 'female'; // ironRdaForSex('female') = 18
@@ -115,6 +117,8 @@ function mockStores(microsOverride: ReturnType<typeof micros>, history: unknown[
   });
   (useDiaryStore as unknown as jest.Mock).mockReturnValue({
     selectedDate: '2026-09-19',
+    // Una entrada con fecha de hoy: el Resumen está "en curso".
+    entries: [{ date: todayISO() }],
     setDate: jest.fn(),
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),

@@ -1,25 +1,29 @@
 /** Resumen: VeganScore con desglose, macros del día, micros vs RDA y gráfico 7 días. */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline } from 'react-native-svg';
-import { Card, MacroBar, Pill, ProgressRing, SectionHeader } from '@/components/ui';
+import { Button, Card, MacroBar, Pill, ProgressRing, SectionHeader } from '@/components/ui';
 import { VeganNutritionScoreTrend, type VeganNutritionTrendPoint } from '@/components/VeganNutritionScoreTrend';
 import { radii, semantic, spacing, useTheme } from '@/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore, type MicroKey, type MicroTrendPoint, type WeekDay } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
 import { usePro } from '@/hooks/usePro';
-import { computeVeganScore, getScoreColor, getScoreLabel } from '@/utils/veganScore';
+import { computeVeganScore } from '@/utils/veganScore';
 import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay, type MicroDisplay } from '@/utils/nutrition';
 import { microRecommendationText } from '@/utils/microRecommendations';
 import { buildNutritionInsight, describeInsightPriority } from '@/utils/nutritionInsight';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
 import { todayISO } from '@/utils/dates';
 import { effectiveStreak } from '@/utils/streak';
+import { mealTypeForHour } from '@/utils/foodEntry';
+import { deriveDayState, describeNextStep } from '@/utils/todayProgress';
+import { track } from '@/lib/analytics';
+import { hasLoggedFood } from '@/lib/foodLoggingHistory';
 import type { RootStackParamList } from '@/navigation/types';
 
 /** Días que pide `getMicroTrends` para la ventana del sistema de patrones
@@ -48,6 +52,9 @@ export function DashboardScreen() {
   // un micro bajo hoy también lo estuvo en lo registrado esos días, y así
   // poder distinguir "hoy" de "patrón" sin inventar nada.
   const [microHistory, setMicroHistory] = useState<MicroTrendPoint[]>([]);
+  // Señal de producto "ha registrado alguna vez" (`foodLoggingHistory`).
+  // `null` mientras se lee: ver `isFirstUse` más abajo.
+  const [loggedBeforeHere, setLoggedBeforeHere] = useState<boolean | null>(null);
 
   // La pantalla decide internamente qué rango puede ver cada usuario (7 días
   // para Free, 7/30/90 para Pro) — este punto de entrada ya no bloquea.
@@ -62,9 +69,45 @@ export function DashboardScreen() {
     navigation.navigate('Main', { screen: 'Search', params: { nutrient } });
   };
 
+  // `dashboard_viewed`: una vez por VISITA real al Resumen (cada foco), nunca
+  // por render. Este efecto — declarado antes que el de carga, así que se
+  // ejecuta primero en cada foco — sólo marca la visita como pendiente de
+  // contar; el de carga la cuenta cuando `fetchEntries` termina (ver
+  // `reportView`). Si el efecto de carga se repite estando ya enfocado (sus
+  // dependencias de perfil cambian), la visita ya está contada y no se
+  // duplica.
+  const viewPendingRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      viewPendingRef.current = true;
+    }, [])
+  );
+
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
+      const today = todayISO();
+      // El estado se calcula al terminar la carga de hoy (éxito o fallo de
+      // red: `fetchEntries` ya ha volcado antes el espejo local), leyendo los
+      // stores en ese momento — no el render en curso, que aún puede traer
+      // las entradas de otra fecha del Diario.
+      const reportView = () => {
+        if (!viewPendingRef.current) return;
+        viewPendingRef.current = false;
+        try {
+          const diaryNow = useDiaryStore.getState();
+          if (diaryNow.selectedDate !== today) return;
+          const state = deriveDayState({
+            entries: diaryNow.entries,
+            today,
+            calories: diaryNow.getDaySummary().calories,
+            calorieTarget: useAuthStore.getState().profile?.calorie_target ?? 0,
+          });
+          void track('dashboard_viewed', { state });
+        } catch {
+          // Analítica best-effort: nunca rompe la pantalla.
+        }
+      };
       // Auditoría del VeganScore: el Dashboard no tiene selector de fecha
       // propio — todo lo que muestra ("Macros de hoy", el VeganScore, el
       // gráfico semanal) asume "hoy" sin más. Pero `entries`/
@@ -79,8 +122,9 @@ export function DashboardScreen() {
       // a hoy es lo único coherente con lo que el propio Dashboard afirma
       // mostrar — no cambia la fórmula del VeganScore ni ningún criterio
       // nutricional, sólo qué día se le pasa.
-      diary.setDate(todayISO());
-      void diary.fetchEntries(user.id, todayISO());
+      diary.setDate(today);
+      void diary.fetchEntries(user.id, today).then(reportView, reportView);
+      void hasLoggedFood(user.id).then(setLoggedBeforeHere);
       void diary.getWeekData(user.id).then(setWeekData);
       void supplementStore.fetchSupplements(user.id);
       void supplementStore.fetchTodayLogs(user.id);
@@ -119,18 +163,48 @@ export function DashboardScreen() {
     suppContributions: supplementStore.getTodayContributions(),
     sex: profile?.sex ?? null,
   });
-  // Auditoría de onboarding/primera sesión: `computeVeganScore()` ya
-  // distingue "sin ninguna comida registrada hoy" (`hasData: false`, todas
-  // las partes a 0 con label 'Sin datos') de un día real con puntuación 0 —
-  // pero esta pantalla ignoraba `hasData` por completo y siempre pintaba el
-  // aro en el color de la puntuación (rojo "danger" para 0) con la etiqueta
-  // de peor tramo ("Mejorable 🌱"). Un usuario nuevo que aún no ha registrado
-  // nada (p. ej. "Ahora no, ir al resumen" tras el onboarding) veía así un
-  // VeganScore en rojo con una valoración negativa de un día que ni siquiera
-  // ha empezado — exactamente la clase de "reclamo alarmante sin datos" que
-  // CLAUDE.md pide evitar. Con `hasData: false` se usa un color neutro, no
-  // el semáforo de puntuación.
-  const scoreColor = score.hasData ? getScoreColor(score.total) : t.textMuted;
+  // Resumen como "día en curso": este VegeScore es SIEMPRE el de hoy (el
+  // foco fuerza `todayISO()`), un día que todavía está ocurriendo — un
+  // desayuno de 400 kcal daba ≈3/100 en rojo con "Mejorable 🌱", un veredicto
+  // sobre un día sin terminar. La fórmula no cambia; sólo su presentación:
+  // número visible, aro en color neutro (ni `getScoreColor` ni `getScoreLabel`,
+  // tampoco `t.primary`, que es el mismo verde que el tramo "Excelente") e
+  // insignia "Hasta ahora". Los días pasados sólo aparecen en la tendencia
+  // de abajo, que conserva su comportamiento para ellos; su punto de hoy se
+  // marca como "en curso" (`inProgressDate`), sin color ni media.
+  const today = todayISO();
+  const calTarget = profile?.calorie_target ?? 0;
+  const dayState = deriveDayState({ entries: diary.entries, today, calories: summary.calories, calorieTarget: calTarget });
+  // Primer uso = ninguna señal existente dice que haya registrado alguna vez:
+  // - `last_log_date` (servidor, cacheado en local): `update_streak` lo deja
+  //   nulo si no queda ninguna fila en `food_log` — también si el usuario
+  //   BORRÓ todo su historial, así que por sí solo no basta.
+  // - la señal de producto local `has_logged_food` (`foodLoggingHistory`),
+  //   que sí sobrevive a ese borrado (en este dispositivo). Nunca la marca
+  //   de analítica `first_food_logged_tracked`, que depende de que un
+  //   insert de analítica tenga éxito.
+  // Ante la duda — perfil sin cargar o marca aún sin leer — nunca se asume
+  // primer uso: el texto de "usuario que vuelve" es cierto para cualquiera,
+  // el de "primera vez" no.
+  const isFirstUse = profile != null && profile.last_log_date == null && loggedBeforeHere === false;
+  const nextMealType = mealTypeForHour(new Date().getHours());
+  const nextStep = describeNextStep({
+    state: dayState,
+    isFirstUse,
+    mealType: nextMealType,
+    calories: summary.calories,
+    calorieTarget: calTarget,
+    proteinG: summary.protein_g,
+    proteinTarget: profile?.protein_target_g ?? 0,
+  });
+
+  // Único siguiente paso: la misma navegación a Buscar que el "＋" de cada
+  // comida del Diario, con la franja actual — sin `fromActivation`, así que
+  // tras guardar se vuelve al destino de siempre.
+  const onNextStep = () => {
+    void track('next_step_tapped', { state: dayState, meal_type: nextMealType });
+    navigation.navigate('Main', { screen: 'Search', params: { mealType: nextMealType } });
+  };
 
   const breakdownRows = [
     { label: 'Calorías', part: score.calories },
@@ -163,7 +237,6 @@ export function DashboardScreen() {
 
   const maxCal = Math.max(...weekData.map((d) => d.calories), profile?.calorie_target ?? 0, 1);
 
-  const calTarget = profile?.calorie_target ?? 0;
   const calProgress = calTarget > 0 ? Math.min(1, summary.calories / calTarget) : 0;
   const remaining = calTarget > 0 ? Math.max(0, calTarget - Math.round(summary.calories)) : null;
 
@@ -197,8 +270,12 @@ export function DashboardScreen() {
 
       {/* Hero: Calorías ring + macros compactos */}
       <Card style={{ gap: spacing.lg }}>
+        {/* Estado del día: hoy siempre está en curso — nunca "completo" */}
+        <Text style={{ color: t.textSecondary, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
+          {dayState === 'empty' ? 'Hoy · aún sin registros' : 'Hoy · en curso'}
+        </Text>
         {/* Calorie ring centrado */}
-        <View style={{ alignItems: 'center' }}>
+        <View style={{ alignItems: 'center', marginTop: -spacing.sm }}>
           <ProgressRing progress={calProgress} size={140} strokeWidth={12} color={semantic.success}>
             <Text style={{ fontSize: 34, fontWeight: '800', color: t.text }}>{Math.round(summary.calories)}</Text>
             <Text style={{ fontSize: 11, color: t.textMuted }}>kcal</Text>
@@ -248,47 +325,64 @@ export function DashboardScreen() {
         </View>
       </Card>
 
-      {/* VeganScore horizontal */}
-      <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
-        <ProgressRing progress={score.total / 100} size={80} strokeWidth={8} color={scoreColor}>
-          <Text style={{ fontSize: 24, fontWeight: '800', color: t.text }}>{score.total}</Text>
-        </ProgressRing>
-        <View style={{ flex: 1, gap: spacing.sm }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontWeight: '800', fontSize: 16, color: t.text }}>VegeScore</Text>
-            <Text style={{ fontWeight: '700', color: scoreColor, fontSize: 14 }}>
-              {score.hasData ? getScoreLabel(score.total) : 'Sin datos aún'}
+      {/* Siguiente paso: la única acción primaria de la pantalla. Siempre
+          presente en el Resumen de hoy, construida sólo con datos locales. */}
+      <Card style={{ gap: spacing.md }}>
+        <SectionHeader title={nextStep.title} />
+        <Text style={{ color: t.textSecondary, fontSize: 13, lineHeight: 18, marginTop: -spacing.sm }}>
+          {nextStep.context}
+        </Text>
+        <Button title={nextStep.cta} onPress={onNextStep} />
+      </Card>
+
+      {/* VegeScore de hoy — "Hasta ahora", sin veredicto (ver `dayState`) */}
+      {dayState === 'empty' ? (
+        <Card style={{ gap: spacing.xs }}>
+          <Text style={{ fontWeight: '800', fontSize: 16, color: t.text }}>VegeScore de hoy</Text>
+          <Text style={{ color: t.textSecondary, fontSize: 12 }}>
+            Tu VegeScore aparecerá cuando registres tu primera comida.
+          </Text>
+          <Text style={{ color: t.textMuted, fontSize: 11 }}>
+            Resume de 0 a 100 tus calorías, proteína, micros clave, fibra y racha.
+          </Text>
+        </Card>
+      ) : (
+        <Card style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg }}>
+          <ProgressRing progress={score.total / 100} size={80} strokeWidth={8} color={t.textSecondary}>
+            <Text style={{ fontSize: 24, fontWeight: '800', color: t.text }}>{score.total}</Text>
+          </ProgressRing>
+          <View style={{ flex: 1, gap: spacing.sm }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontWeight: '800', fontSize: 16, color: t.text }}>VegeScore de hoy</Text>
+              <Pill text="Hasta ahora" color={t.textSecondary} />
+            </View>
+            {/* Sólo puntos/máximo por fila: las etiquetas de cada parte
+                ("Lejos", "Muy bajo"…) no se muestran, igual que antes. */}
+            {breakdownRows.map(({ label, part }) => (
+              <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
+                <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }}>
+                  {part.score}/{part.max}
+                </Text>
+              </View>
+            ))}
+            {/* Auditoría de feedback nutricional: "Micros clave" (arriba) sólo
+                cuenta B12, hierro y vitamina D — los otros 3 que se ven en la
+                tarjeta "Micronutrientes (RDA)" más abajo (zinc, calcio,
+                omega-3) no puntúan aquí. Sin esta aclaración, ambas tarjetas
+                parecen hablar de lo mismo y pueden contradecirse: alguien con
+                zinc/calcio/omega-3 impecables pero B12/hierro/vitamina D bajos
+                vería un "Micros clave" bajo pese a la tarjeta de abajo en
+                verde, y viceversa. */}
+            <Text style={{ color: t.textMuted, fontSize: 10 }}>
+              Micros clave: vitamina B12, hierro y vitamina D. El resto se detalla en Micronutrientes (RDA), más abajo.
+            </Text>
+            <Text style={{ color: t.textMuted, fontSize: 11 }}>
+              Cambia a medida que registras. No es una valoración de tu día completo.
             </Text>
           </View>
-          {score.hasData ? (
-            <>
-              {breakdownRows.map(({ label, part }) => (
-                <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ color: t.textSecondary, fontSize: 12 }}>{label}</Text>
-                  <Text style={{ color: t.text, fontSize: 12, fontWeight: '600' }}>
-                    {part.score}/{part.max}
-                  </Text>
-                </View>
-              ))}
-              {/* Auditoría de feedback nutricional: "Micros clave" (arriba) sólo
-                  cuenta B12, hierro y vitamina D — los otros 3 que se ven en la
-                  tarjeta "Micronutrientes (RDA)" más abajo (zinc, calcio,
-                  omega-3) no puntúan aquí. Sin esta aclaración, ambas tarjetas
-                  parecen hablar de lo mismo y pueden contradecirse: alguien con
-                  zinc/calcio/omega-3 impecables pero B12/hierro/vitamina D bajos
-                  vería un "Micros clave" bajo pese a la tarjeta de abajo en
-                  verde, y viceversa. */}
-              <Text style={{ color: t.textMuted, fontSize: 10 }}>
-                Micros clave: vitamina B12, hierro y vitamina D. El resto se detalla en Micronutrientes (RDA), más abajo.
-              </Text>
-            </>
-          ) : (
-            <Text style={{ color: t.textMuted, fontSize: 12 }}>
-              Registra tu primera comida de hoy para ver tu VegeScore.
-            </Text>
-          )}
-        </View>
-      </Card>
+        </Card>
+      )}
 
       {/* Primer Nutrition Insight — "¿qué debería vigilar hoy?" (PRODUCT.md
           §8/§9, Pilar C). Sólo aparece con datos suficientes: si hoy no hay
@@ -337,7 +431,7 @@ export function DashboardScreen() {
       ) : null}
 
       {/* Histórico de VeganScore nutricional — sin racha, ver componente */}
-      <VeganNutritionScoreTrend points={nutritionTrend} />
+      <VeganNutritionScoreTrend points={nutritionTrend} inProgressDate={today} />
 
       {/* Macros detallados */}
       <Card style={{ gap: spacing.md }}>

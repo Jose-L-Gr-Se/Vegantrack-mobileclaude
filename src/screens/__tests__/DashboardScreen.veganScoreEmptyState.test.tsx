@@ -13,6 +13,11 @@
  * la regla de no presentar una ausencia de datos como un mal resultado
  * (CLAUDE.md §7).
  *
+ * Resumen como "día en curso": el estado vacío lo decide ahora que no haya
+ * ninguna ENTRADA con fecha de hoy (no las kcal), y el texto pasa a "Tu
+ * VegeScore aparecerá cuando registres tu primera comida." — el principio
+ * es el mismo: una ausencia de datos nunca se presenta como un mal resultado.
+ *
  * Mismo arnés que `DashboardScreen.veganScoreMicrosClarification.test.tsx`.
  */
 import React from 'react';
@@ -24,6 +29,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
 import { usePro } from '@/hooks/usePro';
+import { todayISO } from '@/utils/dates';
 import type { MicroAggregate } from '@/types';
 
 /** Los 6 micronutrientes, cada uno como un día sin ningún registro
@@ -58,6 +64,7 @@ jest.mock('@/stores/diaryStore', () => ({ useDiaryStore: jest.fn() }));
 jest.mock('@/stores/supplementStore', () => ({ useSupplementStore: jest.fn() }));
 jest.mock('@/hooks/usePro', () => ({ usePro: jest.fn() }));
 jest.mock('@/lib/analytics', () => ({ track: jest.fn() }));
+jest.mock('@/lib/foodLoggingHistory', () => ({ hasLoggedFood: () => Promise.resolve(false) }));
 jest.mock('@/components/ProModal', () => ({ ProModal: () => null }));
 
 const SAFE_AREA_METRICS = {
@@ -91,6 +98,7 @@ function mockStores(daySummary: { calories: number; protein_g: number; carbs_g: 
   });
   (useDiaryStore as unknown as jest.Mock).mockReturnValue({
     selectedDate: '2026-09-25',
+    entries: daySummary.calories > 0 ? [{ date: todayISO() }] : [],
     setDate: jest.fn(),
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),
@@ -116,13 +124,15 @@ beforeEach(() => {
 });
 
 describe('DashboardScreen — VeganScore sin ninguna comida registrada hoy no se muestra como un mal resultado', () => {
-  it('sin ninguna comida hoy: "Sin datos aún" (nunca "Mejorable 🌱"), sin desglose 0/30 ni la aclaración de micros', async () => {
+  it('sin ninguna comida hoy: texto de espera (nunca "Mejorable 🌱"), sin aro, sin desglose 0/30 ni la aclaración de micros', async () => {
     mockStores({ calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0, micros: emptyMicros() });
     const renderer = await renderDashboard();
     const texts = allTexts(renderer);
 
-    expect(texts).toContain('Sin datos aún');
-    expect(texts).toContain('Registra tu primera comida de hoy para ver tu VegeScore.');
+    expect(texts).toContain('VegeScore de hoy');
+    expect(texts).toContain('Tu VegeScore aparecerá cuando registres tu primera comida.');
+    // Qué es VegeScore sigue explicado aunque aún no haya número.
+    expect(texts).toContain('Resume de 0 a 100 tus calorías, proteína, micros clave, fibra y racha.');
     expect(texts.some((c) => typeof c === 'string' && c.includes('Mejorable'))).toBe(false);
     expect(texts.some((c) => typeof c === 'string' && c.includes('Micros clave: vitamina B12'))).toBe(false);
     // "Racha" es la etiqueta de una fila del desglose de VeganScore (a
@@ -130,15 +140,17 @@ describe('DashboardScreen — VeganScore sin ninguna comida registrada hoy no se
     // tarjeta de la pantalla) — su ausencia confirma que el desglose
     // numérico ("0/30", "0/25"...) no se ha renderizado.
     expect(texts).not.toContain('Racha');
+    expect(texts).not.toContain('Hasta ahora');
   });
 
-  it('con comida registrada hoy: comportamiento sin cambios (etiqueta real de la puntuación y desglose numérico)', async () => {
+  it('con comida registrada hoy: desglose numérico "Hasta ahora", sin texto de espera', async () => {
     mockStores({ calories: 1500, protein_g: 60, carbs_g: 180, fat_g: 50, fiber_g: 20, micros: emptyMicros() });
     const renderer = await renderDashboard();
     const texts = allTexts(renderer);
 
     expect(texts).toContain('Racha');
     expect(texts.some((c) => typeof c === 'string' && c.includes('Micros clave: vitamina B12'))).toBe(true);
-    expect(texts).not.toContain('Sin datos aún');
+    expect(texts).toContain('Hasta ahora');
+    expect(texts).not.toContain('Tu VegeScore aparecerá cuando registres tu primera comida.');
   });
 });
