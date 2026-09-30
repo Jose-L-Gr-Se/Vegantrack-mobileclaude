@@ -62,6 +62,7 @@ jest.mock('@/stores/diaryStore', () => ({ useDiaryStore: jest.fn() }));
 jest.mock('@/stores/supplementStore', () => ({ useSupplementStore: jest.fn() }));
 jest.mock('@/hooks/usePro', () => ({ usePro: jest.fn() }));
 jest.mock('@/lib/analytics', () => ({ track: jest.fn() }));
+jest.mock('@/lib/foodLoggingHistory', () => ({ hasLoggedFood: () => Promise.resolve(false) }));
 jest.mock('@/components/ProModal', () => ({ ProModal: () => null }));
 
 const SAFE_AREA_METRICS = {
@@ -103,6 +104,8 @@ function mockStores() {
   });
   (useDiaryStore as unknown as jest.Mock).mockReturnValue({
     selectedDate: STALE_DATE,
+    // Una entrada con fecha de hoy: el Resumen está "en curso".
+    entries: [{ date: todayISO() }],
     setDate,
     fetchEntries,
     getWeekData,

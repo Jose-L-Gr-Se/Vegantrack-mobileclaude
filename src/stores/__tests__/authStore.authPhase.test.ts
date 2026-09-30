@@ -469,3 +469,55 @@ describe('fetchProfile: timeout produce estado recuperable/caché sin dejar prom
     }
   });
 });
+
+describe('señal de producto "ha registrado alguna vez" (has_logged_food): es de la cuenta y se limpia con ella', () => {
+  async function signedIn() {
+    const session = SESSION('user-1');
+    mockGetSession.mockResolvedValue({ data: { session }, error: null });
+    profileResult = { data: PROFILE('user-1'), error: null };
+    await useAuthStore.getState().initialize();
+  }
+
+  it('signOut() la limpia para el usuario que cierra sesión', async () => {
+    await signedIn();
+    await useAuthStore.getState().signOut();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockKvSet).toHaveBeenCalledWith('has_logged_food:user-1', null);
+  });
+
+  it('deleteAccount() la limpia tras eliminar la cuenta con éxito', async () => {
+    await signedIn();
+    const { error } = await useAuthStore.getState().deleteAccount();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(error).toBeNull();
+    expect(mockKvSet).toHaveBeenCalledWith('has_logged_food:user-1', null);
+  });
+
+  it('deleteAccount() fallido NO la limpia (la cuenta sigue existiendo)', async () => {
+    await signedIn();
+    mockFunctionsInvoke.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    const { error } = await useAuthStore.getState().deleteAccount();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(error).toBe('boom');
+    expect(mockKvSet).not.toHaveBeenCalledWith('has_logged_food:user-1', null);
+  });
+
+  it('el evento SIGNED_OUT (sesión invalidada por otra vía) también la limpia', async () => {
+    await signedIn();
+    const listener = mockOnAuthStateChange.mock.calls[0][0];
+    listener('SIGNED_OUT', null);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockKvSet).toHaveBeenCalledWith('has_logged_food:user-1', null);
+  });
+
+  it('un fallo al limpiarla nunca rompe el cierre de sesión', async () => {
+    await signedIn();
+    mockKvSet.mockImplementation(async (key: string) => {
+      if (key === 'has_logged_food:user-1') throw new Error('SQLITE_BUSY');
+    });
+    await expect(useAuthStore.getState().signOut()).resolves.toBeUndefined();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useAuthStore.getState().authPhase).toBe('unauthenticated');
+    mockKvSet.mockReset();
+  });
+});

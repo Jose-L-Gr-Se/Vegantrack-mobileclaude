@@ -26,6 +26,7 @@ import { addDays, todayISO } from '@/utils/dates';
 import { isTransientSyncError, type SyncOpError } from '@/utils/syncError';
 import { reportError } from '@/lib/errorReporting';
 import { trackFirstFoodLoggedOnce } from '@/lib/analytics';
+import { markHasLoggedFood } from '@/lib/foodLoggingHistory';
 import { getReminderHour, getReminderOfferShown, markReminderOfferShown, onMealLogged } from '@/notifications/reminders';
 import { useUiStore } from '@/stores/uiStore';
 import { uuidv4 } from '@/utils/uuid';
@@ -408,6 +409,9 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       if (get().selectedDate === date) {
         set({ entries: local.map((r) => r.payload), loading: false });
       }
+      // Señal de producto "ha registrado alguna vez" (ver foodLoggingHistory):
+      // un día con entradas de este usuario es la misma evidencia que un alta.
+      if (local.length > 0) void markHasLoggedFood(userId);
     } catch {
       // espejo no disponible: seguimos con remoto
     }
@@ -443,6 +447,7 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       if (get().selectedDate === date) {
         set({ entries: local.map((r) => r.payload), loading: false });
       }
+      if (local.length > 0) void markHasLoggedFood(userId);
     } else {
       set({ loading: false });
     }
@@ -454,6 +459,11 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
 
     // Escritura local inmediata
     await mirrorUpsert('food_log', entryToRow(full), false);
+    // Señal de producto "ha registrado alguna vez" (`foodLoggingHistory`):
+    // en cuanto la comida está guardada en el dispositivo — sin red y sin
+    // depender de que la analítica (`first_food_logged`, más abajo) tenga
+    // éxito. Local y best-effort: nunca lanza ni retrasa el guardado.
+    await markHasLoggedFood(entry.user_id);
     if (get().selectedDate === entry.date) {
       // Auditoría de edición de comidas: editar una entrada reutiliza su
       // mismo id (ProductDetailSheet.commit() en isEdit — ver buildEntry());

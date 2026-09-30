@@ -8,6 +8,7 @@ import React from 'react';
 import { Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { VeganNutritionScoreTrend, type VeganNutritionTrendPoint } from '@/components/VeganNutritionScoreTrend';
+import { getScoreColor } from '@/utils/veganScore';
 
 jest.mock('expo-sqlite', () => ({}));
 jest.mock('react-native-svg', () => ({
@@ -20,12 +21,16 @@ jest.mock('react-native-svg', () => ({
   Polyline: () => null,
 }));
 
-function render(points: VeganNutritionTrendPoint[]) {
+function render(points: VeganNutritionTrendPoint[], inProgressDate?: string) {
   let renderer!: TestRenderer.ReactTestRenderer;
   act(() => {
-    renderer = TestRenderer.create(<VeganNutritionScoreTrend points={points} />);
+    renderer = TestRenderer.create(<VeganNutritionScoreTrend points={points} inProgressDate={inProgressDate} />);
   });
   return renderer;
+}
+
+function byMockName(renderer: TestRenderer.ReactTestRenderer, name: string) {
+  return renderer.root.findAll((n) => typeof n.type === 'function' && (n.type as { name?: string }).name === name);
 }
 
 const DAYS = ['2026-09-18', '2026-09-19', '2026-09-20', '2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24'];
@@ -83,5 +88,72 @@ describe('VeganNutritionScoreTrend', () => {
     const texts = renderer.root.findAllByType(Text).map((t) => t.props.children);
     expect(texts).toContain(85);
     expect(texts.some((c) => typeof c === 'string' && c.includes('de media'))).toBe(true);
+  });
+
+  describe('día en curso (`inProgressDate` = hoy)', () => {
+    const TODAY = DAYS[6];
+    const SCORE_COLORS = new Set([0, 41, 61, 81].map(getScoreColor));
+    /** Seis días pasados cerrados a 80 y hoy con un valor parcial de 10. */
+    const WEEK: VeganNutritionTrendPoint[] = DAYS.map((date) => ({ date, score: date === TODAY ? 10 : 80 }));
+
+    it('sin `inProgressDate` el comportamiento es el de siempre: hoy cuenta en la media y lleva color de valoración', () => {
+      const renderer = render(WEEK);
+      const texts = renderer.root.findAllByType(Text).map((t) => t.props.children);
+      // (6·80 + 10) / 7 = 70
+      expect(texts).toContain(70);
+      const circles = byMockName(renderer, 'Circle');
+      expect(circles).toHaveLength(7);
+      expect(circles[6].props.fill).toBe(getScoreColor(10));
+    });
+
+    it('la media sólo resume días cerrados: el valor parcial de hoy no la contamina', () => {
+      const renderer = render(WEEK, TODAY);
+      const texts = renderer.root.findAllByType(Text).map((t) => t.props.children);
+      expect(texts).toContain(80);
+      expect(texts).not.toContain(70);
+    });
+
+    it('los días pasados siguen igual: mismo punto, mismo color de valoración y misma línea', () => {
+      const renderer = render(WEEK, TODAY);
+      const circles = byMockName(renderer, 'Circle');
+      expect(circles).toHaveLength(7);
+      for (const c of circles.slice(0, 6)) {
+        expect(c.props.fill).toBe(getScoreColor(80));
+        expect(c.props.r).toBe(4);
+      }
+      // La línea une los 6 días cerrados y no llega a hoy.
+      const lines = byMockName(renderer, 'Polyline');
+      expect(lines).toHaveLength(1);
+      expect(String(lines[0].props.points).split(' ')).toHaveLength(6);
+    });
+
+    it('hoy se sigue dibujando, pero hueco y neutro — nunca con un color de valoración', () => {
+      const renderer = render(WEEK, TODAY);
+      const today = byMockName(renderer, 'Circle')[6];
+      expect(SCORE_COLORS.has(today.props.fill)).toBe(false);
+      expect(SCORE_COLORS.has(today.props.stroke)).toBe(false);
+      expect(today.props.strokeWidth).toBeGreaterThan(0);
+      const texts = renderer.root.findAllByType(Text).map((t) => t.props.children);
+      expect(texts).toContain('Hoy está en curso: aparece sin valorar y no cuenta en la media.');
+    });
+
+    it('si sólo hay datos de hoy: gráfico con el punto en curso, sin media y sin el estado vacío', () => {
+      const points: VeganNutritionTrendPoint[] = DAYS.map((date) => ({ date, score: date === TODAY ? 35 : null }));
+      const renderer = render(points, TODAY);
+      const texts = renderer.root.findAllByType(Text).map((t) => t.props.children);
+      expect(texts.some((c) => typeof c === 'string' && c.includes('de media'))).toBe(false);
+      expect(texts.some((c) => typeof c === 'string' && c.includes('Aún no hay comidas registradas'))).toBe(false);
+      expect(byMockName(renderer, 'Circle')).toHaveLength(1);
+      expect(texts).toContain('Hoy está en curso: aparece sin valorar y no cuenta en la media.');
+    });
+
+    it('si hoy aún no tiene datos, no aparece la nota de "en curso" y el resto no cambia', () => {
+      const points: VeganNutritionTrendPoint[] = DAYS.map((date) => ({ date, score: date === TODAY ? null : 80 }));
+      const withProp = render(points, TODAY);
+      const withoutProp = render(points);
+      expect(JSON.stringify(withProp.toJSON())).toBe(JSON.stringify(withoutProp.toJSON()));
+      const texts = withProp.root.findAllByType(Text).map((t) => t.props.children);
+      expect(texts).not.toContain('Hoy está en curso: aparece sin valorar y no cuenta en la media.');
+    });
   });
 });

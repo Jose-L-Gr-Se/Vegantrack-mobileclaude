@@ -38,11 +38,29 @@ function weekdayInitial(iso: string): string {
   return d.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase();
 }
 
-export function VeganNutritionScoreTrend({ points }: { points: VeganNutritionTrendPoint[] }) {
+/**
+ * `inProgressDate` (Resumen como "día en curso"): la fecha de HOY, que el
+ * Dashboard pasa porque el último punto de la serie es siempre el día que
+ * todavía está ocurriendo. Ese punto se sigue dibujando (la información se
+ * conserva), pero como punto hueco y neutro — sin el color de valoración de
+ * `getScoreColor`, sin unirse a la línea de los días cerrados — y no entra
+ * en la media, que así sólo resume días terminados. Sin este prop, el
+ * componente se comporta exactamente igual que antes.
+ */
+export function VeganNutritionScoreTrend({
+  points,
+  inProgressDate,
+}: {
+  points: VeganNutritionTrendPoint[];
+  inProgressDate?: string;
+}) {
   const t = useTheme();
+  const isInProgress = (p: VeganNutritionTrendPoint) => inProgressDate !== undefined && p.date === inProgressDate;
   const known = points.filter((p): p is { date: string; score: number } => p.score !== null);
+  const closed = known.filter((p) => !isInProgress(p));
   const hasAnyData = known.length > 0;
-  const avg = hasAnyData ? Math.round(known.reduce((s, p) => s + p.score, 0) / known.length) : null;
+  const avg = closed.length > 0 ? Math.round(closed.reduce((s, p) => s + p.score, 0) / closed.length) : null;
+  const inProgressHasData = known.length > closed.length;
 
   const n = Math.max(points.length, 1);
   const toX = (i: number) => (i / Math.max(n - 1, 1)) * W;
@@ -50,11 +68,12 @@ export function VeganNutritionScoreTrend({ points }: { points: VeganNutritionTre
 
   // Segmentos de polilínea sólo entre días CONSECUTIVOS con dato — un hueco
   // real (día sin registrar) rompe la línea en vez de interpolarla, para no
-  // sugerir un valor que no existe entre dos días con datos.
+  // sugerir un valor que no existe entre dos días con datos. El día en curso
+  // también la rompe: su valor parcial no es un punto de la tendencia.
   const segments: { x: number; y: number }[][] = [];
   let current: { x: number; y: number }[] = [];
   points.forEach((p, i) => {
-    if (p.score === null) {
+    if (p.score === null || isInProgress(p)) {
       if (current.length) segments.push(current);
       current = [];
     } else {
@@ -70,9 +89,9 @@ export function VeganNutritionScoreTrend({ points }: { points: VeganNutritionTre
           <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', color: t.textMuted }}>
             VegeScore nutricional · 7 días
           </Text>
-          {hasAnyData ? (
+          {avg !== null ? (
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
-              <Text style={{ fontSize: 28, fontWeight: '800', color: getScoreColor(avg!) }}>{avg}</Text>
+              <Text style={{ fontSize: 28, fontWeight: '800', color: getScoreColor(avg) }}>{avg}</Text>
               <Text style={{ color: t.textMuted, fontSize: 12 }}>de media</Text>
             </View>
           ) : null}
@@ -95,9 +114,19 @@ export function VeganNutritionScoreTrend({ points }: { points: VeganNutritionTre
                 ) : null
               )}
               {points.map((p, i) =>
-                p.score !== null ? (
+                p.score === null ? null : isInProgress(p) ? (
+                  <Circle
+                    key={i}
+                    cx={toX(i)}
+                    cy={toY(p.score)}
+                    r={DOT_R - 1}
+                    fill={t.card}
+                    stroke={t.textSecondary}
+                    strokeWidth={2}
+                  />
+                ) : (
                   <Circle key={i} cx={toX(i)} cy={toY(p.score)} r={DOT_R} fill={getScoreColor(p.score)} />
-                ) : null
+                )
               )}
             </Svg>
           </View>
@@ -126,6 +155,11 @@ export function VeganNutritionScoreTrend({ points }: { points: VeganNutritionTre
         No incluye la racha — el VegeScore de arriba sí la incluye. Calculado con tus objetivos actuales de
         calorías y proteína.
       </Text>
+      {inProgressHasData ? (
+        <Text style={{ color: t.textMuted, fontSize: 11, lineHeight: 15 }}>
+          Hoy está en curso: aparece sin valorar y no cuenta en la media.
+        </Text>
+      ) : null}
     </Card>
   );
 }

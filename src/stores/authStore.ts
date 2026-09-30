@@ -15,6 +15,7 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { supabase, AUTH_TIMEOUT_MS } from '@/lib/supabase';
 import { kvGet, kvSet } from '@/db/database';
+import { clearHasLoggedFood } from '@/lib/foodLoggingHistory';
 import { usePurchasesStore } from '@/stores/purchasesStore';
 import { useDiaryStore } from '@/stores/diaryStore';
 import { useSupplementStore } from '@/stores/supplementStore';
@@ -50,7 +51,11 @@ import type { Profile } from '@/types';
  * todo" (cancela lo pendiente + borra la preferencia) — se reutiliza tal
  * cual, sin inventar un segundo mecanismo de reset.
  */
-function resetUserDataStores(): void {
+function resetUserDataStores(userId: string | undefined): void {
+  // Señal de producto "ha registrado alguna vez" (`foodLoggingHistory`): es
+  // de la cuenta que se cierra, igual que `last_user_id`. Se limpia aquí para
+  // cubrir los tres cierres (signOut, deleteAccount y el evento SIGNED_OUT).
+  if (userId) void clearHasLoggedFood(userId);
   useDiaryStore.getState().reset();
   useSupplementStore.getState().reset();
   useCustomFoodStore.getState().reset();
@@ -183,9 +188,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
       if (event === 'INITIAL_SESSION') return;
 
       if (event === 'SIGNED_OUT') {
+        const signedOutUserId = get().user?.id;
         void kvSet(LAST_USER_ID_KEY, null);
         set({ session: null, user: null, profile: null, authPhase: 'unauthenticated' });
-        resetUserDataStores();
+        resetUserDataStores(signedOutUserId);
         return;
       }
 
@@ -355,9 +361,12 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
 
     signOut: async () => {
+      // Antes de `supabase.auth.signOut()`: su evento SIGNED_OUT ya deja
+      // `user` a null.
+      const userId = get().user?.id;
       await supabase.auth.signOut();
       await usePurchasesStore.getState().reset();
-      resetUserDataStores();
+      resetUserDataStores(userId);
       void kvSet(LAST_USER_ID_KEY, null);
       set({ user: null, session: null, profile: null, authPhase: 'unauthenticated' });
     },
@@ -365,12 +374,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
     deleteAccount: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) return { error: 'No hay sesión activa' };
+      const userId = sessionData.session.user?.id ?? get().user?.id;
       try {
         const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' });
         if (error) return { error: error.message };
         await supabase.auth.signOut();
         await usePurchasesStore.getState().reset();
-        resetUserDataStores();
+        resetUserDataStores(userId);
         void kvSet(LAST_USER_ID_KEY, null);
         set({ user: null, session: null, profile: null, authPhase: 'unauthenticated' });
         return { error: null };
