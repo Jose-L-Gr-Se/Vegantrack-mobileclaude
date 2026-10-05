@@ -15,11 +15,12 @@
  * típico de recientes y entradas guardadas— los recupera de OpenFoodFacts
  * (caché local, instantáneo) y los fusiona. Así la ficha es consistente.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Pill, ProgressRing } from '@/components/ui';
 import { BottomSheet } from '@/components/BottomSheet';
+import { useSelectAllOnFocus } from '@/hooks/useSelectAllOnFocus';
 import { EcoScoreBadge, NovaBadge, NutriScoreBadge } from '@/components/ScoreBadges';
 import { ScoreInfoSheet, type ScoreKind } from '@/components/ScoreInfoSheet';
 import { radii, semantic, spacing, useTheme } from '@/theme';
@@ -242,6 +243,11 @@ export function ProductDetailSheet({
     lockedMealType ?? editEntry?.meal_type ?? (isAiPhoto ? mealTypeForHour(new Date().getHours()) : null)
   );
   const [error, setError] = useState<string | null>(null);
+  const onGramsChange = useCallback((v: string) => {
+    setGrams(v);
+    setError(null);
+  }, []);
+  const gramsSelectAll = useSelectAllOnFocus(grams, onGramsChange);
   const [busy, setBusy] = useState(false);
   const [imageBroken, setImageBroken] = useState(false);
   const [infoKind, setInfoKind] = useState<ScoreKind | null>(null);
@@ -847,14 +853,12 @@ export function ProductDetailSheet({
               );
             })}
           </View>
+          {/* Selección inicial controlada (no `selectTextOnFocus`): ver
+              `useSelectAllOnFocus` — en Android el primer dígito se perdía. */}
           <TextInput
             value={grams}
-            onChangeText={(v) => {
-              setGrams(v);
-              setError(null);
-            }}
+            {...gramsSelectAll}
             keyboardType="numeric"
-            selectTextOnFocus
             style={{
               backgroundColor: t.inputBg,
               borderColor: t.inputBorder,

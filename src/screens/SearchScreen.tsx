@@ -97,6 +97,7 @@ export function SearchScreen() {
   const [selectedInitialGrams, setSelectedInitialGrams] = useState<number | undefined>(undefined);
   const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   // Datos al enfocar la pantalla.
   useFocusEffect(
@@ -128,6 +129,23 @@ export function SearchScreen() {
         navigation.setParams({ mealType: undefined, nutrient: undefined } as never);
       };
     }, [navigation])
+  );
+
+  // Buscar es una pestaña: tras la primera visita sigue montada y su
+  // ScrollView conserva el desplazamiento de la visita anterior, así que al
+  // llegar a añadir un alimento ("＋" del Diario, siguiente paso del
+  // Resumen, "Ver alimentos") podía abrirse a media lista. Sólo cuando se
+  // llega con esa intención (`mealType`/`nutrient`, que el cleanup de arriba
+  // limpia al salir) se vuelve arriba, con el buscador visible: ni en cada
+  // render ni al entrar tocando la pestaña. (`fromActivation` no cuenta: es
+  // la primera visita, la pantalla se monta ya arriba, y ese param no se
+  // limpia al salir — volvería arriba en cada foco posterior.)
+  const addIntent = route.params?.mealType ?? route.params?.nutrient;
+  useFocusEffect(
+    useCallback(() => {
+      if (!addIntent) return;
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }, [addIntent])
   );
 
   // Barcode entrante desde el escáner
@@ -215,6 +233,7 @@ export function SearchScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: t.background }}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ padding: spacing.lg, paddingTop: insets.top + spacing.md, gap: spacing.lg, paddingBottom: spacing.xxl }}
         keyboardShouldPersistTaps="handled"
       >
