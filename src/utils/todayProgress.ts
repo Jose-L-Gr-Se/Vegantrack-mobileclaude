@@ -58,12 +58,22 @@ export const MEAL_NOUNS: Record<MealType, string> = {
   snack: 'snack',
 };
 
+/** "Añadir a {franja}" con su artículo: "al desayuno", "a la comida"… */
+const ADD_TO_MEAL: Record<MealType, string> = {
+  breakfast: 'Añadir al desayuno',
+  lunch: 'Añadir a la comida',
+  dinner: 'Añadir a la cena',
+  snack: 'Añadir al snack',
+};
+
 export interface NextStepInput {
   state: DayState;
   /** Nunca ha registrado nada (`profile.last_log_date` nulo con perfil cargado). */
   isFirstUse: boolean;
   /** Franja actual según `mealTypeForHour`. */
   mealType: MealType;
+  /** ¿Ya hay entradas de hoy en esa franja? Decide "Añadir a…" vs "Registrar…". */
+  slotHasEntries: boolean;
   calories: number;
   calorieTarget: number;
   proteinG: number;
@@ -109,7 +119,12 @@ export function describeNextStep(input: NextStepInput): NextStep {
             cta: `Registrar ${noun}`,
           };
     case 'in_progress':
-      return { title: 'Siguiente paso', context: progressLine(input), cta: `Añadir ${noun}` };
+      return {
+        title: 'Siguiente paso',
+        context: progressLine(input),
+        // Franja ya empezada → se añade a ella; franja vacía → se registra.
+        cta: input.slotHasEntries ? ADD_TO_MEAL[input.mealType] : `Registrar ${noun}`,
+      };
     case 'goal_reached':
       // La acción es registrar lo que falte, nunca una invitación a comer más.
       return {

@@ -10,6 +10,7 @@ jest.mock('@/db/database', () => ({ kvGet: jest.fn(), kvSet: jest.fn() }));
 import {
   buildNutritionInsight,
   describeInsightPriority,
+  insightsForDayInProgress,
   type HistoricalMicroDay,
   type NutritionInsightPriority,
 } from '@/utils/nutritionInsight';
@@ -269,6 +270,22 @@ describe('describeInsightPriority — el copy describe lo REGISTRADO, con el den
     expect(describeInsightPriority(p)).toContain('3 de los últimos 4 días con datos');
   });
 
+  it('día en curso: "hoy" sin el % del objetivo de hoy', () => {
+    expect(describeInsightPriority(base, { dayInProgress: true })).toBe('lo registrado hoy es bajo');
+  });
+
+  it('día en curso: el patrón semanal se mantiene, sin el % de hoy', () => {
+    const p: NutritionInsightPriority = { ...base, urgency: 'pattern', lowDays: 5, validDays: 7 };
+    expect(describeInsightPriority(p, { dayInProgress: true })).toBe(
+      'lo registrado quedó bajo en 5 de los últimos 7 días con datos'
+    );
+  });
+
+  it('sin la opción (días cerrados) el texto no cambia', () => {
+    expect(describeInsightPriority(base, {})).toBe(describeInsightPriority(base));
+    expect(describeInsightPriority(base, { dayInProgress: false })).toBe('lo registrado hoy es bajo · 32 % del objetivo');
+  });
+
   it('nunca usa lenguaje de déficit, carencia ni diagnóstico, ni afirma nada sobre la ingesta real', () => {
     const variants: NutritionInsightPriority[] = [
       base,
@@ -286,5 +303,28 @@ describe('describeInsightPriority — el copy describe lo REGISTRADO, con el den
     const text = describeInsightPriority({ ...base, urgency: 'pattern' });
     expect(text).toBe('lo registrado hoy es bajo · 32 % del objetivo');
     expect(text).not.toContain('undefined');
+  });
+});
+
+describe('insightsForDayInProgress — el Resumen de hoy sólo muestra patrones semanales', () => {
+  const today: NutritionInsightPriority = { key: 'zinc_mg', label: 'Zinc', pct: 0.4, urgency: 'today', reason: 'z' };
+  const pattern: NutritionInsightPriority = {
+    key: 'iron_mg', label: 'Hierro', pct: 0.3, urgency: 'pattern', reason: 'i', lowDays: 5, validDays: 7,
+  };
+
+  it('descarta las prioridades sólo de hoy y conserva las de patrón, en su orden', () => {
+    expect(insightsForDayInProgress([pattern, today])).toEqual([pattern]);
+    expect(insightsForDayInProgress([today])).toEqual([]);
+  });
+
+  it('una prioridad "pattern" sin evidencia (lowDays/validDays) no se muestra', () => {
+    expect(insightsForDayInProgress([{ ...pattern, lowDays: undefined, validDays: undefined }])).toEqual([]);
+  });
+
+  it('días pasados: buildNutritionInsight y el copy por defecto no cambian (incluyen "hoy" y su %)', () => {
+    expect(describeInsightPriority(today)).toBe('lo registrado hoy es bajo · 40 % del objetivo');
+    expect(describeInsightPriority(pattern)).toBe(
+      'lo registrado quedó bajo en 5 de los últimos 7 días con datos · 30 % del objetivo hoy'
+    );
   });
 });

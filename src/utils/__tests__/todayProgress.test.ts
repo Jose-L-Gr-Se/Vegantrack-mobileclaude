@@ -79,6 +79,7 @@ describe('describeNextStep', () => {
     calorieTarget: 2000,
     proteinG: 28.2,
     proteinTarget: 110,
+    slotHasEntries: false,
   };
 
   it('empty + primer uso', () => {
@@ -101,8 +102,26 @@ describe('describeNextStep', () => {
     expect(describeNextStep(base)).toEqual({
       title: 'Siguiente paso',
       context: 'Llevas 620 de 2000 kcal · 28 de 110 g de proteína.',
-      cta: 'Añadir comida',
+      cta: 'Registrar comida',
     });
+  });
+
+  it('in_progress: franja actual sin entradas → "Registrar {franja}"', () => {
+    expect(describeNextStep({ ...base, mealType: 'dinner', slotHasEntries: false }).cta).toBe('Registrar cena');
+  });
+
+  it('in_progress: franja actual con entradas → "Añadir a {franja}", con su artículo', () => {
+    const cta = (mealType: NextStepInput['mealType']) => describeNextStep({ ...base, mealType, slotHasEntries: true }).cta;
+    expect(cta('breakfast')).toBe('Añadir al desayuno');
+    expect(cta('lunch')).toBe('Añadir a la comida');
+    expect(cta('dinner')).toBe('Añadir a la cena');
+    expect(cta('snack')).toBe('Añadir al snack');
+  });
+
+  it('goal_reached mantiene "Añadir algo más" tenga o no entradas la franja', () => {
+    for (const slotHasEntries of [true, false]) {
+      expect(describeNextStep({ ...base, state: 'goal_reached', slotHasEntries }).cta).toBe('Añadir algo más');
+    }
   });
 
   it('in_progress con proteína desconocida (0): no se inventa un "0 de 110 g"', () => {
@@ -133,7 +152,7 @@ describe('describeNextStep', () => {
   it('cada franja tiene su nombre en la frase y en el botón', () => {
     for (const [meal, noun] of Object.entries(MEAL_NOUNS)) {
       const step = describeNextStep({ ...base, mealType: meal as NextStepInput['mealType'] });
-      expect(step.cta).toBe(`Añadir ${noun}`);
+      expect(step.cta).toBe(`Registrar ${noun}`);
     }
   });
 

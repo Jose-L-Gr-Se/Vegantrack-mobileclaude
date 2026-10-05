@@ -167,7 +167,7 @@ beforeEach(() => {
 
 describe('DashboardScreen — "Qué vigilar hoy" describe lo registrado', () => {
   it('el subtítulo aclara que son observaciones sobre lo registrado, no sobre toda la alimentación', async () => {
-    mockStores(micros({ iron_mg: lowValueAgg(RDAS.iron_mg, 0.9) }));
+    mockStores(micros({ iron_mg: lowValueAgg(RDAS.iron_mg, 0.9) }), week([LOW, LOW, LOW, LOW, GOOD, GOOD].map(historyDay)));
     const text = JSON.stringify((await renderDashboard()).toJSON());
 
     expect(text).toContain('Observaciones sobre lo que has registrado, no sobre toda tu alimentación. No es un diagnóstico.');
@@ -175,12 +175,30 @@ describe('DashboardScreen — "Qué vigilar hoy" describe lo registrado', () => 
     expect(text).not.toContain('Basado en lo que has registrado hoy');
   });
 
-  it('sin histórico: la prioridad de hoy se lee como observación del registro de hoy', async () => {
+  it('día en curso sin patrón (prioridad sólo de hoy): no aparece la fila ni la tarjeta', async () => {
     mockStores(micros({ iron_mg: lowValueAgg(RDAS.iron_mg, 0.9) }));
     const text = JSON.stringify((await renderDashboard()).toJSON());
 
-    expect(text).toContain('lo registrado hoy es bajo');
-    expect(text).toContain('% del objetivo');
+    expect(text).not.toContain('Qué vigilar hoy');
+    // Ninguna valoración del día que aún no ha terminado, ni sustituta.
+    expect(text).not.toContain('lo registrado hoy es bajo');
+    expect(text).not.toContain('% del objetivo');
+  });
+
+  it('día en curso con patrón en un micro y sólo-hoy en otro: aparece únicamente la fila con patrón', async () => {
+    mockStores(
+      micros({ iron_mg: lowValueAgg(RDAS.iron_mg, 0.9), zinc_mg: lowValueAgg(RDAS.zinc_mg, 0.9) }),
+      week([LOW, LOW, LOW, LOW, GOOD, GOOD].map(historyDay)) // patrón sólo para el hierro
+    );
+    const r = await renderDashboard();
+    const text = JSON.stringify(r.toJSON());
+
+    expect(text).toContain('Hierro');
+    expect(text).toContain('lo registrado quedó bajo en 5 de los últimos 7 días con datos');
+    // Una única fila en "Qué vigilar hoy" (el zinc sólo aparece en la
+    // tarjeta de Micronutrientes, no como prioridad).
+    expect((text.match(/Ver alimentos/g) ?? []).length).toBe(1);
+    expect(text).not.toContain('lo registrado hoy es bajo');
   });
 
   it('patrón con 4 días válidos: el copy dice "3 de los últimos 4 días con datos", nunca 7', async () => {
@@ -191,6 +209,8 @@ describe('DashboardScreen — "Qué vigilar hoy" describe lo registrado', () => 
 
     expect(text).toContain('lo registrado quedó bajo en 3 de los últimos 4 días con datos');
     expect(text).not.toContain('de los últimos 7');
+    // El patrón semanal se mantiene; sólo desaparece el % de hoy.
+    expect(text).not.toContain('% del objetivo hoy');
     // Copy anterior, ya retirado.
     expect(text).not.toContain('bajo varios días seguidos');
   });
@@ -201,6 +221,7 @@ describe('DashboardScreen — "Qué vigilar hoy" describe lo registrado', () => 
     const text = JSON.stringify((await renderDashboard()).toJSON());
 
     expect(text).toContain('lo registrado quedó bajo en 5 de los últimos 7 días con datos');
+    expect(text).not.toContain('% del objetivo');
   });
 
   it('nada del copy visible usa lenguaje de déficit, carencia o diagnóstico', async () => {

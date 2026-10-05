@@ -108,7 +108,22 @@ async function renderDashboard() {
   return renderer;
 }
 
-function mockStores(microsOverride: ReturnType<typeof micros>) {
+/** Historial con patrón semanal de hierro (4 de 6 días previos bajos) + el
+ *  punto de hoy que el Dashboard descarta con `slice(0, -1)`. En el día en
+ *  curso sólo se muestran prioridades con patrón. */
+function ironPatternHistory() {
+  const ok = { pct: 1, hasEntries: true, confidence: 'high' };
+  const day = (ironPct: number) => ({
+    date: '2026-09-01',
+    micros: {
+      vitamin_b12_mcg: ok, iron_mg: { pct: ironPct, hasEntries: true, confidence: 'high' },
+      zinc_mg: ok, calcium_mg: ok, vitamin_d_mcg: ok, omega3_g: ok,
+    },
+  });
+  return [0.2, 0.2, 0.2, 0.2, 1, 1, 1].map(day);
+}
+
+function mockStores(microsOverride: ReturnType<typeof micros>, history: unknown[] = ironPatternHistory()) {
   (useAuthStore as unknown as jest.Mock).mockReturnValue({
     user: { id: 'user-1' },
     profile: {
@@ -128,7 +143,7 @@ function mockStores(microsOverride: ReturnType<typeof micros>) {
     fetchEntries: jest.fn().mockResolvedValue(undefined),
     getWeekData: jest.fn().mockResolvedValue([]),
     getVeganNutritionScoreTrend: jest.fn().mockResolvedValue([]),
-    getMicroTrends: jest.fn().mockResolvedValue([]),
+    getMicroTrends: jest.fn().mockResolvedValue(history),
     getDaySummary: () => ({
       calories: 1500,
       protein_g: 60,

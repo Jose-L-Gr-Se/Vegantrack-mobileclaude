@@ -142,12 +142,35 @@ function patternEvidence(key: MicroKey, previousDays: HistoricalMicroDay[]): Pat
  * suficientes), nunca el tamaño de la ventana: "3 de los últimos 4 días con
  * datos", jamás "3 de 7" cuando sólo 4 días tenían datos.
  */
-export function describeInsightPriority(p: NutritionInsightPriority): string {
+export function describeInsightPriority(
+  p: NutritionInsightPriority,
+  options: { dayInProgress?: boolean } = {}
+): string {
+  // Día en curso (Resumen de hoy): el % de hoy es el de un día que todavía
+  // no ha terminado — mostrarlo ("56 % del objetivo") lo presenta como un
+  // resultado. Se omite sólo el porcentaje de HOY; el patrón semanal, que se
+  // apoya en días ya cerrados, se mantiene. Sin la opción, el texto es el de
+  // siempre (días cerrados).
   const pctText = `${Math.round(p.pct * 100)} % del objetivo`;
   if (p.urgency === 'pattern' && p.lowDays !== undefined && p.validDays !== undefined) {
-    return `lo registrado quedó bajo en ${p.lowDays} de los últimos ${p.validDays} días con datos · ${pctText} hoy`;
+    const patternText = `lo registrado quedó bajo en ${p.lowDays} de los últimos ${p.validDays} días con datos`;
+    return options.dayInProgress ? patternText : `${patternText} · ${pctText} hoy`;
   }
-  return `lo registrado hoy es bajo · ${pctText}`;
+  return options.dayInProgress ? 'lo registrado hoy es bajo' : `lo registrado hoy es bajo · ${pctText}`;
+}
+
+/**
+ * Prioridades que se pueden mostrar mientras el día está en curso (Resumen
+ * de hoy): sólo las que tienen patrón semanal, que se apoya en días ya
+ * cerrados. Una prioridad sólo de hoy ("lo registrado hoy es bajo") sería
+ * una valoración de un día que aún no ha terminado, así que se omite — es
+ * preferible una tarjeta con menos filas, o ninguna, a un juicio prematuro.
+ * No cambia `buildNutritionInsight` ni sus umbrales: sólo filtra su salida.
+ */
+export function insightsForDayInProgress(priorities: NutritionInsightPriority[]): NutritionInsightPriority[] {
+  return priorities.filter(
+    (p) => p.urgency === 'pattern' && p.lowDays !== undefined && p.validDays !== undefined
+  );
 }
 
 /**

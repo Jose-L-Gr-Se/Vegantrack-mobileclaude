@@ -29,6 +29,7 @@ import { hasLoggedFood } from '@/lib/foodLoggingHistory';
 import { VeganNutritionScoreTrend } from '@/components/VeganNutritionScoreTrend';
 import { mealTypeForHour } from '@/utils/foodEntry';
 import { MICRO_RDA, ironRdaForSex } from '@/utils/nutrition';
+import { MICRO_FOOD_SOURCES } from '@/utils/microRecommendations';
 import { getScoreColor, getScoreLabel } from '@/utils/veganScore';
 import { addDays, todayISO } from '@/utils/dates';
 import type { MicroAggregate } from '@/types';
@@ -107,7 +108,7 @@ function micros(ratio: number | null, overrides: Partial<Record<Key, MicroAggreg
 }
 
 interface Day {
-  entries: { date: string }[];
+  entries: { date: string; meal_type?: string }[];
   calories: number;
   protein_g: number;
   fiber_g?: number;
@@ -127,6 +128,20 @@ const PERFECT_DAY: Day = {
 };
 
 let diaryState: Record<string, unknown>;
+/** Historial de `getMicroTrends` (6 días previos + hoy, que el Dashboard descarta). */
+let microHistory: unknown[] = [];
+/** Patrón semanal de hierro: 4 de 6 días previos bajos. */
+function ironPatternHistory() {
+  const ok = { pct: 1, hasEntries: true, confidence: 'high' };
+  const day = (ironPct: number) => ({
+    date: '2026-09-01',
+    micros: {
+      vitamin_b12_mcg: ok, iron_mg: { pct: ironPct, hasEntries: true, confidence: 'high' },
+      zinc_mg: ok, calcium_mg: ok, vitamin_d_mcg: ok, omega3_g: ok,
+    },
+  });
+  return [0.2, 0.2, 0.2, 0.2, 1, 1, 1].map(day);
+}
 let authState: Record<string, unknown>;
 let fetchEntries: jest.Mock;
 
@@ -140,7 +155,7 @@ function mockStores(day: Day, profileOverrides: Record<string, unknown> = {}, lo
     fetchEntries,
     getWeekData: jest.fn().mockResolvedValue([]),
     getVeganNutritionScoreTrend: jest.fn().mockResolvedValue([]),
-    getMicroTrends: jest.fn().mockResolvedValue([]),
+    getMicroTrends: jest.fn().mockResolvedValue(microHistory),
     getDaySummary: () => ({
       calories: day.calories,
       protein_g: day.protein_g,
@@ -235,6 +250,7 @@ const ALL_SCORE_COLORS = new Set([0, 41, 61, 81].map(getScoreColor));
 beforeEach(() => {
   jest.clearAllMocks();
   mockFocusListeners.clear();
+  microHistory = [];
 });
 
 describe('Resumen de hoy — estado del día y siguiente paso', () => {
@@ -304,14 +320,70 @@ describe('Resumen de hoy — estado del día y siguiente paso', () => {
     expect(t).not.toContain('Tu día empieza aquí');
   });
 
-  it('in_progress: lo registrado frente a los objetivos, con "Añadir comida"', async () => {
+  it('in_progress con la franja actual vacía: lo registrado frente a los objetivos, con "Registrar comida"', async () => {
     mockStores(PARTIAL_DAY);
     const r = await renderDashboard();
     const t = texts(r);
     expect(t).toContain('Hoy · en curso');
     expect(t).toContain('Siguiente paso');
     expect(t).toContain('Llevas 620 de 2000 kcal · 28 de 110 g de proteína.');
-    expect(t).toContain('Añadir comida');
+    expect(t).toContain('Registrar comida');
+    expect(t).not.toContain('Añadir a la comida');
+  });
+
+  it('in_progress con entradas de hoy en la franja actual: "Añadir a la comida"', async () => {
+    mockStores({ ...PARTIAL_DAY, entries: [{ date: todayISO(), meal_type: 'lunch' }] });
+    const r = await renderDashboard();
+    const t = texts(r);
+    expect(t).toContain('Añadir a la comida');
+    expect(t).not.toContain('Registrar comida');
+  });
+
+  it('una entrada de la misma franja pero de otro día no cuenta: "Registrar comida"', async () => {
+    mockStores({
+      ...PARTIAL_DAY,
+      entries: [{ date: todayISO(), meal_type: 'breakfast' }, { date: addDays(todayISO(), -1), meal_type: 'lunch' }],
+    });
+    const r = await renderDashboard();
+    expect(texts(r)).toContain('Registrar comida');
+  });
+
+  it('in_progress + prioridad sin patrón: no aparece la fila (ni la tarjeta)', async () => {
+    mockStores({ ...PARTIAL_DAY, micros: micros(1.2, { iron_mg: agg(RDAS.iron_mg * 0.2) }) });
+    const t = texts(await renderDashboard());
+    expect(t).not.toContain('Qué vigilar hoy');
+    expect(t).not.toContain('Ver alimentos');
+  });
+
+  it('in_progress + prioridad con patrón: el patrón semanal, sin % de hoy, con alimentos y "Ver alimentos"', async () => {
+    microHistory = ironPatternHistory();
+    mockStores({ ...PARTIAL_DAY, micros: micros(1.2, { iron_mg: agg(RDAS.iron_mg * 0.2) }) });
+    const r = await renderDashboard();
+    const t = texts(r);
+    expect(t).toContain('Qué vigilar hoy');
+    expect(t.some((s) => s.includes('lo registrado quedó bajo en 5 de los últimos 7 días con datos'))).toBe(true);
+    expect(t.some((s) => s.includes('% del objetivo'))).toBe(false);
+    expect(t).toContain(MICRO_FOOD_SOURCES.iron_mg);
+    expect(t).toContain('Ver alimentos');
+    await act(async () => {
+      let node = r.root.findAll((n) => n.props.children === 'Ver alimentos')[0];
+      while (node && typeof node.props.onPress !== 'function') node = node.parent!;
+      node.props.onPress();
+    });
+    expect(mockNavigate).toHaveBeenCalledWith('Main', { screen: 'Search', params: { nutrient: 'iron_mg' } });
+  });
+
+  it('in_progress: ninguna frase que valore el día en curso, haya o no patrón', async () => {
+    for (const history of [[], ironPatternHistory()]) {
+      microHistory = history;
+      mockStores({
+        ...PARTIAL_DAY,
+        micros: micros(0.2), // los 6 micros bajos hoy, con confianza alta
+      });
+      const all = texts(await renderDashboard()).join(' | ').toLowerCase();
+      expect(all).not.toContain('lo registrado hoy es bajo');
+      expect(all).not.toMatch(/vas bajo|te falta|hoy es bajo/);
+    }
   });
 
   it('in_progress con proteína desconocida: no aparece la proteína', async () => {
@@ -358,6 +430,7 @@ describe('Resumen de hoy — estado del día y siguiente paso', () => {
   });
 
   it('jerarquía: hero → Siguiente paso → VegeScore de hoy → Qué vigilar hoy → tendencia', async () => {
+    microHistory = ironPatternHistory();
     mockStores({ ...PARTIAL_DAY, micros: micros(1.2, { iron_mg: agg(RDAS.iron_mg * 0.2) }) });
     const r = await renderDashboard();
     const t = texts(r);
@@ -416,7 +489,8 @@ describe('VegeScore de hoy — número visible, sin veredicto', () => {
     expect([].concat(label.parent!.findAllByType(Text)[1].props.children).join('')).toBe('10/10');
   });
 
-  it('no regresión de insight: "Qué vigilar hoy" sigue apareciendo con su acción secundaria', async () => {
+  it('no regresión de insight: "Qué vigilar hoy" sigue apareciendo con su acción secundaria (con patrón)', async () => {
+    microHistory = ironPatternHistory();
     mockStores({ ...PARTIAL_DAY, micros: micros(1.2, { iron_mg: agg(RDAS.iron_mg * 0.2) }) });
     const r = await renderDashboard();
     const t = texts(r);

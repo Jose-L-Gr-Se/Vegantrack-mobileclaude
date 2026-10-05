@@ -16,7 +16,7 @@ import { usePro } from '@/hooks/usePro';
 import { computeVeganScore } from '@/utils/veganScore';
 import { ironRdaForSex, MICRO_RDA, resolveMicroDisplay, type MicroDisplay } from '@/utils/nutrition';
 import { microRecommendationText } from '@/utils/microRecommendations';
-import { buildNutritionInsight, describeInsightPriority } from '@/utils/nutritionInsight';
+import { buildNutritionInsight, describeInsightPriority, insightsForDayInProgress } from '@/utils/nutritionInsight';
 import { describeAttentionBanner } from '@/utils/supplementDoseCopy';
 import { todayISO } from '@/utils/dates';
 import { effectiveStreak } from '@/utils/streak';
@@ -192,6 +192,7 @@ export function DashboardScreen() {
     state: dayState,
     isFirstUse,
     mealType: nextMealType,
+    slotHasEntries: diary.entries.some((e) => e.date === today && e.meal_type === nextMealType),
     calories: summary.calories,
     calorieTarget: calTarget,
     proteinG: summary.protein_g,
@@ -233,7 +234,9 @@ export function DashboardScreen() {
   // cada barra de micro, así que sin comida registrada hoy (o con datos
   // insuficientes en los 6) esta lista sale vacía de forma natural, sin
   // ninguna comprobación aparte.
-  const insightPriorities = buildNutritionInsight(todayMicroDisplays, microHistory);
+  // El Resumen siempre es hoy (día en curso): sólo prioridades con patrón
+  // semanal; nunca una valoración del día que todavía no ha terminado.
+  const insightPriorities = insightsForDayInProgress(buildNutritionInsight(todayMicroDisplays, microHistory));
 
   const maxCal = Math.max(...weekData.map((d) => d.calories), profile?.calorie_target ?? 0, 1);
 
@@ -411,7 +414,8 @@ export function DashboardScreen() {
                 <Text style={{ color: t.text, fontWeight: '700', fontSize: 14 }}>
                   {p.label}{' '}
                   <Text style={{ color: t.textMuted, fontWeight: '600', fontSize: 12 }}>
-                    · {describeInsightPriority(p)}
+                    {/* El Resumen siempre es hoy (día en curso): sin % de hoy. */}
+                    · {describeInsightPriority(p, { dayInProgress: true })}
                   </Text>
                 </Text>
                 <Text style={{ color: t.textSecondary, fontSize: 12 }}>{p.reason}</Text>
